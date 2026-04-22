@@ -1,0 +1,2784 @@
+config_path: /mnt/data/CONFIG_TEMPLATE_V1.yaml
+material_id: plywood_varnished
+family_material_ids:
+- plywood_varnished
+- ash
+- bamboo_raw
+- beech
+- birch
+- birch__airdry__epoxy_lined__standard__medium
+- birch__humid__raw__irregular__medium
+- birch_plywood
+- mahogany
+- maple
+validation_preserved: true
+baseline_validation:
+  all_passed: true
+  failed_cases: []
+patched_validation:
+  all_passed: true
+  failed_cases: []
+seed_reports:
+- seed: 11
+  pool_size: 5
+  selected_count: 4
+  patch_material_ids:
+  - plywood_varnished
+  mean_delta: 3.6231185377388894e-05
+  improved_count: 5
+  worsened_count: 0
+  decision: accept_local_only
+- seed: 29
+  pool_size: 6
+  selected_count: 4
+  patch_material_ids:
+  - plywood_varnished
+  mean_delta: 7.156662923849903e-05
+  improved_count: 5
+  worsened_count: 1
+  decision: accept_local_only
+- seed: 47
+  pool_size: 6
+  selected_count: 4
+  patch_material_ids:
+  - plywood_varnished
+  mean_delta: 6.885733061512411e-05
+  improved_count: 5
+  worsened_count: 1
+  decision: accept_local_only
+aggregates:
+  seed_count: 3
+  selected_total: 12
+  mean_delta: 6.021762858874608e-05
+  improved_count: 15
+  worsened_count: 2
+  positive_seed_count: 3
+prioritized_materials:
+  material_rankings:
+  - material_id: birch
+    family: wood
+    subtype: solid
+    occurrences: 1
+    priority:
+      material_id: birch
+      per_parameter:
+        beta:
+          relative_uncertainty: 0.22058823529411764
+          sensitivity: 0.001063615227697954
+          objective_weight: 0.6
+          priority_score: 0.00014077260366590567
+        porosity_leak:
+          relative_uncertainty: 1.125
+          sensitivity: 2.0461118429383453e-05
+          objective_weight: 0.6
+          priority_score: 1.381125493983383e-05
+        wall_loss:
+          relative_uncertainty: 0.75
+          sensitivity: 2.0461118429383453e-05
+          objective_weight: 0.6
+          priority_score: 9.207503293222553e-06
+      max_priority_score: 0.00014077260366590567
+      mean_priority_score: 5.4597120632987356e-05
+    sensitivity:
+      family: wood
+      subtype: solid
+      parameters:
+        beta:
+          trials:
+          - direction: -1
+            percent: 5.0
+            relative_step: 0.05
+            factor: 0.95
+            aggregate_delta: 5.2032378505373345e-05
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: 0.0006157164789866165
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 5.203237850591125e-05
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: 1
+            percent: 5.0
+            relative_step: 0.05
+            factor: 1.05
+            aggregate_delta: -5.435092344185932e-05
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: -0.0006431525940565619
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 5.4350923441399594e-05
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: -1
+            percent: 10.0
+            relative_step: 0.1
+            factor: 0.9
+            aggregate_delta: 0.00010170323315605856
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: 0.0012034882590244989
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 0.00010170323315699989
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: 1
+            percent: 10.0
+            relative_step: 0.1
+            factor: 1.1
+            aggregate_delta: -0.00011097625402811673
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: -0.001313219005992794
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 0.00011097625402756004
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          aggregate_sensitivity: 0.0010636152276966016
+          weighted_objective_sensitivity: 0.001063615227697954
+          best_direction: -1
+          best_relative_step: 0.1
+          best_aggregate_delta: 0.00010170323315605856
+          dominant_objective_weight: 0.6
+          dominant_objectives:
+          - objective: backpressure
+            mean_abs_delta: 0.0009438940845151178
+            weight: 0.6
+          - objective: drone_f0
+            mean_abs_delta: 0.0
+            weight: 1.0
+          - objective: impedance_peaks
+            mean_abs_delta: 0.0
+            weight: 0.8
+        porosity_leak:
+          trials:
+          - direction: -1
+            percent: 5.0
+            relative_step: 0.05
+            factor: 0.95
+            aggregate_delta: 1.0226272557645188e-06
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: 1.2101089196914216e-05
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 1.0226272560772576e-06
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: 1
+            percent: 5.0
+            relative_step: 0.05
+            factor: 1.05
+            aggregate_delta: -1.0234847422907478e-06
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: -1.211123610833642e-05
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 1.0234847415495565e-06
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: -1
+            percent: 10.0
+            relative_step: 0.1
+            factor: 0.9
+            aggregate_delta: 2.0443967159167187e-06
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: 2.4192027810343575e-05
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 2.0443967163670624e-06
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: 1
+            percent: 10.0
+            relative_step: 0.1
+            factor: 1.1
+            aggregate_delta: -2.0478266602452777e-06
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: -2.4232615478236852e-05
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 2.0478266601326914e-06
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          aggregate_sensitivity: 2.0461118430681324e-05
+          weighted_objective_sensitivity: 2.0461118429383453e-05
+          best_direction: -1
+          best_relative_step: 0.1
+          best_aggregate_delta: 2.0443967159167187e-06
+          dominant_objective_weight: 0.6
+          dominant_objectives:
+          - objective: backpressure
+            mean_abs_delta: 1.8159242148457766e-05
+            weight: 0.6
+          - objective: drone_f0
+            mean_abs_delta: 0.0
+            weight: 1.0
+          - objective: impedance_peaks
+            mean_abs_delta: 0.0
+            weight: 0.8
+        wall_loss:
+          trials:
+          - direction: -1
+            percent: 5.0
+            relative_step: 0.05
+            factor: 0.95
+            aggregate_delta: 1.0226272557645188e-06
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: 1.2101089196914216e-05
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 1.0226272560772576e-06
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: 1
+            percent: 5.0
+            relative_step: 0.05
+            factor: 1.05
+            aggregate_delta: -1.0234847422907478e-06
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: -1.211123610833642e-05
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 1.0234847415495565e-06
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: -1
+            percent: 10.0
+            relative_step: 0.1
+            factor: 0.9
+            aggregate_delta: 2.0443967159167187e-06
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: 2.4192027810343575e-05
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 2.0443967163670624e-06
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: 1
+            percent: 10.0
+            relative_step: 0.1
+            factor: 1.1
+            aggregate_delta: -2.0478266602452777e-06
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: -2.4232615478236852e-05
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 2.0478266601326914e-06
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          aggregate_sensitivity: 2.0461118430681324e-05
+          weighted_objective_sensitivity: 2.0461118429383453e-05
+          best_direction: -1
+          best_relative_step: 0.1
+          best_aggregate_delta: 2.0443967159167187e-06
+          dominant_objective_weight: 0.6
+          dominant_objectives:
+          - objective: backpressure
+            mean_abs_delta: 1.8159242148457766e-05
+            weight: 0.6
+          - objective: drone_f0
+            mean_abs_delta: 0.0
+            weight: 1.0
+          - objective: impedance_peaks
+            mean_abs_delta: 0.0
+            weight: 0.8
+      occurrences: 1
+  - material_id: plywood_varnished
+    family: wood
+    subtype: panel_coated
+    occurrences: 4
+    priority:
+      material_id: plywood_varnished
+      per_parameter:
+        beta:
+          relative_uncertainty: 0.21874999999999997
+          sensitivity: 0.0010616871623031839
+          objective_weight: 0.6
+          priority_score: 0.00013934644005229285
+        porosity_leak:
+          relative_uncertainty: 1.0833333333333333
+          sensitivity: 1.2375970420640473e-05
+          objective_weight: 0.6
+          priority_score: 8.044380773416307e-06
+        wall_loss:
+          relative_uncertainty: 0.6666666666666667
+          sensitivity: 1.8563953900165036e-05
+          objective_weight: 0.6
+          priority_score: 7.425581560066014e-06
+      max_priority_score: 0.00013934644005229285
+      mean_priority_score: 5.1605467461925056e-05
+    sensitivity:
+      family: wood
+      subtype: panel_coated
+      parameters:
+        beta:
+          trials:
+          - direction: -1
+            percent: 5.0
+            relative_step: 0.05
+            factor: 0.95
+            aggregate_delta: 7.825043093312445e-05
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: 0.0009259634327173361
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 7.825043093385937e-05
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: 1
+            percent: 5.0
+            relative_step: 0.05
+            factor: 1.05
+            aggregate_delta: -8.141807483319496e-05
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: -0.000963447218846003
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 8.141807483205659e-05
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: -1
+            percent: 10.0
+            relative_step: 0.1
+            factor: 0.9
+            aggregate_delta: 0.00015323511638598575
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: 0.0018132822105754176
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 0.000153235116386655
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: 1
+            percent: 10.0
+            relative_step: 0.1
+            factor: 1.1
+            aggregate_delta: -0.00016590468660737656
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: -0.0019632054581868452
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 0.00016590468660733902
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: -1
+            percent: 5.0
+            relative_step: 0.05
+            factor: 0.95
+            aggregate_delta: 0.00010191565170458716
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: 0.0012060018785016169
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 0.00010191565170436197
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: 1
+            percent: 5.0
+            relative_step: 0.05
+            factor: 1.05
+            aggregate_delta: -0.00010554656156003261
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: -0.0012489676451205023
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 0.00010554656155947906
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: -1
+            percent: 10.0
+            relative_step: 0.1
+            factor: 0.9
+            aggregate_delta: 0.0002000289643007136
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: 0.0023670094108969586
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 0.0002000289643011514
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: 1
+            percent: 10.0
+            relative_step: 0.1
+            factor: 1.1
+            aggregate_delta: -0.00021455441255824326
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: -0.002538893881939397
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 0.00021455441255825887
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: -1
+            percent: 5.0
+            relative_step: 0.05
+            factor: 0.95
+            aggregate_delta: -2.8350129888110587e-07
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: -3.354765364615986e-06
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 2.8350129841825234e-07
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: 1
+            percent: 5.0
+            relative_step: 0.05
+            factor: 1.05
+            aggregate_delta: 3.077657790839794e-07
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: 3.6418950652983284e-06
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 3.077657801660559e-07
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: -1
+            percent: 10.0
+            relative_step: 0.1
+            factor: 0.9
+            aggregate_delta: -5.427368794386211e-07
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: -6.4223863939227854e-06
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 5.42736878359672e-07
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: 1
+            percent: 10.0
+            relative_step: 0.1
+            factor: 1.1
+            aggregate_delta: 6.397948304481815e-07
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: 7.570905490084101e-06
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 6.397948301479521e-07
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: -1
+            percent: 5.0
+            relative_step: 0.05
+            factor: 0.95
+            aggregate_delta: 2.7878897627786614e-05
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: 0.0003299002885928104
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 2.787889762756144e-05
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: 1
+            percent: 5.0
+            relative_step: 0.05
+            factor: 1.05
+            aggregate_delta: -2.9214029487079074e-05
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: -0.0003456993489293625
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 2.9214029486988374e-05
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: -1
+            percent: 10.0
+            relative_step: 0.1
+            factor: 0.9
+            aggregate_delta: 5.441191776789367e-05
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: 0.0006438743602510399
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 5.441191776769351e-05
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: 1
+            percent: 10.0
+            relative_step: 0.1
+            factor: 1.1
+            aggregate_delta: -5.975200391006297e-05
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: -0.0007070653795981929
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 5.975200390970644e-05
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          aggregate_sensitivity: 0.001061687162304814
+          weighted_objective_sensitivity: 0.0010616871623031839
+          best_direction: -1
+          best_relative_step: 0.1
+          best_aggregate_delta: 0.0002000289643007136
+          dominant_objective_weight: 0.6
+          dominant_objectives:
+          - objective: backpressure
+            mean_abs_delta: 0.0009421437791543377
+            weight: 0.6
+          - objective: drone_f0
+            mean_abs_delta: 0.0
+            weight: 1.0
+          - objective: impedance_peaks
+            mean_abs_delta: 0.0
+            weight: 0.8
+        porosity_leak:
+          trials:
+          - direction: -1
+            percent: 5.0
+            relative_step: 0.05
+            factor: 0.95
+            aggregate_delta: 9.300843988313545e-07
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: 1.1005998719615384e-05
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 9.300843988407366e-07
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: 1
+            percent: 5.0
+            relative_step: 0.05
+            factor: 1.05
+            aggregate_delta: -9.305143660043314e-07
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: -1.1011086665568826e-05
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 9.305143661044077e-07
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: -1
+            percent: 10.0
+            relative_step: 0.1
+            factor: 0.9
+            aggregate_delta: 1.8597386723939735e-06
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: 2.2006907636762385e-05
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 1.8597386735292156e-06
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: 1
+            percent: 10.0
+            relative_step: 0.1
+            factor: 1.1
+            aggregate_delta: -1.8614585428622377e-06
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: -2.2027259428458734e-05
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 1.8614585432500337e-06
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: -1
+            percent: 5.0
+            relative_step: 0.05
+            factor: 0.95
+            aggregate_delta: 1.2086026739410727e-06
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: 1.4301798313076652e-05
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 1.2086026743445058e-06
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: 1
+            percent: 5.0
+            relative_step: 0.05
+            factor: 1.05
+            aggregate_delta: -1.2090954886190275e-06
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: -1.4307629945586875e-05
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 1.2090954883594542e-06
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: -1
+            percent: 10.0
+            relative_step: 0.1
+            factor: 0.9
+            aggregate_delta: 2.416712261421594e-06
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: 2.8597761765891683e-05
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 2.4167122619063392e-06
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: 1
+            percent: 10.0
+            relative_step: 0.1
+            factor: 1.1
+            aggregate_delta: -2.4186835272388407e-06
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: -2.862108840717692e-05
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 2.4186835273670637e-06
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: -1
+            percent: 5.0
+            relative_step: 0.05
+            factor: 0.95
+            aggregate_delta: -3.442631069106028e-09
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: -4.073778758773017e-08
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 3.4426299369912814e-09
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: 1
+            percent: 5.0
+            relative_step: 0.05
+            factor: 1.05
+            aggregate_delta: 3.4459226583294367e-09
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: 4.077675963554128e-08
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 3.445923349482362e-09
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: -1
+            percent: 10.0
+            relative_step: 0.1
+            factor: 0.9
+            aggregate_delta: -6.8819669962749686e-09
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: -8.143659924186863e-08
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 6.881966133115658e-09
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: 1
+            percent: 10.0
+            relative_step: 0.1
+            factor: 1.1
+            aggregate_delta: 6.895140458595961e-09
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: 8.159249365036203e-08
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 6.895140308481298e-09
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: -1
+            percent: 5.0
+            relative_step: 0.05
+            factor: 0.95
+            aggregate_delta: 3.325108401952548e-07
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: 3.934711612529895e-06
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 3.3251084049548403e-07
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: 1
+            percent: 5.0
+            relative_step: 0.05
+            factor: 1.05
+            aggregate_delta: -3.326920676727241e-07
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: -3.9368561326469376e-06
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 3.326920675476285e-07
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: -1
+            percent: 10.0
+            relative_step: 0.1
+            factor: 0.9
+            aggregate_delta: 6.648404369258287e-07
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: 7.86727849433344e-06
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 6.648404361408541e-07
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: 1
+            percent: 10.0
+            relative_step: 0.1
+            factor: 1.1
+            aggregate_delta: -6.655653450593491e-07
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: -7.87585659944856e-06
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 6.655653464322726e-07
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          aggregate_sensitivity: 1.2375970419586935e-05
+          weighted_objective_sensitivity: 1.2375970420640473e-05
+          best_direction: -1
+          best_relative_step: 0.1
+          best_aggregate_delta: 2.416712261421594e-06
+          dominant_objective_weight: 0.6
+          dominant_objectives:
+          - objective: backpressure
+            mean_abs_delta: 1.0983673585075737e-05
+            weight: 0.6
+          - objective: drone_f0
+            mean_abs_delta: 0.0
+            weight: 1.0
+          - objective: impedance_peaks
+            mean_abs_delta: 0.0
+            weight: 0.8
+        wall_loss:
+          trials:
+          - direction: -1
+            percent: 5.0
+            relative_step: 0.05
+            factor: 0.95
+            aggregate_delta: 1.3949653094869063e-06
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: 1.6507089508288608e-05
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 1.3949653105596005e-06
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: 1
+            percent: 5.0
+            relative_step: 0.05
+            factor: 1.05
+            aggregate_delta: -1.3959327382906395e-06
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: -1.651853740669562e-05
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 1.395932738593996e-06
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: -1
+            percent: 10.0
+            relative_step: 0.1
+            factor: 0.9
+            aggregate_delta: 2.7889626679211688e-06
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: 3.3002724903363756e-05
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 2.7889626678898946e-06
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: 1
+            percent: 10.0
+            relative_step: 0.1
+            factor: 1.1
+            aggregate_delta: -2.7928323778070308e-06
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: -3.30485164695693e-05
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 2.7928323777100815e-06
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: -1
+            percent: 5.0
+            relative_step: 0.05
+            factor: 0.95
+            aggregate_delta: 1.8127191214745153e-06
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: 2.1450509595344336e-05
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 1.8127191207333238e-06
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: 1
+            percent: 5.0
+            relative_step: 0.05
+            factor: 1.05
+            aggregate_delta: -1.8138279571644489e-06
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: -2.146363082367042e-05
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 1.8138279569298945e-06
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: -1
+            percent: 10.0
+            relative_step: 0.1
+            factor: 0.9
+            aggregate_delta: 3.6243284942116816e-06
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: 4.288788716966252e-05
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 3.624328493210917e-06
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: 1
+            percent: 10.0
+            relative_step: 0.1
+            factor: 1.1
+            aggregate_delta: -3.6287638405241296e-06
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: -4.294037210661461e-05
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 3.6287638399956005e-06
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: -1
+            percent: 5.0
+            relative_step: 0.05
+            factor: 0.95
+            aggregate_delta: -5.1627093711204e-09
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: -6.109206363014152e-08
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 5.162709602547171e-09
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: 1
+            percent: 5.0
+            relative_step: 0.05
+            factor: 1.05
+            aggregate_delta: 5.1701203318543776e-09
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: 6.117975603903147e-08
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 5.1701202286505466e-09
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: -1
+            percent: 10.0
+            relative_step: 0.1
+            factor: 0.9
+            aggregate_delta: -1.0318009557863661e-08
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: -1.220964395143298e-07
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 1.0318008973041954e-08
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: 1
+            percent: 10.0
+            relative_step: 0.1
+            factor: 1.1
+            aggregate_delta: 1.0347649848085894e-08
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: 1.224471994909493e-07
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 1.034765066120698e-08
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: -1
+            percent: 5.0
+            relative_step: 0.05
+            factor: 0.95
+            aggregate_delta: 4.986982951038499e-07
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: 5.9012631530297455e-06
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 4.986982946222319e-07
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: 1
+            percent: 5.0
+            relative_step: 0.05
+            factor: 1.05
+            aggregate_delta: -4.991060560399774e-07
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: -5.906088338503146e-06
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 4.991060567749137e-07
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: -1
+            percent: 10.0
+            relative_step: 0.1
+            factor: 0.9
+            aggregate_delta: 9.969887688754397e-07
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: 1.1797700435023373e-05
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 9.969887691569046e-07
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: 1
+            percent: 10.0
+            relative_step: 0.1
+            factor: 1.1
+            aggregate_delta: -9.986198161726634e-07
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: -1.1817001162817142e-05
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 9.986198165760965e-07
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          aggregate_sensitivity: 1.856395389965293e-05
+          weighted_objective_sensitivity: 1.8563953900165036e-05
+          best_direction: -1
+          best_relative_step: 0.1
+          best_aggregate_delta: 3.6243284942116816e-06
+          dominant_objective_weight: 0.6
+          dominant_objectives:
+          - objective: backpressure
+            mean_abs_delta: 1.6475508533203564e-05
+            weight: 0.6
+          - objective: drone_f0
+            mean_abs_delta: 0.0
+            weight: 1.0
+          - objective: impedance_peaks
+            mean_abs_delta: 0.0
+            weight: 0.8
+      occurrences: 4
+  - material_id: maple
+    family: wood
+    subtype: solid
+    occurrences: 1
+    priority:
+      material_id: maple
+      per_parameter:
+        beta:
+          relative_uncertainty: 0.2272727272727273
+          sensitivity: 7.717646563041958e-06
+          objective_weight: 0.6
+          priority_score: 1.0524063495057216e-06
+        porosity_leak:
+          relative_uncertainty: 1.1111111111111112
+          sensitivity: 1.3409049375551595e-07
+          objective_weight: 0.6
+          priority_score: 8.939366250367731e-08
+        wall_loss:
+          relative_uncertainty: 0.7500000000000001
+          sensitivity: 1.3409049375551595e-07
+          objective_weight: 0.6
+          priority_score: 6.034072218998218e-08
+      max_priority_score: 1.0524063495057216e-06
+      mean_priority_score: 4.007135780664603e-07
+    sensitivity:
+      family: wood
+      subtype: solid
+      parameters:
+        beta:
+          trials:
+          - direction: -1
+            percent: 5.0
+            relative_step: 0.05
+            factor: 0.95
+            aggregate_delta: 3.780164679056952e-07
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: 4.473194859522245e-06
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 3.780164670018798e-07
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: 1
+            percent: 5.0
+            relative_step: 0.05
+            factor: 1.05
+            aggregate_delta: -3.9374856974916383e-07
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: -4.6593580772524845e-06
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 3.937485699086606e-07
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: -1
+            percent: 10.0
+            relative_step: 0.1
+            factor: 0.9
+            aggregate_delta: 7.403000825689787e-07
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: 8.760217637071577e-06
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 7.403000820060487e-07
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: 1
+            percent: 10.0
+            relative_step: 0.1
+            factor: 1.1
+            aggregate_delta: -8.032284686265712e-07
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: -9.504870221110906e-06
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 8.032284693896539e-07
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          aggregate_sensitivity: 7.71764656626317e-06
+          weighted_objective_sensitivity: 7.717646563041958e-06
+          best_direction: -1
+          best_relative_step: 0.1
+          best_aggregate_delta: 7.403000825689787e-07
+          dominant_objective_weight: 0.6
+          dominant_objectives:
+          - objective: backpressure
+            mean_abs_delta: 6.849410198739303e-06
+            weight: 0.6
+          - objective: drone_f0
+            mean_abs_delta: 0.0
+            weight: 1.0
+          - objective: impedance_peaks
+            mean_abs_delta: 0.0
+            weight: 0.8
+        porosity_leak:
+          trials:
+          - direction: -1
+            percent: 5.0
+            relative_step: 0.05
+            factor: 0.95
+            aggregate_delta: 6.70214994613616e-09
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: 7.930877654604984e-08
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 6.702150130652099e-09
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: 1
+            percent: 5.0
+            relative_step: 0.05
+            factor: 1.05
+            aggregate_delta: -6.706898147967877e-09
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: -7.936497414817723e-08
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 6.706899223789624e-09
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: -1
+            percent: 10.0
+            relative_step: 0.1
+            factor: 0.9
+            aggregate_delta: 1.3399551690440603e-08
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: 1.585613557120169e-07
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 1.3399551186931005e-08
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: 1
+            percent: 10.0
+            relative_step: 0.1
+            factor: 1.1
+            aggregate_delta: -1.341854627412431e-08
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: -1.5878614667563795e-07
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 1.3418547606391938e-08
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          aggregate_sensitivity: 1.3409048538193247e-07
+          weighted_objective_sensitivity: 1.3409049375551595e-07
+          best_direction: -1
+          best_relative_step: 0.1
+          best_aggregate_delta: 1.3399551690440603e-08
+          dominant_objective_weight: 0.6
+          dominant_objectives:
+          - objective: backpressure
+            mean_abs_delta: 1.1900531327047048e-07
+            weight: 0.6
+          - objective: drone_f0
+            mean_abs_delta: 0.0
+            weight: 1.0
+          - objective: impedance_peaks
+            mean_abs_delta: 0.0
+            weight: 0.8
+        wall_loss:
+          trials:
+          - direction: -1
+            percent: 5.0
+            relative_step: 0.05
+            factor: 0.95
+            aggregate_delta: 6.70214994613616e-09
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: 7.930877654604984e-08
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 6.702150130652099e-09
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: 1
+            percent: 5.0
+            relative_step: 0.05
+            factor: 1.05
+            aggregate_delta: -6.706898147967877e-09
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: -7.936497414817723e-08
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 6.706899223789624e-09
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: -1
+            percent: 10.0
+            relative_step: 0.1
+            factor: 0.9
+            aggregate_delta: 1.3399551690440603e-08
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: 1.585613557120169e-07
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 1.3399551186931005e-08
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: 1
+            percent: 10.0
+            relative_step: 0.1
+            factor: 1.1
+            aggregate_delta: -1.341854627412431e-08
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: -1.5878614667563795e-07
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 1.3418547606391938e-08
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          aggregate_sensitivity: 1.3409048538193247e-07
+          weighted_objective_sensitivity: 1.3409049375551595e-07
+          best_direction: -1
+          best_relative_step: 0.1
+          best_aggregate_delta: 1.3399551690440603e-08
+          dominant_objective_weight: 0.6
+          dominant_objectives:
+          - objective: backpressure
+            mean_abs_delta: 1.1900531327047048e-07
+            weight: 0.6
+          - objective: drone_f0
+            mean_abs_delta: 0.0
+            weight: 1.0
+          - objective: impedance_peaks
+            mean_abs_delta: 0.0
+            weight: 0.8
+      occurrences: 1
+  - material_id: mahogany
+    family: wood
+    subtype: solid
+    occurrences: 1
+    priority:
+      material_id: mahogany
+      per_parameter:
+        beta:
+          relative_uncertainty: 0.22058823529411764
+          sensitivity: 5.853367383747944e-07
+          objective_weight: 0.6
+          priority_score: 7.747103890254631e-08
+        porosity_leak:
+          relative_uncertainty: 1.1111111111111112
+          sensitivity: 1.0150347628140519e-08
+          objective_weight: 0.6
+          priority_score: 6.766898418760346e-09
+        wall_loss:
+          relative_uncertainty: 0.75
+          sensitivity: 1.1278166030189919e-08
+          objective_weight: 0.6
+          priority_score: 5.075174713585463e-09
+      max_priority_score: 7.747103890254631e-08
+      mean_priority_score: 2.977103734496404e-08
+    sensitivity:
+      family: wood
+      subtype: solid
+      parameters:
+        beta:
+          trials:
+          - direction: -1
+            percent: 5.0
+            relative_step: 0.05
+            factor: 0.95
+            aggregate_delta: -2.8444581801068125e-08
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: -3.3659421083687135e-07
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 2.8444581197482085e-08
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: 1
+            percent: 5.0
+            relative_step: 0.05
+            factor: 1.05
+            aggregate_delta: 3.008909388313441e-08
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: 3.560542803926481e-07
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 3.008909411768857e-08
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: -1
+            percent: 10.0
+            relative_step: 0.1
+            factor: 0.9
+            aggregate_delta: -5.524464619099945e-08
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: -6.537283177010522e-07
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 5.5244646566286096e-08
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: 1
+            percent: 10.0
+            relative_step: 0.1
+            factor: 1.1
+            aggregate_delta: 6.182269807197827e-08
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: 7.315685948139361e-07
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 6.182269815329037e-08
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          aggregate_sensitivity: 5.85336739078457e-07
+          weighted_objective_sensitivity: 5.853367383747944e-07
+          best_direction: 1
+          best_relative_step: 0.1
+          best_aggregate_delta: 6.182269807197827e-08
+          dominant_objective_weight: 0.6
+          dominant_objectives:
+          - objective: backpressure
+            mean_abs_delta: 5.194863509361269e-07
+            weight: 0.6
+          - objective: drone_f0
+            mean_abs_delta: 0.0
+            weight: 1.0
+          - objective: impedance_peaks
+            mean_abs_delta: 0.0
+            weight: 0.8
+        porosity_leak:
+          trials:
+          - direction: -1
+            percent: 5.0
+            relative_step: 0.05
+            factor: 0.95
+            aggregate_delta: -5.072706699138507e-10
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: -6.002696117946016e-09
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 5.072700944743112e-10
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: 1
+            percent: 5.0
+            relative_step: 0.05
+            factor: 1.05
+            aggregate_delta: 5.07764497115204e-10
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: 6.008548880664932e-09
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 5.077646941406985e-10
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: -1
+            percent: 10.0
+            relative_step: 0.1
+            factor: 0.9
+            aggregate_delta: -1.0140457362695088e-09
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: -1.1999541249529955e-08
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 1.0140457393968975e-09
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: 1
+            percent: 10.0
+            relative_step: 0.1
+            factor: 1.1
+            aggregate_delta: 1.0160245977886007e-09
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: 1.2022947526446615e-08
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 1.0160237346292913e-09
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          aggregate_sensitivity: 1.0150351670290547e-08
+          weighted_objective_sensitivity: 1.0150347628140519e-08
+          best_direction: 1
+          best_relative_step: 0.1
+          best_aggregate_delta: 1.0160245977886007e-09
+          dominant_objective_weight: 0.6
+          dominant_objectives:
+          - objective: backpressure
+            mean_abs_delta: 9.00843344364688e-09
+            weight: 0.6
+          - objective: drone_f0
+            mean_abs_delta: 0.0
+            weight: 1.0
+          - objective: impedance_peaks
+            mean_abs_delta: 0.0
+            weight: 0.8
+        wall_loss:
+          trials:
+          - direction: -1
+            percent: 5.0
+            relative_step: 0.05
+            factor: 0.95
+            aggregate_delta: -5.636024980049115e-10
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: -6.669300667283551e-09
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 5.636028732915676e-10
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: 1
+            percent: 5.0
+            relative_step: 0.05
+            factor: 1.05
+            aggregate_delta: 5.642135647576652e-10
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: 6.6765299955307e-09
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 5.642138024392141e-10
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: -1
+            percent: 10.0
+            relative_step: 0.1
+            factor: 0.9
+            aggregate_delta: -1.1265957056139086e-09
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: -1.3331378778680403e-08
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 1.1265953897476396e-09
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          - direction: 1
+            percent: 10.0
+            relative_step: 0.1
+            factor: 1.1
+            aggregate_delta: 1.129038196268084e-09
+            objective_deltas:
+              drone_f0: 0.0
+              impedance_peaks: 0.0
+              peak_quality_Q: 0.0
+              harmonicity: 0.0
+              backpressure: 1.3360279105256723e-08
+              radiation_brightness: 0.0
+              toot: 0.0
+              vocal_control: 0.0
+              transients_noise: 0.0
+              beginner_robustness: 0.0
+              expert_robustness: 0.0
+              fabrication_simplicity: 0.0
+              material_simplicity: 0.0
+            weighted_abs_objective_delta: 1.1290376708667652e-09
+            f0_delta_hz: 0.0
+            fundamental_q_delta: 0.0
+            brightness_delta: 0.0
+          aggregate_sensitivity: 1.1278165068517865e-08
+          weighted_objective_sensitivity: 1.1278166030189919e-08
+          best_direction: 1
+          best_relative_step: 0.1
+          best_aggregate_delta: 1.129038196268084e-09
+          dominant_objective_weight: 0.6
+          dominant_objectives:
+          - objective: backpressure
+            mean_abs_delta: 1.0009372136687844e-08
+            weight: 0.6
+          - objective: drone_f0
+            mean_abs_delta: 0.0
+            weight: 1.0
+          - objective: impedance_peaks
+            mean_abs_delta: 0.0
+            weight: 0.8
+      occurrences: 1
+  top_material_ids:
+  - birch
+  - plywood_varnished
+  - maple
+  - mahogany
+proposals:
+  recommendations:
+  - material_id: birch
+    parameter: beta
+    priority_score: 0.00014077260366590567
+    current:
+      nominal: 3.4
+      min: 2.8
+      max: 4.3
+      status: to_calibrate
+      confidence: low
+    proposed:
+      nominal: 3.23
+      min: 2.6599999999999997
+      max: 4.085
+      status: to_calibrate
+      confidence: low
+    relative_change: -0.05
+    direction: decrease
+    basis:
+      weighted_objective_sensitivity: 0.001063615227697954
+      best_aggregate_delta: 0.00010170323315605856
+      dominant_objectives:
+      - objective: backpressure
+        mean_abs_delta: 0.0009438940845151178
+        weight: 0.6
+      - objective: drone_f0
+        mean_abs_delta: 0.0
+        weight: 1.0
+      - objective: impedance_peaks
+        mean_abs_delta: 0.0
+        weight: 0.8
+    provenance: inferred_targeted_calibration
+    note: Suggested bounded update for experiment prioritization; not a sourced final
+      coefficient.
+  - material_id: plywood_varnished
+    parameter: beta
+    priority_score: 0.00013934644005229285
+    current:
+      nominal: 3.2
+      min: 2.6
+      max: 4.0
+      status: inferred
+      confidence: low
+    proposed:
+      nominal: 3.04
+      min: 2.4699999999999998
+      max: 3.8
+      status: inferred
+      confidence: low
+    relative_change: -0.05
+    direction: decrease
+    basis:
+      weighted_objective_sensitivity: 0.0010616871623031839
+      best_aggregate_delta: 0.0002000289643007136
+      dominant_objectives:
+      - objective: backpressure
+        mean_abs_delta: 0.0009421437791543377
+        weight: 0.6
+      - objective: drone_f0
+        mean_abs_delta: 0.0
+        weight: 1.0
+      - objective: impedance_peaks
+        mean_abs_delta: 0.0
+        weight: 0.8
+    provenance: inferred_targeted_calibration
+    note: Suggested bounded update for experiment prioritization; not a sourced final
+      coefficient.
+  - material_id: birch
+    parameter: porosity_leak
+    priority_score: 1.381125493983383e-05
+    current:
+      nominal: 0.02
+      min: 0.005
+      max: 0.05
+      status: inferred
+      confidence: medium
+    proposed:
+      nominal: 0.019
+      min: 0.00475
+      max: 0.0475
+      status: inferred
+      confidence: medium
+    relative_change: -0.05
+    direction: decrease
+    basis:
+      weighted_objective_sensitivity: 2.0461118429383453e-05
+      best_aggregate_delta: 2.0443967159167187e-06
+      dominant_objectives:
+      - objective: backpressure
+        mean_abs_delta: 1.8159242148457766e-05
+        weight: 0.6
+      - objective: drone_f0
+        mean_abs_delta: 0.0
+        weight: 1.0
+      - objective: impedance_peaks
+        mean_abs_delta: 0.0
+        weight: 0.8
+    provenance: inferred_targeted_calibration
+    note: Suggested bounded update for experiment prioritization; not a sourced final
+      coefficient.
+  - material_id: birch
+    parameter: wall_loss
+    priority_score: 9.207503293222553e-06
+    current:
+      nominal: 0.02
+      min: 0.01
+      max: 0.04
+      status: inferred
+      confidence: medium
+    proposed:
+      nominal: 0.019
+      min: 0.0095
+      max: 0.038
+      status: inferred
+      confidence: medium
+    relative_change: -0.05
+    direction: decrease
+    basis:
+      weighted_objective_sensitivity: 2.0461118429383453e-05
+      best_aggregate_delta: 2.0443967159167187e-06
+      dominant_objectives:
+      - objective: backpressure
+        mean_abs_delta: 1.8159242148457766e-05
+        weight: 0.6
+      - objective: drone_f0
+        mean_abs_delta: 0.0
+        weight: 1.0
+      - objective: impedance_peaks
+        mean_abs_delta: 0.0
+        weight: 0.8
+    provenance: inferred_targeted_calibration
+    note: Suggested bounded update for experiment prioritization; not a sourced final
+      coefficient.
+  - material_id: plywood_varnished
+    parameter: porosity_leak
+    priority_score: 8.044380773416307e-06
+    current:
+      nominal: 0.012
+      min: 0.004
+      max: 0.03
+      status: inferred
+      confidence: medium
+    proposed:
+      nominal: 0.0114
+      min: 0.0038
+      max: 0.028499999999999998
+      status: inferred
+      confidence: medium
+    relative_change: -0.05
+    direction: decrease
+    basis:
+      weighted_objective_sensitivity: 1.2375970420640473e-05
+      best_aggregate_delta: 2.416712261421594e-06
+      dominant_objectives:
+      - objective: backpressure
+        mean_abs_delta: 1.0983673585075737e-05
+        weight: 0.6
+      - objective: drone_f0
+        mean_abs_delta: 0.0
+        weight: 1.0
+      - objective: impedance_peaks
+        mean_abs_delta: 0.0
+        weight: 0.8
+    provenance: inferred_targeted_calibration
+    note: Suggested bounded update for experiment prioritization; not a sourced final
+      coefficient.
+  - material_id: plywood_varnished
+    parameter: wall_loss
+    priority_score: 7.425581560066014e-06
+    current:
+      nominal: 0.018
+      min: 0.008
+      max: 0.032
+      status: inferred
+      confidence: medium
+    proposed:
+      nominal: 0.017099999999999997
+      min: 0.0076
+      max: 0.0304
+      status: inferred
+      confidence: medium
+    relative_change: -0.05
+    direction: decrease
+    basis:
+      weighted_objective_sensitivity: 1.8563953900165036e-05
+      best_aggregate_delta: 3.6243284942116816e-06
+      dominant_objectives:
+      - objective: backpressure
+        mean_abs_delta: 1.6475508533203564e-05
+        weight: 0.6
+      - objective: drone_f0
+        mean_abs_delta: 0.0
+        weight: 1.0
+      - objective: impedance_peaks
+        mean_abs_delta: 0.0
+        weight: 0.8
+    provenance: inferred_targeted_calibration
+    note: Suggested bounded update for experiment prioritization; not a sourced final
+      coefficient.
+  - material_id: maple
+    parameter: beta
+    priority_score: 1.0524063495057216e-06
+    current:
+      nominal: 3.3
+      min: 2.7
+      max: 4.2
+      status: to_calibrate
+      confidence: low
+    proposed:
+      nominal: 3.135
+      min: 2.565
+      max: 3.9899999999999998
+      status: to_calibrate
+      confidence: low
+    relative_change: -0.05
+    direction: decrease
+    basis:
+      weighted_objective_sensitivity: 7.717646563041958e-06
+      best_aggregate_delta: 7.403000825689787e-07
+      dominant_objectives:
+      - objective: backpressure
+        mean_abs_delta: 6.849410198739303e-06
+        weight: 0.6
+      - objective: drone_f0
+        mean_abs_delta: 0.0
+        weight: 1.0
+      - objective: impedance_peaks
+        mean_abs_delta: 0.0
+        weight: 0.8
+    provenance: inferred_targeted_calibration
+    note: Suggested bounded update for experiment prioritization; not a sourced final
+      coefficient.
+  - material_id: maple
+    parameter: porosity_leak
+    priority_score: 8.939366250367731e-08
+    current:
+      nominal: 0.018
+      min: 0.005
+      max: 0.045
+      status: inferred
+      confidence: medium
+    proposed:
+      nominal: 0.017099999999999997
+      min: 0.00475
+      max: 0.042749999999999996
+      status: inferred
+      confidence: medium
+    relative_change: -0.05
+    direction: decrease
+    basis:
+      weighted_objective_sensitivity: 1.3409049375551595e-07
+      best_aggregate_delta: 1.3399551690440603e-08
+      dominant_objectives:
+      - objective: backpressure
+        mean_abs_delta: 1.1900531327047048e-07
+        weight: 0.6
+      - objective: drone_f0
+        mean_abs_delta: 0.0
+        weight: 1.0
+      - objective: impedance_peaks
+        mean_abs_delta: 0.0
+        weight: 0.8
+    provenance: inferred_targeted_calibration
+    note: Suggested bounded update for experiment prioritization; not a sourced final
+      coefficient.
+  - material_id: mahogany
+    parameter: beta
+    priority_score: 7.747103890254631e-08
+    current:
+      nominal: 3.4
+      min: 2.8
+      max: 4.3
+      status: to_calibrate
+      confidence: low
+    proposed:
+      nominal: 3.57
+      min: 2.94
+      max: 4.515
+      status: to_calibrate
+      confidence: low
+    relative_change: 0.05
+    direction: increase
+    basis:
+      weighted_objective_sensitivity: 5.853367383747944e-07
+      best_aggregate_delta: 6.182269807197827e-08
+      dominant_objectives:
+      - objective: backpressure
+        mean_abs_delta: 5.194863509361269e-07
+        weight: 0.6
+      - objective: drone_f0
+        mean_abs_delta: 0.0
+        weight: 1.0
+      - objective: impedance_peaks
+        mean_abs_delta: 0.0
+        weight: 0.8
+    provenance: inferred_targeted_calibration
+    note: Suggested bounded update for experiment prioritization; not a sourced final
+      coefficient.
+  - material_id: maple
+    parameter: wall_loss
+    priority_score: 6.034072218998218e-08
+    current:
+      nominal: 0.018
+      min: 0.008
+      max: 0.035
+      status: inferred
+      confidence: medium
+    proposed:
+      nominal: 0.017099999999999997
+      min: 0.0076
+      max: 0.03325
+      status: inferred
+      confidence: medium
+    relative_change: -0.05
+    direction: decrease
+    basis:
+      weighted_objective_sensitivity: 1.3409049375551595e-07
+      best_aggregate_delta: 1.3399551690440603e-08
+      dominant_objectives:
+      - objective: backpressure
+        mean_abs_delta: 1.1900531327047048e-07
+        weight: 0.6
+      - objective: drone_f0
+        mean_abs_delta: 0.0
+        weight: 1.0
+      - objective: impedance_peaks
+        mean_abs_delta: 0.0
+        weight: 0.8
+    provenance: inferred_targeted_calibration
+    note: Suggested bounded update for experiment prioritization; not a sourced final
+      coefficient.
+  - material_id: mahogany
+    parameter: porosity_leak
+    priority_score: 6.766898418760346e-09
+    current:
+      nominal: 0.018
+      min: 0.005
+      max: 0.045
+      status: inferred
+      confidence: medium
+    proposed:
+      nominal: 0.0189
+      min: 0.00525
+      max: 0.04725
+      status: inferred
+      confidence: medium
+    relative_change: 0.05
+    direction: increase
+    basis:
+      weighted_objective_sensitivity: 1.0150347628140519e-08
+      best_aggregate_delta: 1.0160245977886007e-09
+      dominant_objectives:
+      - objective: backpressure
+        mean_abs_delta: 9.00843344364688e-09
+        weight: 0.6
+      - objective: drone_f0
+        mean_abs_delta: 0.0
+        weight: 1.0
+      - objective: impedance_peaks
+        mean_abs_delta: 0.0
+        weight: 0.8
+    provenance: inferred_targeted_calibration
+    note: Suggested bounded update for experiment prioritization; not a sourced final
+      coefficient.
+  - material_id: mahogany
+    parameter: wall_loss
+    priority_score: 5.075174713585463e-09
+    current:
+      nominal: 0.02
+      min: 0.01
+      max: 0.04
+      status: inferred
+      confidence: medium
+    proposed:
+      nominal: 0.021
+      min: 0.0105
+      max: 0.042
+      status: inferred
+      confidence: medium
+    relative_change: 0.05
+    direction: increase
+    basis:
+      weighted_objective_sensitivity: 1.1278166030189919e-08
+      best_aggregate_delta: 1.129038196268084e-09
+      dominant_objectives:
+      - objective: backpressure
+        mean_abs_delta: 1.0009372136687844e-08
+        weight: 0.6
+      - objective: drone_f0
+        mean_abs_delta: 0.0
+        weight: 1.0
+      - objective: impedance_peaks
+        mean_abs_delta: 0.0
+        weight: 0.8
+    provenance: inferred_targeted_calibration
+    note: Suggested bounded update for experiment prioritization; not a sourced final
+      coefficient.
+  patch:
+    materials:
+      birch:
+        beta_nominal: 3.23
+        beta_min: 2.6599999999999997
+        beta_max: 4.085
+        porosity_leak_nominal: 0.019
+        porosity_leak_min: 0.00475
+        porosity_leak_max: 0.0475
+        wall_loss_nominal: 0.019
+        wall_loss_min: 0.0095
+        wall_loss_max: 0.038
+      plywood_varnished:
+        beta_nominal: 3.04
+        beta_min: 2.4699999999999998
+        beta_max: 3.8
+        porosity_leak_nominal: 0.0114
+        porosity_leak_min: 0.0038
+        porosity_leak_max: 0.028499999999999998
+        wall_loss_nominal: 0.017099999999999997
+        wall_loss_min: 0.0076
+        wall_loss_max: 0.0304
+      maple:
+        beta_nominal: 3.135
+        beta_min: 2.565
+        beta_max: 3.9899999999999998
+        porosity_leak_nominal: 0.017099999999999997
+        porosity_leak_min: 0.00475
+        porosity_leak_max: 0.042749999999999996
+        wall_loss_nominal: 0.017099999999999997
+        wall_loss_min: 0.0076
+        wall_loss_max: 0.03325
+      mahogany:
+        beta_nominal: 3.57
+        beta_min: 2.94
+        beta_max: 4.515
+        porosity_leak_nominal: 0.0189
+        porosity_leak_min: 0.00525
+        porosity_leak_max: 0.04725
+        wall_loss_nominal: 0.021
+        wall_loss_min: 0.0105
+        wall_loss_max: 0.042
+  material_ids_with_patch:
+  - birch
+  - mahogany
+  - maple
+  - plywood_varnished
+family_multiseed_patch:
+  materials:
+    plywood_varnished:
+      beta_nominal: 3.04
+      beta_min: 2.4699999999999998
+      beta_max: 3.8
+      porosity_leak_nominal: 0.0114
+      porosity_leak_min: 0.0038
+      porosity_leak_max: 0.028499999999999998
+      wall_loss_nominal: 0.017099999999999997
+      wall_loss_min: 0.0076
+      wall_loss_max: 0.0304
+decision: accept_local_only

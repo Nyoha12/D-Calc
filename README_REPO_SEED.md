@@ -1,24 +1,35 @@
-# didgeridoo_optimizer_repo_seed_latest
+# README_REPO_SEED
 
-This is the safest repo seed assembled from:
-1. current compact Project code files (reconstructed into real package files),
-2. then overlaid with newer real workspace files when present.
+This repository was initially bootstrapped from a reconstructed seed package.
 
-Use this as the initial code import into GitHub.
+Bootstrap provenance:
+1. project compact snapshot reconstructed into real package files
+2. newer workspace overlays applied on top
+3. project specs and YAML copied alongside the code
 
-Precedence used:
-- project compact code snapshot
-- current real workspace overlays
-- project specs/YAML alongside code
+Important status clarification:
+- This file documents the bootstrap history of the repository.
+- It does **not** imply that every artifact from the original seed package is necessarily versioned in `main`.
+- The current canonical code is whatever is actually present in the repository tree.
 
-Current overlays applied:
-- didgeridoo_optimizer/__init__.py
-- didgeridoo_optimizer/materials/database.py
-- didgeridoo_optimizer/optimization/__init__.py
-- didgeridoo_optimizer/pipeline/run_calibration.py
-- didgeridoo_optimizer/tests/validation_runner.py
+Repository structure currently intended in `main`:
+- `didgeridoo_optimizer/` → operational code
+- `project_specs/` → specs, YAML, constraints, material policy
+- `results/` → structured calibration / validation artifacts useful for replay and traceability
 
-Important:
-- The workspace had shown non-persistent behavior. This seed is intended to be the deterministic merge point.
-- The compact snapshot is included in `project_compact_snapshot/` for auditability.
-- Specs/YAML are included in `project_specs/`.
+Not treated as canonical code:
+- historical compact snapshots
+- temporary workspace state
+- artifacts not actually committed in the repository
+
+Notes:
+- `REPO_SEED_MANIFEST.json` documents the bootstrap seed and its relation to the current repository contents.
+- Validation artifacts in `results/` are useful evidence and replay aids, but they are not a substitute for replaying or rechecking the relevant logic in code.
+
+## Current repo status note
+
+This file describes the bootstrap seed used to initialize the repository.
+
+It does not imply that every path listed in the seed package was versioned in `main` at bootstrap time.
+
+Current `main` is the source of truth for what is actually versioned in the repository tree.

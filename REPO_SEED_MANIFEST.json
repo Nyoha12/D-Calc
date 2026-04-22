@@ -1,3 +1,7 @@
+"manifest_status": "bootstrap_seed_manifest",
+"describes_current_main_exactly": false,
+"manifest_note": "This manifest describes the bootstrap seed package, not a strict file-by-file guarantee of current main."
+
 {
   "seed_root": "didgeridoo_optimizer_repo_seed_latest",
   "precedence": [

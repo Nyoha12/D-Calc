@@ -1,0 +1,39 @@
+material_id: plywood_varnished
+decision: accept_local_only
+validation_preserved: true
+neighbor_material_ids:
+- plywood_varnished
+- ash
+- bamboo_raw
+- beech
+- birch
+- birch_plywood
+pool_size: 8
+selected_count: 4
+mean_delta: 2.882657815028722e-05
+improved_count: 8
+worsened_count: 0
+directed_patch_material_ids:
+- plywood_varnished
+pool_material_mix:
+- - birch
+  - birch
+  - plywood_varnished
+- - bamboo_raw
+  - plywood_varnished
+- - beech
+  - plywood_varnished
+- - birch_plywood
+  - plywood_varnished
+  - birch_plywood
+  - birch_plywood
+- - bamboo_raw
+  - plywood_varnished
+- - plywood_varnished
+  - ash
+  - birch
+- - birch_plywood
+  - birch_plywood
+  - beech
+  - plywood_varnished
+- - plywood_varnished

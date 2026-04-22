@@ -1,0 +1,41 @@
+materials:
+  birch:
+    beta_nominal: 3.23
+    beta_min: 2.6599999999999997
+    beta_max: 4.085
+    porosity_leak_nominal: 0.019
+    porosity_leak_min: 0.00475
+    porosity_leak_max: 0.0475
+    wall_loss_nominal: 0.019
+    wall_loss_min: 0.0095
+    wall_loss_max: 0.038
+  plywood_varnished:
+    beta_nominal: 3.04
+    beta_min: 2.4699999999999998
+    beta_max: 3.8
+    porosity_leak_nominal: 0.0114
+    porosity_leak_min: 0.0038
+    porosity_leak_max: 0.028499999999999998
+    wall_loss_nominal: 0.017099999999999997
+    wall_loss_min: 0.0076
+    wall_loss_max: 0.0304
+  maple:
+    beta_nominal: 3.135
+    beta_min: 2.565
+    beta_max: 3.9899999999999998
+    porosity_leak_nominal: 0.017099999999999997
+    porosity_leak_min: 0.00475
+    porosity_leak_max: 0.042749999999999996
+    wall_loss_nominal: 0.017099999999999997
+    wall_loss_min: 0.0076
+    wall_loss_max: 0.03325
+  mahogany:
+    beta_nominal: 3.57
+    beta_min: 2.94
+    beta_max: 4.515
+    porosity_leak_nominal: 0.0189
+    porosity_leak_min: 0.00525
+    porosity_leak_max: 0.04725
+    wall_loss_nominal: 0.021
+    wall_loss_min: 0.0105
+    wall_loss_max: 0.042

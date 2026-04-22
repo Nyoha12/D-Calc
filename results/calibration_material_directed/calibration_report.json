@@ -1,0 +1,1262 @@
+{
+  "config_path": "/mnt/data/CONFIG_TEMPLATE_V1.yaml",
+  "material_id": "plywood_varnished",
+  "pool_size": 6,
+  "selected_count": 3,
+  "validation_preserved": true,
+  "baseline_validation": {
+    "all_passed": true,
+    "failed_cases": []
+  },
+  "patched_validation": {
+    "all_passed": true,
+    "failed_cases": []
+  },
+  "prioritized_materials": {
+    "material_rankings": [
+      {
+        "material_id": "plywood_varnished",
+        "family": "wood",
+        "subtype": "panel_coated",
+        "occurrences": 3,
+        "priority": {
+          "material_id": "plywood_varnished",
+          "per_parameter": {
+            "beta": {
+              "relative_uncertainty": 0.21874999999999997,
+              "sensitivity": 0.0012796925573218508,
+              "objective_weight": 0.6,
+              "priority_score": 0.00016795964814849288
+            },
+            "porosity_leak": {
+              "relative_uncertainty": 1.0833333333333333,
+              "sensitivity": 1.491576049785124e-05,
+              "objective_weight": 0.6,
+              "priority_score": 9.695244323603305e-06
+            },
+            "wall_loss": {
+              "relative_uncertainty": 0.6666666666666667,
+              "sensitivity": 2.2373639034984963e-05,
+              "objective_weight": 0.6,
+              "priority_score": 8.949455613993987e-06
+            }
+          },
+          "max_priority_score": 0.00016795964814849288,
+          "mean_priority_score": 6.220144936203006e-05
+        },
+        "sensitivity": {
+          "family": "wood",
+          "subtype": "panel_coated",
+          "parameters": {
+            "beta": {
+              "trials": [
+                {
+                  "direction": -1,
+                  "percent": 5.0,
+                  "relative_step": 0.05,
+                  "factor": 0.95,
+                  "aggregate_delta": 7.338508891052697e-05,
+                  "objective_deltas": {
+                    "drone_f0": 0.0,
+                    "impedance_peaks": 0.0,
+                    "peak_quality_Q": 0.0,
+                    "harmonicity": 0.0,
+                    "backpressure": 0.0008683902187844872,
+                    "radiation_brightness": 0.0,
+                    "toot": 0.0,
+                    "vocal_control": 0.0,
+                    "transients_noise": 0.0,
+                    "beginner_robustness": 0.0,
+                    "expert_robustness": 0.0,
+                    "fabrication_simplicity": 0.0,
+                    "material_simplicity": 0.0
+                  },
+                  "weighted_abs_objective_delta": 7.33850889113651e-05,
+                  "f0_delta_hz": 0.0,
+                  "fundamental_q_delta": 0.0,
+                  "brightness_delta": 0.0
+                },
+                {
+                  "direction": 1,
+                  "percent": 5.0,
+                  "relative_step": 0.05,
+                  "factor": 1.05,
+                  "aggregate_delta": -7.619595178276484e-05,
+                  "objective_deltas": {
+                    "drone_f0": 0.0,
+                    "impedance_peaks": 0.0,
+                    "peak_quality_Q": 0.0,
+                    "harmonicity": 0.0,
+                    "backpressure": -0.0009016520960918317,
+                    "radiation_brightness": 0.0,
+                    "toot": 0.0,
+                    "vocal_control": 0.0,
+                    "transients_noise": 0.0,
+                    "beginner_robustness": 0.0,
+                    "expert_robustness": 0.0,
+                    "fabrication_simplicity": 0.0,
+                    "material_simplicity": 0.0
+                  },
+                  "weighted_abs_objective_delta": 7.61959517824083e-05,
+                  "f0_delta_hz": 0.0,
+                  "fundamental_q_delta": 0.0,
+                  "brightness_delta": 0.0
+                },
+                {
+                  "direction": -1,
+                  "percent": 10.0,
+                  "relative_step": 0.1,
+                  "factor": 0.9,
+                  "aggregate_delta": 0.00014389197128927833,
+                  "objective_deltas": {
+                    "drone_f0": 0.0,
+                    "impedance_peaks": 0.0,
+                    "peak_quality_Q": 0.0,
+                    "harmonicity": 0.0,
+                    "backpressure": 0.0017027216602720774,
+                    "radiation_brightness": 0.0,
+                    "toot": 0.0,
+                    "vocal_control": 0.0,
+                    "transients_noise": 0.0,
+                    "beginner_robustness": 0.0,
+                    "expert_robustness": 0.0,
+                    "fabrication_simplicity": 0.0,
+                    "material_simplicity": 0.0
+                  },
+                  "weighted_abs_objective_delta": 0.00014389197129059808,
+                  "f0_delta_hz": 0.0,
+                  "fundamental_q_delta": 0.0,
+                  "brightness_delta": 0.0
+                },
+                {
+                  "direction": 1,
+                  "percent": 10.0,
+                  "relative_step": 0.1,
+                  "factor": 1.1,
+                  "aggregate_delta": -0.00015513430068025968,
+                  "objective_deltas": {
+                    "drone_f0": 0.0,
+                    "impedance_peaks": 0.0,
+                    "peak_quality_Q": 0.0,
+                    "harmonicity": 0.0,
+                    "backpressure": -0.0018357558913768557,
+                    "radiation_brightness": 0.0,
+                    "toot": 0.0,
+                    "vocal_control": 0.0,
+                    "transients_noise": 0.0,
+                    "beginner_robustness": 0.0,
+                    "expert_robustness": 0.0,
+                    "fabrication_simplicity": 0.0,
+                    "material_simplicity": 0.0
+                  },
+                  "weighted_abs_objective_delta": 0.00015513430067973425,
+                  "f0_delta_hz": 0.0,
+                  "fundamental_q_delta": 0.0,
+                  "brightness_delta": 0.0
+                },
+                {
+                  "direction": -1,
+                  "percent": 5.0,
+                  "relative_step": 0.05,
+                  "factor": 0.95,
+                  "aggregate_delta": 6.790999925243568e-05,
+                  "objective_deltas": {
+                    "drone_f0": 0.0,
+                    "impedance_peaks": 0.0,
+                    "peak_quality_Q": 0.0,
+                    "harmonicity": 0.0,
+                    "backpressure": 0.000803601657821118,
+                    "radiation_brightness": 0.0,
+                    "toot": 0.0,
+                    "vocal_control": 0.0,
+                    "transients_noise": 0.0,
+                    "beginner_robustness": 0.0,
+                    "expert_robustness": 0.0,
+                    "fabrication_simplicity": 0.0,
+                    "material_simplicity": 0.0
+                  },
+                  "weighted_abs_objective_delta": 6.790999925248885e-05,
+                  "f0_delta_hz": 0.0,
+                  "fundamental_q_delta": 0.0,
+                  "brightness_delta": 0.0
+                },
+                {
+                  "direction": 1,
+                  "percent": 5.0,
+                  "relative_step": 0.05,
+                  "factor": 1.05,
+                  "aggregate_delta": -7.044511464115999e-05,
+                  "objective_deltas": {
+                    "drone_f0": 0.0,
+                    "impedance_peaks": 0.0,
+                    "peak_quality_Q": 0.0,
+                    "harmonicity": 0.0,
+                    "backpressure": -0.0008336005232523203,
+                    "radiation_brightness": 0.0,
+                    "toot": 0.0,
+                    "vocal_control": 0.0,
+                    "transients_noise": 0.0,
+                    "beginner_robustness": 0.0,
+                    "expert_robustness": 0.0,
+                    "fabrication_simplicity": 0.0,
+                    "material_simplicity": 0.0
+                  },
+                  "weighted_abs_objective_delta": 7.044511464104115e-05,
+                  "f0_delta_hz": 0.0,
+                  "fundamental_q_delta": 0.0,
+                  "brightness_delta": 0.0
+                },
+                {
+                  "direction": -1,
+                  "percent": 10.0,
+                  "relative_step": 0.1,
+                  "factor": 0.9,
+                  "aggregate_delta": 0.00013317871397688918,
+                  "objective_deltas": {
+                    "drone_f0": 0.0,
+                    "impedance_peaks": 0.0,
+                    "peak_quality_Q": 0.0,
+                    "harmonicity": 0.0,
+                    "backpressure": 0.001575948115389525,
+                    "radiation_brightness": 0.0,
+                    "toot": 0.0,
+                    "vocal_control": 0.0,
+                    "transients_noise": 0.0,
+                    "beginner_robustness": 0.0,
+                    "expert_robustness": 0.0,
+                    "fabrication_simplicity": 0.0,
+                    "material_simplicity": 0.0
+                  },
+                  "weighted_abs_objective_delta": 0.00013317871397657956,
+                  "f0_delta_hz": 0.0,
+                  "fundamental_q_delta": 0.0,
+                  "brightness_delta": 0.0
+                },
+                {
+                  "direction": 1,
+                  "percent": 10.0,
+                  "relative_step": 0.1,
+                  "factor": 1.1,
+                  "aggregate_delta": -0.00014331993314620206,
+                  "objective_deltas": {
+                    "drone_f0": 0.0,
+                    "impedance_peaks": 0.0,
+                    "peak_quality_Q": 0.0,
+                    "harmonicity": 0.0,
+                    "backpressure": -0.0016959525422352018,
+                    "radiation_brightness": 0.0,
+                    "toot": 0.0,
+                    "vocal_control": 0.0,
+                    "transients_noise": 0.0,
+                    "beginner_robustness": 0.0,
+                    "expert_robustness": 0.0,
+                    "fabrication_simplicity": 0.0,
+                    "material_simplicity": 0.0
+                  },
+                  "weighted_abs_objective_delta": 0.00014331993314663674,
+                  "f0_delta_hz": 0.0,
+                  "fundamental_q_delta": 0.0,
+                  "brightness_delta": 0.0
+                },
+                {
+                  "direction": -1,
+                  "percent": 5.0,
+                  "relative_step": 0.05,
+                  "factor": 0.95,
+                  "aggregate_delta": 4.697813691478814e-05,
+                  "objective_deltas": {
+                    "drone_f0": 0.0,
+                    "impedance_peaks": 0.0,
+                    "peak_quality_Q": 0.0,
+                    "harmonicity": 0.0,
+                    "backpressure": 0.000555907953478818,
+                    "radiation_brightness": 0.0,
+                    "toot": 0.0,
+                    "vocal_control": 0.0,
+                    "transients_noise": 0.0,
+                    "beginner_robustness": 0.0,
+                    "expert_robustness": 0.0,
+                    "fabrication_simplicity": 0.0,
+                    "material_simplicity": 0.0
+                  },
+                  "weighted_abs_objective_delta": 4.6978136913702926e-05,
+                  "f0_delta_hz": 0.0,
+                  "fundamental_q_delta": 0.0,
+                  "brightness_delta": 0.0
+                },
+                {
+                  "direction": 1,
+                  "percent": 5.0,
+                  "relative_step": 0.05,
+                  "factor": 1.05,
+                  "aggregate_delta": -4.909730131963386e-05,
+                  "objective_deltas": {
+                    "drone_f0": 0.0,
+                    "impedance_peaks": 0.0,
+                    "peak_quality_Q": 0.0,
+                    "harmonicity": 0.0,
+                    "backpressure": -0.0005809847322970629,
+                    "radiation_brightness": 0.0,
+                    "toot": 0.0,
+                    "vocal_control": 0.0,
+                    "transients_noise": 0.0,
+                    "beginner_robustness": 0.0,
+                    "expert_robustness": 0.0,
+                    "fabrication_simplicity": 0.0,
+                    "material_simplicity": 0.0
+                  },
+                  "weighted_abs_objective_delta": 4.909730132087855e-05,
+                  "f0_delta_hz": 0.0,
+                  "fundamental_q_delta": 0.0,
+                  "brightness_delta": 0.0
+                },
+                {
+                  "direction": -1,
+                  "percent": 10.0,
+                  "relative_step": 0.1,
+                  "factor": 0.9,
+                  "aggregate_delta": 9.180365603711493e-05,
+                  "objective_deltas": {
+                    "drone_f0": 0.0,
+                    "impedance_peaks": 0.0,
+                    "peak_quality_Q": 0.0,
+                    "harmonicity": 0.0,
+                    "backpressure": 0.0010863432631018632,
+                    "radiation_brightness": 0.0,
+                    "toot": 0.0,
+                    "vocal_control": 0.0,
+                    "transients_noise": 0.0,
+                    "beginner_robustness": 0.0,
+                    "expert_robustness": 0.0,
+                    "fabrication_simplicity": 0.0,
+                    "material_simplicity": 0.0
+                  },
+                  "weighted_abs_objective_delta": 9.180365603677716e-05,
+                  "f0_delta_hz": 0.0,
+                  "fundamental_q_delta": 0.0,
+                  "brightness_delta": 0.0
+                },
+                {
+                  "direction": 1,
+                  "percent": 10.0,
+                  "relative_step": 0.1,
+                  "factor": 1.1,
+                  "aggregate_delta": -0.00010027930801115303,
+                  "objective_deltas": {
+                    "drone_f0": 0.0,
+                    "impedance_peaks": 0.0,
+                    "peak_quality_Q": 0.0,
+                    "harmonicity": 0.0,
+                    "backpressure": -0.0011866384781434869,
+                    "radiation_brightness": 0.0,
+                    "toot": 0.0,
+                    "vocal_control": 0.0,
+                    "transients_noise": 0.0,
+                    "beginner_robustness": 0.0,
+                    "expert_robustness": 0.0,
+                    "fabrication_simplicity": 0.0,
+                    "material_simplicity": 0.0
+                  },
+                  "weighted_abs_objective_delta": 0.00010027930801212565,
+                  "f0_delta_hz": 0.0,
+                  "fundamental_q_delta": 0.0,
+                  "brightness_delta": 0.0
+                }
+              ],
+              "aggregate_sensitivity": 0.0012796925573195967,
+              "weighted_objective_sensitivity": 0.0012796925573218508,
+              "best_direction": -1,
+              "best_relative_step": 0.1,
+              "best_aggregate_delta": 0.00014389197128927833,
+              "dominant_objective_weight": 0.6,
+              "dominant_objectives": [
+                {
+                  "objective": "backpressure",
+                  "mean_abs_delta": 0.0011356247610203873,
+                  "weight": 0.6
+                },
+                {
+                  "objective": "drone_f0",
+                  "mean_abs_delta": 0.0,
+                  "weight": 1.0
+                },
+                {
+                  "objective": "impedance_peaks",
+                  "mean_abs_delta": 0.0,
+                  "weight": 0.8
+                }
+              ]
+            },
+            "porosity_leak": {
+              "trials": [
+                {
+                  "direction": -1,
+                  "percent": 5.0,
+                  "relative_step": 0.05,
+                  "factor": 0.95,
+                  "aggregate_delta": 8.712870069871315e-07,
+                  "objective_deltas": {
+                    "drone_f0": 0.0,
+                    "impedance_peaks": 0.0,
+                    "peak_quality_Q": 0.0,
+                    "harmonicity": 0.0,
+                    "backpressure": 1.031022957986849e-05,
+                    "radiation_brightness": 0.0,
+                    "toot": 0.0,
+                    "vocal_control": 0.0,
+                    "transients_noise": 0.0,
+                    "beginner_robustness": 0.0,
+                    "expert_robustness": 0.0,
+                    "fabrication_simplicity": 0.0,
+                    "material_simplicity": 0.0
+                  },
+                  "weighted_abs_objective_delta": 8.712870067494498e-07,
+                  "f0_delta_hz": 0.0,
+                  "fundamental_q_delta": 0.0,
+                  "brightness_delta": 0.0
+                },
+                {
+                  "direction": 1,
+                  "percent": 5.0,
+                  "relative_step": 0.05,
+                  "factor": 1.05,
+                  "aggregate_delta": -8.716685488963094e-07,
+                  "objective_deltas": {
+                    "drone_f0": 0.0,
+                    "impedance_peaks": 0.0,
+                    "peak_quality_Q": 0.0,
+                    "harmonicity": 0.0,
+                    "backpressure": -1.0314744492423422e-05,
+                    "radiation_brightness": 0.0,
+                    "toot": 0.0,
+                    "vocal_control": 0.0,
+                    "transients_noise": 0.0,
+                    "beginner_robustness": 0.0,
+                    "expert_robustness": 0.0,
+                    "fabrication_simplicity": 0.0,
+                    "material_simplicity": 0.0
+                  },
+                  "weighted_abs_objective_delta": 8.716685486555004e-07,
+                  "f0_delta_hz": 0.0,
+                  "fundamental_q_delta": 0.0,
+                  "brightness_delta": 0.0
+                },
+                {
+                  "direction": -1,
+                  "percent": 10.0,
+                  "relative_step": 0.1,
+                  "factor": 0.9,
+                  "aggregate_delta": 1.7421923637073178e-06,
+                  "objective_deltas": {
+                    "drone_f0": 0.0,
+                    "impedance_peaks": 0.0,
+                    "peak_quality_Q": 0.0,
+                    "harmonicity": 0.0,
+                    "backpressure": 2.0615942972090906e-05,
+                    "radiation_brightness": 0.0,
+                    "toot": 0.0,
+                    "vocal_control": 0.0,
+                    "transients_noise": 0.0,
+                    "beginner_robustness": 0.0,
+                    "expert_robustness": 0.0,
+                    "fabrication_simplicity": 0.0,
+                    "material_simplicity": 0.0
+                  },
+                  "weighted_abs_objective_delta": 1.7421923638386678e-06,
+                  "f0_delta_hz": 0.0,
+                  "fundamental_q_delta": 0.0,
+                  "brightness_delta": 0.0
+                },
+                {
+                  "direction": 1,
+                  "percent": 10.0,
+                  "relative_step": 0.1,
+                  "factor": 1.1,
+                  "aggregate_delta": -1.7437185331203864e-06,
+                  "objective_deltas": {
+                    "drone_f0": 0.0,
+                    "impedance_peaks": 0.0,
+                    "peak_quality_Q": 0.0,
+                    "harmonicity": 0.0,
+                    "backpressure": -2.0634002627306636e-05,
+                    "radiation_brightness": 0.0,
+                    "toot": 0.0,
+                    "vocal_control": 0.0,
+                    "transients_noise": 0.0,
+                    "beginner_robustness": 0.0,
+                    "expert_robustness": 0.0,
+                    "fabrication_simplicity": 0.0,
+                    "material_simplicity": 0.0
+                  },
+                  "weighted_abs_objective_delta": 1.7437185318850676e-06,
+                  "f0_delta_hz": 0.0,
+                  "fundamental_q_delta": 0.0,
+                  "brightness_delta": 0.0
+                },
+                {
+                  "direction": -1,
+                  "percent": 5.0,
+                  "relative_step": 0.05,
+                  "factor": 0.95,
+                  "aggregate_delta": 8.059856302367052e-07,
+                  "objective_deltas": {
+                    "drone_f0": 0.0,
+                    "impedance_peaks": 0.0,
+                    "peak_quality_Q": 0.0,
+                    "harmonicity": 0.0,
+                    "backpressure": 9.537496611811136e-06,
+                    "radiation_brightness": 0.0,
+                    "toot": 0.0,
+                    "vocal_control": 0.0,
+                    "transients_noise": 0.0,
+                    "beginner_robustness": 0.0,
+                    "expert_robustness": 0.0,
+                    "fabrication_simplicity": 0.0,
+                    "material_simplicity": 0.0
+                  },
+                  "weighted_abs_objective_delta": 8.059856291671382e-07,
+                  "f0_delta_hz": 0.0,
+                  "fundamental_q_delta": 0.0,
+                  "brightness_delta": 0.0
+                },
+                {
+                  "direction": 1,
+                  "percent": 5.0,
+                  "relative_step": 0.05,
+                  "factor": 1.05,
+                  "aggregate_delta": -8.063297212146381e-07,
+                  "objective_deltas": {
+                    "drone_f0": 0.0,
+                    "impedance_peaks": 0.0,
+                    "peak_quality_Q": 0.0,
+                    "harmonicity": 0.0,
+                    "backpressure": -9.54156837118525e-06,
+                    "radiation_brightness": 0.0,
+                    "toot": 0.0,
+                    "vocal_control": 0.0,
+                    "transients_noise": 0.0,
+                    "beginner_robustness": 0.0,
+                    "expert_robustness": 0.0,
+                    "fabrication_simplicity": 0.0,
+                    "material_simplicity": 0.0
+                  },
+                  "weighted_abs_objective_delta": 8.063297215086125e-07,
+                  "f0_delta_hz": 0.0,
+                  "fundamental_q_delta": 0.0,
+                  "brightness_delta": 0.0
+                },
+                {
+                  "direction": -1,
+                  "percent": 10.0,
+                  "relative_step": 0.1,
+                  "factor": 0.9,
+                  "aggregate_delta": 1.611626998965221e-06,
+                  "objective_deltas": {
+                    "drone_f0": 0.0,
+                    "impedance_peaks": 0.0,
+                    "peak_quality_Q": 0.0,
+                    "harmonicity": 0.0,
+                    "backpressure": 1.907091948405437e-05,
+                    "radiation_brightness": 0.0,
+                    "toot": 0.0,
+                    "vocal_control": 0.0,
+                    "transients_noise": 0.0,
+                    "beginner_robustness": 0.0,
+                    "expert_robustness": 0.0,
+                    "fabrication_simplicity": 0.0,
+                    "material_simplicity": 0.0
+                  },
+                  "weighted_abs_objective_delta": 1.6116269986524818e-06,
+                  "f0_delta_hz": 0.0,
+                  "fundamental_q_delta": 0.0,
+                  "brightness_delta": 0.0
+                },
+                {
+                  "direction": 1,
+                  "percent": 10.0,
+                  "relative_step": 0.1,
+                  "factor": 1.1,
+                  "aggregate_delta": -1.6130033664296661e-06,
+                  "objective_deltas": {
+                    "drone_f0": 0.0,
+                    "impedance_peaks": 0.0,
+                    "peak_quality_Q": 0.0,
+                    "harmonicity": 0.0,
+                    "backpressure": -1.9087206513890287e-05,
+                    "radiation_brightness": 0.0,
+                    "toot": 0.0,
+                    "vocal_control": 0.0,
+                    "transients_noise": 0.0,
+                    "beginner_robustness": 0.0,
+                    "expert_robustness": 0.0,
+                    "fabrication_simplicity": 0.0,
+                    "material_simplicity": 0.0
+                  },
+                  "weighted_abs_objective_delta": 1.61300336737101e-06,
+                  "f0_delta_hz": 0.0,
+                  "fundamental_q_delta": 0.0,
+                  "brightness_delta": 0.0
+                },
+                {
+                  "direction": -1,
+                  "percent": 5.0,
+                  "relative_step": 0.05,
+                  "factor": 0.95,
+                  "aggregate_delta": 5.5958487799046e-07,
+                  "objective_deltas": {
+                    "drone_f0": 0.0,
+                    "impedance_peaks": 0.0,
+                    "peak_quality_Q": 0.0,
+                    "harmonicity": 0.0,
+                    "backpressure": 6.621754376157085e-06,
+                    "radiation_brightness": 0.0,
+                    "toot": 0.0,
+                    "vocal_control": 0.0,
+                    "transients_noise": 0.0,
+                    "beginner_robustness": 0.0,
+                    "expert_robustness": 0.0,
+                    "fabrication_simplicity": 0.0,
+                    "material_simplicity": 0.0
+                  },
+                  "weighted_abs_objective_delta": 5.595848768583452e-07,
+                  "f0_delta_hz": 0.0,
+                  "fundamental_q_delta": 0.0,
+                  "brightness_delta": 0.0
+                },
+                {
+                  "direction": 1,
+                  "percent": 5.0,
+                  "relative_step": 0.05,
+                  "factor": 1.05,
+                  "aggregate_delta": -5.598725305588914e-07,
+                  "objective_deltas": {
+                    "drone_f0": 0.0,
+                    "impedance_peaks": 0.0,
+                    "peak_quality_Q": 0.0,
+                    "harmonicity": 0.0,
+                    "backpressure": -6.625158282203003e-06,
+                    "radiation_brightness": 0.0,
+                    "toot": 0.0,
+                    "vocal_control": 0.0,
+                    "transients_noise": 0.0,
+                    "beginner_robustness": 0.0,
+                    "expert_robustness": 0.0,
+                    "fabrication_simplicity": 0.0,
+                    "material_simplicity": 0.0
+                  },
+                  "weighted_abs_objective_delta": 5.598725308903945e-07,
+                  "f0_delta_hz": 0.0,
+                  "fundamental_q_delta": 0.0,
+                  "brightness_delta": 0.0
+                },
+                {
+                  "direction": -1,
+                  "percent": 10.0,
+                  "relative_step": 0.1,
+                  "factor": 0.9,
+                  "aggregate_delta": 1.1188820465690696e-06,
+                  "objective_deltas": {
+                    "drone_f0": 0.0,
+                    "impedance_peaks": 0.0,
+                    "peak_quality_Q": 0.0,
+                    "harmonicity": 0.0,
+                    "backpressure": 1.3240104215550552e-05,
+                    "radiation_brightness": 0.0,
+                    "toot": 0.0,
+                    "vocal_control": 0.0,
+                    "transients_noise": 0.0,
+                    "beginner_robustness": 0.0,
+                    "expert_robustness": 0.0,
+                    "fabrication_simplicity": 0.0,
+                    "material_simplicity": 0.0
+                  },
+                  "weighted_abs_objective_delta": 1.1188820463845537e-06,
+                  "f0_delta_hz": 0.0,
+                  "fundamental_q_delta": 0.0,
+                  "brightness_delta": 0.0
+                },
+                {
+                  "direction": 1,
+                  "percent": 10.0,
+                  "relative_step": 0.1,
+                  "factor": 1.1,
+                  "aggregate_delta": -1.120032660395509e-06,
+                  "objective_deltas": {
+                    "drone_f0": 0.0,
+                    "impedance_peaks": 0.0,
+                    "peak_quality_Q": 0.0,
+                    "harmonicity": 0.0,
+                    "backpressure": -1.3253719829298127e-05,
+                    "radiation_brightness": 0.0,
+                    "toot": 0.0,
+                    "vocal_control": 0.0,
+                    "transients_noise": 0.0,
+                    "beginner_robustness": 0.0,
+                    "expert_robustness": 0.0,
+                    "fabrication_simplicity": 0.0,
+                    "material_simplicity": 0.0
+                  },
+                  "weighted_abs_objective_delta": 1.1200326616308274e-06,
+                  "f0_delta_hz": 0.0,
+                  "fundamental_q_delta": 0.0,
+                  "brightness_delta": 0.0
+                }
+              ],
+              "aggregate_sensitivity": 1.4915760500796201e-05,
+              "weighted_objective_sensitivity": 1.491576049785124e-05,
+              "best_direction": -1,
+              "best_relative_step": 0.1,
+              "best_aggregate_delta": 1.7421923637073178e-06,
+              "dominant_objective_weight": 0.6,
+              "dominant_objectives": [
+                {
+                  "objective": "backpressure",
+                  "mean_abs_delta": 1.3237737279653272e-05,
+                  "weight": 0.6
+                },
+                {
+                  "objective": "drone_f0",
+                  "mean_abs_delta": 0.0,
+                  "weight": 1.0
+                },
+                {
+                  "objective": "impedance_peaks",
+                  "mean_abs_delta": 0.0,
+                  "weight": 0.8
+                }
+              ]
+            },
+            "wall_loss": {
+              "trials": [
+                {
+                  "direction": -1,
+                  "percent": 5.0,
+                  "relative_step": 0.05,
+                  "factor": 0.95,
+                  "aggregate_delta": 1.306787398291931e-06,
+                  "objective_deltas": {
+                    "drone_f0": 0.0,
+                    "impedance_peaks": 0.0,
+                    "peak_quality_Q": 0.0,
+                    "harmonicity": 0.0,
+                    "backpressure": 1.546365087889967e-05,
+                    "radiation_brightness": 0.0,
+                    "toot": 0.0,
+                    "vocal_control": 0.0,
+                    "transients_noise": 0.0,
+                    "beginner_robustness": 0.0,
+                    "expert_robustness": 0.0,
+                    "fabrication_simplicity": 0.0,
+                    "material_simplicity": 0.0
+                  },
+                  "weighted_abs_objective_delta": 1.3067873982168734e-06,
+                  "f0_delta_hz": 0.0,
+                  "fundamental_q_delta": 0.0,
+                  "brightness_delta": 0.0
+                },
+                {
+                  "direction": 1,
+                  "percent": 5.0,
+                  "relative_step": 0.05,
+                  "factor": 1.05,
+                  "aggregate_delta": -1.307645868919849e-06,
+                  "objective_deltas": {
+                    "drone_f0": 0.0,
+                    "impedance_peaks": 0.0,
+                    "peak_quality_Q": 0.0,
+                    "harmonicity": 0.0,
+                    "backpressure": -1.547380943300869e-05,
+                    "radiation_brightness": 0.0,
+                    "toot": 0.0,
+                    "vocal_control": 0.0,
+                    "transients_noise": 0.0,
+                    "beginner_robustness": 0.0,
+                    "expert_robustness": 0.0,
+                    "fabrication_simplicity": 0.0,
+                    "material_simplicity": 0.0
+                  },
+                  "weighted_abs_objective_delta": 1.3076458675781991e-06,
+                  "f0_delta_hz": 0.0,
+                  "fundamental_q_delta": 0.0,
+                  "brightness_delta": 0.0
+                },
+                {
+                  "direction": -1,
+                  "percent": 10.0,
+                  "relative_step": 0.1,
+                  "factor": 0.9,
+                  "aggregate_delta": 2.6127159635791486e-06,
+                  "objective_deltas": {
+                    "drone_f0": 0.0,
+                    "impedance_peaks": 0.0,
+                    "peak_quality_Q": 0.0,
+                    "harmonicity": 0.0,
+                    "backpressure": 3.0917138915231845e-05,
+                    "radiation_brightness": 0.0,
+                    "toot": 0.0,
+                    "vocal_control": 0.0,
+                    "transients_noise": 0.0,
+                    "beginner_robustness": 0.0,
+                    "expert_robustness": 0.0,
+                    "fabrication_simplicity": 0.0,
+                    "material_simplicity": 0.0
+                  },
+                  "weighted_abs_objective_delta": 2.6127159646674796e-06,
+                  "f0_delta_hz": 0.0,
+                  "fundamental_q_delta": 0.0,
+                  "brightness_delta": 0.0
+                },
+                {
+                  "direction": 1,
+                  "percent": 10.0,
+                  "relative_step": 0.1,
+                  "factor": 1.1,
+                  "aggregate_delta": -2.616149842538107e-06,
+                  "objective_deltas": {
+                    "drone_f0": 0.0,
+                    "impedance_peaks": 0.0,
+                    "peak_quality_Q": 0.0,
+                    "harmonicity": 0.0,
+                    "backpressure": -3.0957773125561694e-05,
+                    "radiation_brightness": 0.0,
+                    "toot": 0.0,
+                    "vocal_control": 0.0,
+                    "transients_noise": 0.0,
+                    "beginner_robustness": 0.0,
+                    "expert_robustness": 0.0,
+                    "fabrication_simplicity": 0.0,
+                    "material_simplicity": 0.0
+                  },
+                  "weighted_abs_objective_delta": 2.6161498415967628e-06,
+                  "f0_delta_hz": 0.0,
+                  "fundamental_q_delta": 0.0,
+                  "brightness_delta": 0.0
+                },
+                {
+                  "direction": -1,
+                  "percent": 5.0,
+                  "relative_step": 0.05,
+                  "factor": 0.95,
+                  "aggregate_delta": 1.2088493566153602e-06,
+                  "objective_deltas": {
+                    "drone_f0": 0.0,
+                    "impedance_peaks": 0.0,
+                    "peak_quality_Q": 0.0,
+                    "harmonicity": 0.0,
+                    "backpressure": 1.4304717388502475e-05,
+                    "radiation_brightness": 0.0,
+                    "toot": 0.0,
+                    "vocal_control": 0.0,
+                    "transients_noise": 0.0,
+                    "beginner_robustness": 0.0,
+                    "expert_robustness": 0.0,
+                    "fabrication_simplicity": 0.0,
+                    "material_simplicity": 0.0
+                  },
+                  "weighted_abs_objective_delta": 1.2088493567748567e-06,
+                  "f0_delta_hz": 0.0,
+                  "fundamental_q_delta": 0.0,
+                  "brightness_delta": 0.0
+                },
+                {
+                  "direction": 1,
+                  "percent": 5.0,
+                  "relative_step": 0.05,
+                  "factor": 1.05,
+                  "aggregate_delta": -1.2096235639802444e-06,
+                  "objective_deltas": {
+                    "drone_f0": 0.0,
+                    "impedance_peaks": 0.0,
+                    "peak_quality_Q": 0.0,
+                    "harmonicity": 0.0,
+                    "backpressure": -1.4313878849203654e-05,
+                    "radiation_brightness": 0.0,
+                    "toot": 0.0,
+                    "vocal_control": 0.0,
+                    "transients_noise": 0.0,
+                    "beginner_robustness": 0.0,
+                    "expert_robustness": 0.0,
+                    "fabrication_simplicity": 0.0,
+                    "material_simplicity": 0.0
+                  },
+                  "weighted_abs_objective_delta": 1.2096235647214355e-06,
+                  "f0_delta_hz": 0.0,
+                  "fundamental_q_delta": 0.0,
+                  "brightness_delta": 0.0
+                },
+                {
+                  "direction": -1,
+                  "percent": 10.0,
+                  "relative_step": 0.1,
+                  "factor": 0.9,
+                  "aggregate_delta": 2.4169239409843613e-06,
+                  "objective_deltas": {
+                    "drone_f0": 0.0,
+                    "impedance_peaks": 0.0,
+                    "peak_quality_Q": 0.0,
+                    "harmonicity": 0.0,
+                    "backpressure": 2.8600266632761162e-05,
+                    "radiation_brightness": 0.0,
+                    "toot": 0.0,
+                    "vocal_control": 0.0,
+                    "transients_noise": 0.0,
+                    "beginner_robustness": 0.0,
+                    "expert_robustness": 0.0,
+                    "fabrication_simplicity": 0.0,
+                    "material_simplicity": 0.0
+                  },
+                  "weighted_abs_objective_delta": 2.4169239407967176e-06,
+                  "f0_delta_hz": 0.0,
+                  "fundamental_q_delta": 0.0,
+                  "brightness_delta": 0.0
+                },
+                {
+                  "direction": 1,
+                  "percent": 10.0,
+                  "relative_step": 0.1,
+                  "factor": 1.1,
+                  "aggregate_delta": -2.420020770443898e-06,
+                  "objective_deltas": {
+                    "drone_f0": 0.0,
+                    "impedance_peaks": 0.0,
+                    "peak_quality_Q": 0.0,
+                    "harmonicity": 0.0,
+                    "backpressure": -2.8636912454804708e-05,
+                    "radiation_brightness": 0.0,
+                    "toot": 0.0,
+                    "vocal_control": 0.0,
+                    "transients_noise": 0.0,
+                    "beginner_robustness": 0.0,
+                    "expert_robustness": 0.0,
+                    "fabrication_simplicity": 0.0,
+                    "material_simplicity": 0.0
+                  },
+                  "weighted_abs_objective_delta": 2.4200207708285667e-06,
+                  "f0_delta_hz": 0.0,
+                  "fundamental_q_delta": 0.0,
+                  "brightness_delta": 0.0
+                },
+                {
+                  "direction": -1,
+                  "percent": 5.0,
+                  "relative_step": 0.05,
+                  "factor": 0.95,
+                  "aggregate_delta": 8.392694290648706e-07,
+                  "objective_deltas": {
+                    "drone_f0": 0.0,
+                    "impedance_peaks": 0.0,
+                    "peak_quality_Q": 0.0,
+                    "harmonicity": 0.0,
+                    "backpressure": 9.93135491145214e-06,
+                    "radiation_brightness": 0.0,
+                    "toot": 0.0,
+                    "vocal_control": 0.0,
+                    "transients_noise": 0.0,
+                    "beginner_robustness": 0.0,
+                    "expert_robustness": 0.0,
+                    "fabrication_simplicity": 0.0,
+                    "material_simplicity": 0.0
+                  },
+                  "weighted_abs_objective_delta": 8.392694291368004e-07,
+                  "f0_delta_hz": 0.0,
+                  "fundamental_q_delta": 0.0,
+                  "brightness_delta": 0.0
+                },
+                {
+                  "direction": 1,
+                  "percent": 5.0,
+                  "relative_step": 0.05,
+                  "factor": 1.05,
+                  "aggregate_delta": -8.399166482320197e-07,
+                  "objective_deltas": {
+                    "drone_f0": 0.0,
+                    "impedance_peaks": 0.0,
+                    "peak_quality_Q": 0.0,
+                    "harmonicity": 0.0,
+                    "backpressure": -9.93901368007144e-06,
+                    "radiation_brightness": 0.0,
+                    "toot": 0.0,
+                    "vocal_control": 0.0,
+                    "transients_noise": 0.0,
+                    "beginner_robustness": 0.0,
+                    "expert_robustness": 0.0,
+                    "fabrication_simplicity": 0.0,
+                    "material_simplicity": 0.0
+                  },
+                  "weighted_abs_objective_delta": 8.399166490201216e-07,
+                  "f0_delta_hz": 0.0,
+                  "fundamental_q_delta": 0.0,
+                  "brightness_delta": 0.0
+                },
+                {
+                  "direction": -1,
+                  "percent": 10.0,
+                  "relative_step": 0.1,
+                  "factor": 0.9,
+                  "aggregate_delta": 1.6778914559978375e-06,
+                  "objective_deltas": {
+                    "drone_f0": 0.0,
+                    "impedance_peaks": 0.0,
+                    "peak_quality_Q": 0.0,
+                    "harmonicity": 0.0,
+                    "backpressure": 1.9855048888572924e-05,
+                    "radiation_brightness": 0.0,
+                    "toot": 0.0,
+                    "vocal_control": 0.0,
+                    "transients_noise": 0.0,
+                    "beginner_robustness": 0.0,
+                    "expert_robustness": 0.0,
+                    "fabrication_simplicity": 0.0,
+                    "material_simplicity": 0.0
+                  },
+                  "weighted_abs_objective_delta": 1.6778914553723596e-06,
+                  "f0_delta_hz": 0.0,
+                  "fundamental_q_delta": 0.0,
+                  "brightness_delta": 0.0
+                },
+                {
+                  "direction": 1,
+                  "percent": 10.0,
+                  "relative_step": 0.1,
+                  "factor": 1.1,
+                  "aggregate_delta": -1.6804803379955047e-06,
+                  "objective_deltas": {
+                    "drone_f0": 0.0,
+                    "impedance_peaks": 0.0,
+                    "peak_quality_Q": 0.0,
+                    "harmonicity": 0.0,
+                    "backpressure": -1.9885683997578063e-05,
+                    "radiation_brightness": 0.0,
+                    "toot": 0.0,
+                    "vocal_control": 0.0,
+                    "transients_noise": 0.0,
+                    "beginner_robustness": 0.0,
+                    "expert_robustness": 0.0,
+                    "fabrication_simplicity": 0.0,
+                    "material_simplicity": 0.0
+                  },
+                  "weighted_abs_objective_delta": 1.6804803378234981e-06,
+                  "f0_delta_hz": 0.0,
+                  "fundamental_q_delta": 0.0,
+                  "brightness_delta": 0.0
+                }
+              ],
+              "aggregate_sensitivity": 2.2373639034789505e-05,
+              "weighted_objective_sensitivity": 2.2373639034984963e-05,
+              "best_direction": -1,
+              "best_relative_step": 0.1,
+              "best_aggregate_delta": 2.6127159635791486e-06,
+              "dominant_objective_weight": 0.6,
+              "dominant_objectives": [
+                {
+                  "objective": "backpressure",
+                  "mean_abs_delta": 1.9856604096304038e-05,
+                  "weight": 0.6
+                },
+                {
+                  "objective": "drone_f0",
+                  "mean_abs_delta": 0.0,
+                  "weight": 1.0
+                },
+                {
+                  "objective": "impedance_peaks",
+                  "mean_abs_delta": 0.0,
+                  "weight": 0.8
+                }
+              ]
+            }
+          },
+          "occurrences": 3
+        }
+      }
+    ],
+    "top_material_ids": [
+      "plywood_varnished"
+    ]
+  },
+  "proposals": {
+    "recommendations": [
+      {
+        "material_id": "plywood_varnished",
+        "parameter": "beta",
+        "priority_score": 0.00016795964814849288,
+        "current": {
+          "nominal": 3.2,
+          "min": 2.6,
+          "max": 4.0,
+          "status": "inferred",
+          "confidence": "low"
+        },
+        "proposed": {
+          "nominal": 3.04,
+          "min": 2.4699999999999998,
+          "max": 3.8,
+          "status": "inferred",
+          "confidence": "low"
+        },
+        "relative_change": -0.05,
+        "direction": "decrease",
+        "basis": {
+          "weighted_objective_sensitivity": 0.0012796925573218508,
+          "best_aggregate_delta": 0.00014389197128927833,
+          "dominant_objectives": [
+            {
+              "objective": "backpressure",
+              "mean_abs_delta": 0.0011356247610203873,
+              "weight": 0.6
+            },
+            {
+              "objective": "drone_f0",
+              "mean_abs_delta": 0.0,
+              "weight": 1.0
+            },
+            {
+              "objective": "impedance_peaks",
+              "mean_abs_delta": 0.0,
+              "weight": 0.8
+            }
+          ]
+        },
+        "provenance": "inferred_targeted_calibration",
+        "note": "Suggested bounded update for experiment prioritization; not a sourced final coefficient."
+      },
+      {
+        "material_id": "plywood_varnished",
+        "parameter": "porosity_leak",
+        "priority_score": 9.695244323603305e-06,
+        "current": {
+          "nominal": 0.012,
+          "min": 0.004,
+          "max": 0.03,
+          "status": "inferred",
+          "confidence": "medium"
+        },
+        "proposed": {
+          "nominal": 0.0114,
+          "min": 0.0038,
+          "max": 0.028499999999999998,
+          "status": "inferred",
+          "confidence": "medium"
+        },
+        "relative_change": -0.05,
+        "direction": "decrease",
+        "basis": {
+          "weighted_objective_sensitivity": 1.491576049785124e-05,
+          "best_aggregate_delta": 1.7421923637073178e-06,
+          "dominant_objectives": [
+            {
+              "objective": "backpressure",
+              "mean_abs_delta": 1.3237737279653272e-05,
+              "weight": 0.6
+            },
+            {
+              "objective": "drone_f0",
+              "mean_abs_delta": 0.0,
+              "weight": 1.0
+            },
+            {
+              "objective": "impedance_peaks",
+              "mean_abs_delta": 0.0,
+              "weight": 0.8
+            }
+          ]
+        },
+        "provenance": "inferred_targeted_calibration",
+        "note": "Suggested bounded update for experiment prioritization; not a sourced final coefficient."
+      },
+      {
+        "material_id": "plywood_varnished",
+        "parameter": "wall_loss",
+        "priority_score": 8.949455613993987e-06,
+        "current": {
+          "nominal": 0.018,
+          "min": 0.008,
+          "max": 0.032,
+          "status": "inferred",
+          "confidence": "medium"
+        },
+        "proposed": {
+          "nominal": 0.017099999999999997,
+          "min": 0.0076,
+          "max": 0.0304,
+          "status": "inferred",
+          "confidence": "medium"
+        },
+        "relative_change": -0.05,
+        "direction": "decrease",
+        "basis": {
+          "weighted_objective_sensitivity": 2.2373639034984963e-05,
+          "best_aggregate_delta": 2.6127159635791486e-06,
+          "dominant_objectives": [
+            {
+              "objective": "backpressure",
+              "mean_abs_delta": 1.9856604096304038e-05,
+              "weight": 0.6
+            },
+            {
+              "objective": "drone_f0",
+              "mean_abs_delta": 0.0,
+              "weight": 1.0
+            },
+            {
+              "objective": "impedance_peaks",
+              "mean_abs_delta": 0.0,
+              "weight": 0.8
+            }
+          ]
+        },
+        "provenance": "inferred_targeted_calibration",
+        "note": "Suggested bounded update for experiment prioritization; not a sourced final coefficient."
+      }
+    ],
+    "patch": {
+      "materials": {
+        "plywood_varnished": {
+          "beta_nominal": 3.04,
+          "beta_min": 2.4699999999999998,
+          "beta_max": 3.8,
+          "porosity_leak_nominal": 0.0114,
+          "porosity_leak_min": 0.0038,
+          "porosity_leak_max": 0.028499999999999998,
+          "wall_loss_nominal": 0.017099999999999997,
+          "wall_loss_min": 0.0076,
+          "wall_loss_max": 0.0304
+        }
+      }
+    },
+    "material_ids_with_patch": [
+      "plywood_varnished"
+    ]
+  },
+  "directed_patch": {
+    "materials": {
+      "plywood_varnished": {
+        "beta_nominal": 3.04,
+        "beta_min": 2.4699999999999998,
+        "beta_max": 3.8,
+        "porosity_leak_nominal": 0.0114,
+        "porosity_leak_min": 0.0038,
+        "porosity_leak_max": 0.028499999999999998,
+        "wall_loss_nominal": 0.017099999999999997,
+        "wall_loss_min": 0.0076,
+        "wall_loss_max": 0.0304
+      }
+    }
+  },
+  "deltas": {
+    "mean_delta": 0.00015249850881401036,
+    "min_delta": 2.8413153845718853e-05,
+    "max_delta": 0.0005281603615152619,
+    "improved_count": 6,
+    "worsened_count": 0,
+    "all_candidate_deltas": [
+      6.975199957715006e-05,
+      7.537503297427861e-05,
+      0.0005281603615152619,
+      0.00016504294128694141,
+      4.824756368471128e-05,
+      2.8413153845718853e-05
+    ]
+  },
+  "decision": "accept_local_only"
+}

@@ -1,0 +1,194 @@
+config_path: /mnt/data/CONFIG_TEMPLATE_V1.yaml
+baseline:
+  validation:
+    all_passed: true
+    case_results:
+      A:
+        passed: true
+        failed_checks: []
+        metrics:
+          f0_ref_hz: 61.179487179487175
+          f0_longer_hz: 52.64957264957265
+          f0_shorter_hz: 70.92796092796092
+          analytic_relative_errors_first3:
+          - 0.0011512297226584783
+          - 0.0105205452144228
+          - 0.008415439435847641
+          model_confidence_ref: 1.0
+      B:
+        passed: true
+        failed_checks: []
+        metrics:
+          toot_ratio: 2.3391579198473282
+          odd_only_cone: 0.0748052150593041
+          odd_only_cylinder: 1.0
+          harmonicity_error: 0.054293871000863865
+          peak_count: 30
+      C:
+        passed: true
+        failed_checks: []
+        metrics:
+          brightness_ref: 1.6834679134330634e-06
+          brightness_bell: 1.0150565855170833e-05
+          hf_admittance_ref: 1.6834679134330634e-06
+          hf_admittance_bell: 1.0150565855170833e-05
+          confidence_ref: 1.0
+          confidence_bell: 0.34063880520273676
+      D:
+        passed: true
+        failed_checks: []
+        metrics:
+          profile_corr_50_1000: 0.17572633398787776
+          profile_l1_50_1000: 0.5760350474301784
+          harmonicity_stepped: 0.04273477691717736
+          harmonicity_smoothed: 0.044705709712373407
+          harmonicity_delta: 0.0019709327951960495
+      E:
+        passed: true
+        failed_checks: []
+        metrics:
+          fundamental_q_dissipative: 13.84128256513026
+          fundamental_q_epoxy: 17.301603206412835
+          fundamental_mag_dissipative: 10585523.840933528
+          fundamental_mag_epoxy: 15515974.10398137
+          peak_count_dissipative: 30
+          peak_count_epoxy: 30
+  mini_run:
+    best_design_id: candidate_2153ddd2
+    best_aggregate_score: -10.86041587877469
+    top_scores:
+    - -10.86041587877469
+    - -11.027625642932428
+    - -11.369309117701654
+    - -12.728329227569596
+    - -14.45763176550747
+    runtime_actual_seconds: 4.30985281699941
+    warnings: []
+    exports: {}
+patched:
+  validation:
+    all_passed: true
+    case_results:
+      A:
+        passed: true
+        failed_checks: []
+        metrics:
+          f0_ref_hz: 61.179487179487175
+          f0_longer_hz: 52.64957264957265
+          f0_shorter_hz: 70.92796092796092
+          analytic_relative_errors_first3:
+          - 0.0011512297226584783
+          - 0.0105205452144228
+          - 0.008415439435847641
+          model_confidence_ref: 1.0
+      B:
+        passed: true
+        failed_checks: []
+        metrics:
+          toot_ratio: 2.3391579198473282
+          odd_only_cone: 0.0748052150593041
+          odd_only_cylinder: 1.0
+          harmonicity_error: 0.054293871000863865
+          peak_count: 30
+      C:
+        passed: true
+        failed_checks: []
+        metrics:
+          brightness_ref: 1.6834679134330634e-06
+          brightness_bell: 1.0150565855170833e-05
+          hf_admittance_ref: 1.6834679134330634e-06
+          hf_admittance_bell: 1.0150565855170833e-05
+          confidence_ref: 1.0
+          confidence_bell: 0.34063880520273676
+      D:
+        passed: true
+        failed_checks: []
+        metrics:
+          profile_corr_50_1000: 0.17572633398787776
+          profile_l1_50_1000: 0.5760350474301784
+          harmonicity_stepped: 0.04273477691717736
+          harmonicity_smoothed: 0.044705709712373407
+          harmonicity_delta: 0.0019709327951960495
+      E:
+        passed: true
+        failed_checks: []
+        metrics:
+          fundamental_q_dissipative: 13.84128256513026
+          fundamental_q_epoxy: 17.301603206412835
+          fundamental_mag_dissipative: 10585523.840933528
+          fundamental_mag_epoxy: 15515974.10398137
+          peak_count_dissipative: 30
+          peak_count_epoxy: 30
+  mini_run:
+    best_design_id: candidate_14051383
+    best_aggregate_score: -11.36945627659654
+    top_scores:
+    - -11.36945627659654
+    - -12.729436720784223
+    - -11.027871767959882
+    - -10.799197768273991
+    - -10.795486687637908
+    runtime_actual_seconds: 4.326589458998569
+    warnings: []
+    exports: {}
+patch:
+  materials:
+    cast_epoxy:
+      beta_nominal: 2.4599999999999995
+      beta_min: 2.1525
+      beta_max: 2.9724999999999997
+      porosity_leak_nominal: 0.00095
+      porosity_leak_min: 0.0
+      porosity_leak_max: 0.0038
+      wall_loss_nominal: 0.0057
+      wall_loss_min: 0.0019
+      wall_loss_max: 0.014249999999999999
+    fiberglass_polyester:
+      beta_nominal: 3.2550000000000003
+      beta_min: 2.8350000000000004
+      beta_max: 3.9899999999999998
+      porosity_leak_nominal: 0.0038
+      porosity_leak_min: 0.00095
+      porosity_leak_max: 0.0095
+      wall_loss_nominal: 0.0114
+      wall_loss_min: 0.00475
+      wall_loss_max: 0.02375
+    pp:
+      beta_nominal: 3.1774999999999998
+      beta_min: 2.7675
+      beta_max: 3.7925
+      porosity_leak_nominal: 0.00285
+      porosity_leak_min: 0.00095
+      porosity_leak_max: 0.0076
+      wall_loss_nominal: 0.0095
+      wall_loss_min: 0.0038
+      wall_loss_max: 0.0209
+patch_material_ids:
+- cast_epoxy
+- fiberglass_polyester
+- pp
+comparison:
+  validation_preserved: true
+  baseline_validation_passed: true
+  patched_validation_passed: true
+  regressed_cases: []
+  patched_material_count: 3
+  best_aggregate_before: -10.86041587877469
+  best_aggregate_after: -11.36945627659654
+  best_aggregate_delta: -0.5090403978218507
+  top3_mean_before: -11.08578354646959
+  top3_mean_after: -11.708921588446882
+  top3_mean_delta: -0.6231380419772918
+  best_design_id_before: candidate_2153ddd2
+  best_design_id_after: candidate_14051383
+  baseline_exports: {}
+  patched_exports: {}
+decision:
+  status: keep_as_to_calibrate
+  accepted: false
+  rationale:
+    validation_preserved: true
+    best_aggregate_delta: -0.5090403978218507
+    top3_mean_delta: -0.6231380419772918
+  note: Patch suggestions remain inferred experimental overlays, not sourced final
+    coefficients.
