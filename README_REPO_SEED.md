@@ -13,9 +13,9 @@ Important status clarification:
 - The current canonical code is whatever is actually present in the repository tree.
 
 Repository structure currently intended in `main`:
-- `didgeridoo_optimizer/` → operational code
-- `project_specs/` → specs, YAML, constraints, material policy
-- `results/` → structured calibration / validation artifacts useful for replay and traceability
+- `didgeridoo_optimizer/`    operational code
+- `project_specs/`    specs, YAML, constraints, material policy
+- `results/`   structured calibration / validation artifacts useful for replay and traceability
 
 Not treated as canonical code:
 - historical compact snapshots

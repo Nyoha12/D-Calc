@@ -20,7 +20,7 @@ The project develops a didgeridoo optimization engine based on:
 - nonlinear MVP modeling,
 - multi-objective optimization,
 - material calibration,
-- physical validation through the A–E validation bench.
+- physical validation through the A-E validation bench.
 
 ## Current status
 
