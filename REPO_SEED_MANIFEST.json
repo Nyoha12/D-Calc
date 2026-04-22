@@ -1,0 +1,484 @@
+{
+  "seed_root": "didgeridoo_optimizer_repo_seed_latest",
+  "precedence": [
+    "project_compact_snapshot reconstructed into real package files",
+    "current real workspace overlays applied on top",
+    "project_specs copied alongside"
+  ],
+  "workspace_overlays": [
+    "didgeridoo_optimizer/__init__.py",
+    "didgeridoo_optimizer/materials/database.py",
+    "didgeridoo_optimizer/optimization/__init__.py",
+    "didgeridoo_optimizer/pipeline/run_calibration.py",
+    "didgeridoo_optimizer/tests/validation_runner.py"
+  ],
+  "reconstructed_file_count": 49,
+  "file_count": 93,
+  "files": [
+    {
+      "path": "README_REPO_SEED.md",
+      "size": 907,
+      "sha256": "15c122173d365dcee64476e9774aaabc63c6c19219b65d5e7ec0998a05c876e0"
+    },
+    {
+      "path": "didgeridoo_optimizer/__init__.py",
+      "size": 337,
+      "sha256": "d0506cf5edd8dff78422fc9fc024e5be2ec989a8c4fe991bdbe57b3eff98fcea"
+    },
+    {
+      "path": "didgeridoo_optimizer/acoustics/__init__.py",
+      "size": 1179,
+      "sha256": "f758898d6e8f14f7428944550b2341699767d49d36cfe58cf53211285cbd64c3"
+    },
+    {
+      "path": "didgeridoo_optimizer/acoustics/air.py",
+      "size": 990,
+      "sha256": "ca71234b2fd42e6ca1b02f6bd645efe445d0061238fa0da3196aeca79002aa89"
+    },
+    {
+      "path": "didgeridoo_optimizer/acoustics/features.py",
+      "size": 5376,
+      "sha256": "8d59d0eb825abdeb4f5cb61f8d9ccf5443a96cd23ddc3ada16d2b103dd1f6140"
+    },
+    {
+      "path": "didgeridoo_optimizer/acoustics/losses.py",
+      "size": 1174,
+      "sha256": "219a100317159ea357fd5851549dd0283f5c804c020a58b7bfa0e05f349d9e40"
+    },
+    {
+      "path": "didgeridoo_optimizer/acoustics/peaks.py",
+      "size": 3921,
+      "sha256": "9dd601c6a70eb2b180b8ba401e26179eed429fc980f3b52d7d860300efde5302"
+    },
+    {
+      "path": "didgeridoo_optimizer/acoustics/radiation.py",
+      "size": 3326,
+      "sha256": "530688ce8dbd884763e72eb1d28af18dde05ab7d8f579374d2b3a637796721e8"
+    },
+    {
+      "path": "didgeridoo_optimizer/acoustics/transfer_matrix.py",
+      "size": 3856,
+      "sha256": "58f8f7e6b0c242599dc7a363ffd3df70c81e9f24dfb070861226a983c0aec197"
+    },
+    {
+      "path": "didgeridoo_optimizer/geometry/__init__.py",
+      "size": 366,
+      "sha256": "27e00fc916fa0b3f102640ecd1a2d7114169d0cfba51d0bcc78ff6643305c945"
+    },
+    {
+      "path": "didgeridoo_optimizer/geometry/builders.py",
+      "size": 2631,
+      "sha256": "974c6e195495dfd3886549dcfb5ddafc1116e22b2cc1bf731f6b401188ec7a50"
+    },
+    {
+      "path": "didgeridoo_optimizer/geometry/constraints.py",
+      "size": 12113,
+      "sha256": "47717cc06d06e47e54804369ea919950e816883dc18d734e5d0102514e3b56c9"
+    },
+    {
+      "path": "didgeridoo_optimizer/geometry/discretization.py",
+      "size": 4316,
+      "sha256": "10a6cb0f2123737ada7f25b7a19312177acaa0a2ebde6c55f8c283f5b998bca7"
+    },
+    {
+      "path": "didgeridoo_optimizer/geometry/models.py",
+      "size": 4693,
+      "sha256": "04eb387b003ea24dd7eb2a9333072b7a6894c727b7bed3deda0db200e3317648"
+    },
+    {
+      "path": "didgeridoo_optimizer/materials/__init__.py",
+      "size": 1471,
+      "sha256": "28e6f18d503a70b1d9a78bd91e8543ffe4e5bdfe009cebf2e90f891b4dffb34b"
+    },
+    {
+      "path": "didgeridoo_optimizer/materials/database.py",
+      "size": 6513,
+      "sha256": "101f9d412850acf5708be422c1f2518a273193f28fcfee797ee78017530f5db5"
+    },
+    {
+      "path": "didgeridoo_optimizer/materials/models.py",
+      "size": 7086,
+      "sha256": "ae8f07492c6194f02feb8876589379ebd0d8036d794e8da8ad34c74b1d958d32"
+    },
+    {
+      "path": "didgeridoo_optimizer/materials/uncertainty.py",
+      "size": 2156,
+      "sha256": "ad4c156b6e83fe0a03d82a7960b928e7c29e0b3d7228f7a428bfa5a9f5baa81a"
+    },
+    {
+      "path": "didgeridoo_optimizer/materials/variants.py",
+      "size": 8189,
+      "sha256": "89379a09600941a2f047261eff08041b56705c24ecc6f3807ef4f433408b4845"
+    },
+    {
+      "path": "didgeridoo_optimizer/nonlinear/__init__.py",
+      "size": 734,
+      "sha256": "2588541ad1128f8cb22c090153c7cf20f121618141eeef91acce8d0864295686"
+    },
+    {
+      "path": "didgeridoo_optimizer/nonlinear/lips.py",
+      "size": 5265,
+      "sha256": "7e05d9194a5ea6049ce5488e4f499578fce3405c68e5d15aad74a3e753b9ef0e"
+    },
+    {
+      "path": "didgeridoo_optimizer/nonlinear/regimes.py",
+      "size": 4742,
+      "sha256": "9196a3d3dcc8cbe5c4d85360b88d77ee4b17b0c214928eb2a2cd8cebaf4a3574"
+    },
+    {
+      "path": "didgeridoo_optimizer/nonlinear/resonator_td.py",
+      "size": 4230,
+      "sha256": "e3c9d6992867e39d6e8dbe4c58ca195511d1cef4e4f50a676d944f734e38f449"
+    },
+    {
+      "path": "didgeridoo_optimizer/nonlinear/thresholds.py",
+      "size": 8900,
+      "sha256": "024c50ffcd9ec4e55e000ec0e261d714933cffe25583ce4676406b8e60e1c7d4"
+    },
+    {
+      "path": "didgeridoo_optimizer/optimization/__init__.py",
+      "size": 441,
+      "sha256": "429bc2cb5bc8d692294020e45dba587ee4312964f5f5e496c3058f5eaecfe51e"
+    },
+    {
+      "path": "didgeridoo_optimizer/optimization/calibration.py",
+      "size": 6245,
+      "sha256": "945d09662956b8f4e7c91d4c37241fb185a55aeb80aff7f0749257ef93d8a4e7"
+    },
+    {
+      "path": "didgeridoo_optimizer/optimization/objectives.py",
+      "size": 5946,
+      "sha256": "71863100a698d8a5f42528e485fbb2bbf2f12b8d4cbf179d2aa7d3a390b4d089"
+    },
+    {
+      "path": "didgeridoo_optimizer/optimization/pareto.py",
+      "size": 8490,
+      "sha256": "b1d6f7d4235e0e9b073e21bd3166eeb926502ff777797669af9d4a6c02016874"
+    },
+    {
+      "path": "didgeridoo_optimizer/optimization/runtime_estimator.py",
+      "size": 10966,
+      "sha256": "6f45c8a9746ee85ffe4a652d2e265513c86bc179d423acd4f61816016c7c5c55"
+    },
+    {
+      "path": "didgeridoo_optimizer/optimization/search_space.py",
+      "size": 23466,
+      "sha256": "9c9355ed012f22c95a28dd848e8f12d71fad5d0aa69a553377b461bcbafb98e3"
+    },
+    {
+      "path": "didgeridoo_optimizer/optimization/selector.py",
+      "size": 7644,
+      "sha256": "6fd21d1178d6d6e396d23c9de5e701a6e57eca139adbc782b932ddd0e8b140f6"
+    },
+    {
+      "path": "didgeridoo_optimizer/optimization/sensitivity.py",
+      "size": 12379,
+      "sha256": "0eaea69a98bbeab7df0345c470b04d1f72460f3e32e0d470b4f432e23f76a9cd"
+    },
+    {
+      "path": "didgeridoo_optimizer/pipeline/__init__.py",
+      "size": 876,
+      "sha256": "c89c2ac91492cce9cc3d526bfdf1743daa371b1013092d249d25479891b0fd48"
+    },
+    {
+      "path": "didgeridoo_optimizer/pipeline/evaluate_linear.py",
+      "size": 5280,
+      "sha256": "c738f76032c3bf713248a526841a630c03b8dffaa31b1670d65cb7780d79a10c"
+    },
+    {
+      "path": "didgeridoo_optimizer/pipeline/evaluate_nonlinear.py",
+      "size": 6390,
+      "sha256": "e677a991586cdec5c0229ad9538ae4ffb413f66f15130209a3d350c0de087796"
+    },
+    {
+      "path": "didgeridoo_optimizer/pipeline/evaluate_robustness.py",
+      "size": 2514,
+      "sha256": "20cc9cf2619b8a499997f76b8497feda01e9758159d1c20f78c7b668017947c8"
+    },
+    {
+      "path": "didgeridoo_optimizer/pipeline/run_calibration.py",
+      "size": 27583,
+      "sha256": "d98988e04259f44792a01455b7cdac6153fb836475901733e15d8d8a23351749"
+    },
+    {
+      "path": "didgeridoo_optimizer/pipeline/run_optimizer.py",
+      "size": 16622,
+      "sha256": "2effb1efa887beb6e941677ca1ff6d432852acc31bf72a33fdd04f1d393a6724"
+    },
+    {
+      "path": "didgeridoo_optimizer/player/__init__.py",
+      "size": 301,
+      "sha256": "47f701d17afee3899dec3e96e1b9892168861be9a204f9e483c5c607b706c067"
+    },
+    {
+      "path": "didgeridoo_optimizer/player/models.py",
+      "size": 2546,
+      "sha256": "b92506254fcfa1ec2c6fd52968f0b05602d298b6bcfbffee56af17ee53bd7f6b"
+    },
+    {
+      "path": "didgeridoo_optimizer/player/robustness.py",
+      "size": 17737,
+      "sha256": "c99fcf6805955718424c8e374545533316be8098a679eec331d8d1daba965bf1"
+    },
+    {
+      "path": "didgeridoo_optimizer/player/vocal_tract.py",
+      "size": 1594,
+      "sha256": "0b56bd440fdf909253f976466b72e30d72b7ce7fb171c2e67f5c2cf1274d744d"
+    },
+    {
+      "path": "didgeridoo_optimizer/reporting/__init__.py",
+      "size": 584,
+      "sha256": "59cfc3762df241569b44739c88be5643d16efdec1c1fafc88bf12abf3bf5cee9"
+    },
+    {
+      "path": "didgeridoo_optimizer/reporting/export.py",
+      "size": 4118,
+      "sha256": "5b74f1a22b7a00f70bd47e614c8fb0317742ddd16a814e8ca24d1e1a3f4db5d0"
+    },
+    {
+      "path": "didgeridoo_optimizer/reporting/plots.py",
+      "size": 2855,
+      "sha256": "035e082bd0e5c4983247dde37f8f025865e64ba62e93b043862b6d102c50754f"
+    },
+    {
+      "path": "didgeridoo_optimizer/reporting/ranking.py",
+      "size": 3307,
+      "sha256": "9b2b6e1958821c4655d5fe314c914425489e779987e6b193d002fb5ebbc34381"
+    },
+    {
+      "path": "didgeridoo_optimizer/reporting/summaries.py",
+      "size": 4678,
+      "sha256": "9987befd7acb5a1cf5980283e017ed3d715daecb362e7020851e663981abedde"
+    },
+    {
+      "path": "didgeridoo_optimizer/tests/__init__.py",
+      "size": 73,
+      "sha256": "b9a71096c05d93300672d06f1b7140f8b3677abfa98aa71d81eaa78549cd9e57"
+    },
+    {
+      "path": "didgeridoo_optimizer/tests/validation_cases.py",
+      "size": 4904,
+      "sha256": "b880e9167f029df1106ef2ffcbce0b0513ef7043ce2eb21fda4e03f2d471a4e2"
+    },
+    {
+      "path": "didgeridoo_optimizer/tests/validation_runner.py",
+      "size": 8475,
+      "sha256": "078da8c17328b0d0030ddaf2b4bedf24da26eeb88a12a6e64f87f13912b5165b"
+    },
+    {
+      "path": "project_compact_snapshot/didgeridoo_optimizer__CODE_MANIFEST.md",
+      "size": 3855,
+      "sha256": "1dd2e8d1a78e6aa8ab3cee61c7a2bcfb0640684090c8c22bef6e8117f29a5fda"
+    },
+    {
+      "path": "project_compact_snapshot/didgeridoo_optimizer__acoustics_combined.py",
+      "size": 20541,
+      "sha256": "502d3fbcd7e79229eebede3c0bac1ca5318ddf3a5b1796c3a510b7131e7c3bd7"
+    },
+    {
+      "path": "project_compact_snapshot/didgeridoo_optimizer__geometry_combined.py",
+      "size": 24712,
+      "sha256": "d26e436bf3f9099dd71a20e45b3bc4707189035c14c4adacaf871265022fc676"
+    },
+    {
+      "path": "project_compact_snapshot/didgeridoo_optimizer__materials_combined.py",
+      "size": 25088,
+      "sha256": "933f9e9f78852767643ecb9974a87f1fe0fbcefc29788e407001b32c541bb9bd"
+    },
+    {
+      "path": "project_compact_snapshot/didgeridoo_optimizer__optimization_pipeline_combined.py",
+      "size": 175499,
+      "sha256": "f5d33ad6a9a1cf2f9a0e56dc353a9de37c9b20b174540375d3c676451bbbce1e"
+    },
+    {
+      "path": "project_compact_snapshot/didgeridoo_optimizer__tests_validation_ae_combined.py",
+      "size": 13837,
+      "sha256": "856052aef797cd12b3dd11c9627bb14a65aeaac689830ff596f69e4a6b39f2e3"
+    },
+    {
+      "path": "project_specs/00_core_specs_README_PACK.md",
+      "size": 1703,
+      "sha256": "78ff3041f0f8d94ad4f06e7be37d3dd29716d5b0bea909c7b2af0258cbe8799f"
+    },
+    {
+      "path": "project_specs/00_core_specs_deep-research-report.md",
+      "size": 34730,
+      "sha256": "98137a0e293499ece26f4d461c68025793dd16cbfe2b80368f357aac33ba3414"
+    },
+    {
+      "path": "project_specs/03_implementation_IMPLEMENTATION_SPRINTS_V1.md",
+      "size": 1543,
+      "sha256": "037251b8f5170957f550d04065143891bf13dabfe289c60f507ecf965cc0ceb9"
+    },
+    {
+      "path": "project_specs/03_implementation_MODULE_TODOS_ULTRA_CONCRETS_V1.md",
+      "size": 3040,
+      "sha256": "c61bd9af0812bb167d8b24bf386689f80df0be34a2a303fce8453e341a4b0b5a"
+    },
+    {
+      "path": "project_specs/04_validation_VALIDATION_BENCH_AE_V1.md",
+      "size": 1890,
+      "sha256": "75e0205d37d862ffe5a0e0522c11866477f1102859874ab8143b249d6ba85f05"
+    },
+    {
+      "path": "project_specs/05_instructions_and_handoff_INSTRUCTIONS_PROJECT_GPT54_THINKING_V2.md",
+      "size": 2899,
+      "sha256": "7e01a6bab6fa1069826dd41f34461e6140501f7736507b296e254ca0df9f2190"
+    },
+    {
+      "path": "project_specs/05_instructions_and_handoff_PROJECT_HANDOFF_STATUS_V2.md",
+      "size": 2072,
+      "sha256": "7a5985a518206f676aa51fab3e89cd4579e3c8920d7b06f3cc9d0361f167e667"
+    },
+    {
+      "path": "project_specs/05_instructions_and_handoff_README_HANDOFF_V2.md",
+      "size": 2214,
+      "sha256": "fbf45b5a41275abc0c5cb8db7591217afb35a70efce82e9f323553fa58471e92"
+    },
+    {
+      "path": "project_specs/CONFIG_TEMPLATE_V1.yaml",
+      "size": 6493,
+      "sha256": "0e99e81f426b76dca3685bbeaf1e7d359fe591845c3f84fe6754bcabe6f5318d"
+    },
+    {
+      "path": "project_specs/DETAILED_IMPLEMENTATION_PLAYBOOK_V1.md",
+      "size": 14387,
+      "sha256": "fa4d70ad2cd843d01fc4c335ed3f6924bcb9c8eb7fadc5d8e194272cbed64593"
+    },
+    {
+      "path": "project_specs/MATERIALS_POLICY_AND_UNCERTAINTY.md",
+      "size": 1526,
+      "sha256": "86f5b4a3efdf05673a63b0d22a0d4704fe22571cec07da4955e656af1f3af723"
+    },
+    {
+      "path": "project_specs/PHYSICS_AND_METRICS.md",
+      "size": 1975,
+      "sha256": "dee771caca60c723721e3d9662e20f5b3af59ff6016d15a32acb1c4444d3c6c7"
+    },
+    {
+      "path": "project_specs/PROGRAM_SPEC_V1.md",
+      "size": 2165,
+      "sha256": "25287edde2f09ec1a01974afcc78918683f0fc3e6f8b872ad3fcf359211aba72"
+    },
+    {
+      "path": "project_specs/PYTHON_SKELETON_COMBINED.md",
+      "size": 16990,
+      "sha256": "18a46fafeb7e7b76a301cbb5c33671eb792061157da1aa98d111236ce5e22387"
+    },
+    {
+      "path": "project_specs/PYTHON_SKELETON_OVERVIEW.md",
+      "size": 1080,
+      "sha256": "e15d55e0a44b655f0c91c7fd3cdb879a10a8bbbae9694a4db1a8f19b230ac627"
+    },
+    {
+      "path": "project_specs/REFERENCES_WORKING.md",
+      "size": 752,
+      "sha256": "6e6e12b5e4760ece4581f666f122a6b832f05b22311da9a2993a03403f70fe6b"
+    },
+    {
+      "path": "project_specs/materials_base_v1.yaml",
+      "size": 36764,
+      "sha256": "c3d5b5213470da8525124173fdfa65e8ec43d636bb761ed64db903a8bdd20934"
+    },
+    {
+      "path": "project_specs/wood_variant_rules_v1.yaml",
+      "size": 2079,
+      "sha256": "fd2f1cc631e3744768ac27758a3470177317be3e13d0f10e880e6201668a3e18"
+    },
+    {
+      "path": "results/calibration_material_directed/calibration_report.json",
+      "size": 49187,
+      "sha256": "69178a020b04ece210d54d565355570761b52d620a3747145b9bd0a3909dea76"
+    },
+    {
+      "path": "results/calibration_material_directed/calibration_report.yaml",
+      "size": 36831,
+      "sha256": "88e4f303515c0a470766b22b0a152577993efc3a6531a2a212ece982f0c6f6ae"
+    },
+    {
+      "path": "results/calibration_material_directed/materials_patch_suggestions.yaml",
+      "size": 310,
+      "sha256": "dab404da25afeee4ed484d341260856b151711488b3e6f61b7317f3d6d67559e"
+    },
+    {
+      "path": "results/calibration_material_family/calibration_report.json",
+      "size": 154075,
+      "sha256": "836e50408f68f0714722adb84cbd3a09eb6c0c34bb8468c2d6387b40e75862b2"
+    },
+    {
+      "path": "results/calibration_material_family/calibration_report.yaml",
+      "size": 114762,
+      "sha256": "ed45fd56308dc019f904de07d92f5b01b069fc7c8a9ff6ef3b364781d4800bc0"
+    },
+    {
+      "path": "results/calibration_material_family/materials_patch_suggestions.yaml",
+      "size": 1133,
+      "sha256": "157b895e4792e37f4ed195bd2dbb0592a1ba55011337f78c094271cf0c261658"
+    },
+    {
+      "path": "results/calibration_material_family_multiseed/calibration_report.json",
+      "size": 127744,
+      "sha256": "a37b6e8333c17e8aceb79b82a77e29a86f20f11a32cd5635b25845839234de8f"
+    },
+    {
+      "path": "results/calibration_material_family_multiseed/calibration_report.yaml",
+      "size": 94821,
+      "sha256": "51ca3b4cf84f3a251d72863d46953899edd6887f9289c4360ca7a8262a67d399"
+    },
+    {
+      "path": "results/calibration_material_family_multiseed/materials_patch_suggestions.yaml",
+      "size": 1125,
+      "sha256": "8c9bea66a1daa7d6d1c98a8ee4e252b3e88c8a7376fbb7f8a22bff665e5206d0"
+    },
+    {
+      "path": "results/calibration_material_family_weighted/calibration_report.json",
+      "size": 154051,
+      "sha256": "1a94b33bb73c8e4f91dd1f36528a4cc52ad36026a5f8b92e1823df38f5831de1"
+    },
+    {
+      "path": "results/calibration_material_family_weighted/calibration_report.yaml",
+      "size": 114728,
+      "sha256": "d5e4434d41da38e9707d45844c278f5a49186a6dab660e75007de982d7bbb8d6"
+    },
+    {
+      "path": "results/calibration_material_family_weighted/materials_patch_suggestions.yaml",
+      "size": 1136,
+      "sha256": "4b114330b2abb8ed9e714d3af653dd8be51f99a7389066532640978dd3f36230"
+    },
+    {
+      "path": "results/calibration_material_semidirected/calibration_report.json",
+      "size": 162305,
+      "sha256": "79bda862e976740aab5b62d1af5afd48811966cef7e1b62c19d900c69dbfb031"
+    },
+    {
+      "path": "results/calibration_material_semidirected/calibration_report.yaml",
+      "size": 120523,
+      "sha256": "bbeb4acf4fe601e2127d87cbb2f8e46d35edba65a0ddc91c9daa96e69685f765"
+    },
+    {
+      "path": "results/calibration_material_semidirected/materials_patch_suggestions.yaml",
+      "size": 1393,
+      "sha256": "f3fdd753d6fb6a108786af3d162106c9032089484bbd969075cdac770cb46ff9"
+    },
+    {
+      "path": "results/calibration_material_semidirected/stable_semidirected_summary.json",
+      "size": 1015,
+      "sha256": "ed9391f92ade284c54da80858744b0c985d0e70ab0d6e25ab3be0cb566141e3b"
+    },
+    {
+      "path": "results/calibration_material_semidirected/stable_semidirected_summary.yaml",
+      "size": 703,
+      "sha256": "00010281ce223b0b928f361de4f4f46f8c5eed892e93711a1c29c2aaaabc6c54"
+    },
+    {
+      "path": "results/calibration_validation/patch_validation_report.json",
+      "size": 7352,
+      "sha256": "d820d25e70a213ec09e11a596a6c5a65d35d723af79b15ec08852d1da5df93ff"
+    },
+    {
+      "path": "results/calibration_validation/patch_validation_report.yaml",
+      "size": 6002,
+      "sha256": "0aedcd5b4967a167b6f4b9ca9e8fda6cd6925f69d63e3e155465736a8b12722e"
+    }
+  ]
+}

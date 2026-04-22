@@ -1,0 +1,97 @@
+wood_humidity_states:
+  very_dry:
+    mc_percent: [4, 6]
+    beta_factor: 0.90
+    porosity_factor: 0.90
+    wall_loss_factor: 0.90
+  dry_indoor:
+    mc_percent: [6, 9]
+    beta_factor: 0.95
+    porosity_factor: 0.95
+    wall_loss_factor: 0.95
+  airdry:
+    mc_percent: [9, 12]
+    beta_factor: 1.00
+    porosity_factor: 1.00
+    wall_loss_factor: 1.00
+  humid:
+    mc_percent: [13, 16]
+    beta_factor: 1.12
+    porosity_factor: 1.15
+    wall_loss_factor: 1.15
+  green:
+    mc_percent: [30, 120]
+    beta_factor: 1.30
+    porosity_factor: 1.30
+    wall_loss_factor: 1.35
+
+wood_finishes:
+  raw:
+    barrier_rank: 0
+    beta_factor: 1.00
+    porosity_factor: 1.00
+    wall_loss_factor: 1.00
+  sanded:
+    barrier_rank: 0
+    beta_factor: 0.97
+    porosity_factor: 0.95
+    wall_loss_factor: 0.98
+  varnished:
+    barrier_rank: 2
+    beta_factor: 0.92
+    porosity_factor: 0.70
+    wall_loss_factor: 0.95
+  polyurethane_lined:
+    barrier_rank: 3
+    beta_factor: 0.88
+    porosity_factor: 0.55
+    wall_loss_factor: 0.90
+  epoxy_lined:
+    barrier_rank: 4
+    beta_factor: 0.82
+    porosity_factor: 0.40
+    wall_loss_factor: 0.88
+
+wood_grade:
+  clear:
+    variability_rank: 0
+    beta_factor: 1.00
+    porosity_factor: 1.00
+    wall_loss_factor: 1.00
+    uncertainty_factor: 1.00
+  standard:
+    variability_rank: 1
+    beta_factor: 1.05
+    porosity_factor: 1.05
+    wall_loss_factor: 1.05
+    uncertainty_factor: 1.15
+  irregular:
+    variability_rank: 2
+    beta_factor: 1.12
+    porosity_factor: 1.08
+    wall_loss_factor: 1.10
+    uncertainty_factor: 1.30
+  knotty:
+    variability_rank: 3
+    beta_factor: 1.20
+    porosity_factor: 1.10
+    wall_loss_factor: 1.15
+    uncertainty_factor: 1.50
+
+density_class:
+  light: {}
+  medium: {}
+  dense: {}
+
+generation_policy:
+  generate_variants_for_families: [wood]
+  default_humidity: airdry
+  default_finish: raw
+  default_grade: clear
+  default_density_class: medium
+  allow_generation_filtering: true
+  forbidden_combinations:
+    - [green, epoxy_lined]
+  discouraged_combinations:
+    - [knotty, mouthpiece]
+    - [humid, mdf]

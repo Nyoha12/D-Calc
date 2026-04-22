@@ -1,0 +1,287 @@
+project:
+  name: "didgeridoo_optimizer_v1"
+  description: "Optimisation géométrique, acoustique et de jouabilité de didgeridoos"
+  random_seed: 42
+  output_dir: "./results"
+  save_intermediate_results: true
+  overwrite_output_dir: false
+
+units:
+  length: "cm"
+  frequency: "Hz"
+  pressure: "kPa"
+  angle: "deg"
+  density: "kg/m3"
+
+environment:
+  air_temperature_c: 20.0
+  air_density_kg_m3: 1.204
+  sound_speed_m_s: 343.0
+  relative_humidity_percent: 50.0
+
+geometry_constraints:
+  total_length_cm:
+    min: 80.0
+    max: 250.0
+  body_segments:
+    min_count: 1
+    max_count: 12
+    min_length_cm: 2.0
+    max_length_cm: 120.0
+  diameter_cm:
+    min: 0.5
+    max: 50.0
+    step: 0.1
+  allow_steps: true
+  allow_reverse_taper: true
+  allow_local_constrictions: true
+  allow_local_expansions: true
+
+topology:
+  allow_bell: true
+  allow_bell_types: [conical, exponential, powerlaw]
+  allow_branches: false
+  allow_helmholtz: false
+
+mouthpiece:
+  mode: auto_best
+  allow_strong_constriction: true
+  allow_cup_like_profile: true
+  allow_throat_section: true
+  allow_small_entry_chamber: true
+  geometry_constraints:
+    total_length_cm: {min: 0.5, max: 15.0}
+    entry_diameter_cm: {min: 1.0, max: 8.0}
+    throat_diameter_cm: {min: 0.3, max: 6.0}
+    exit_diameter_cm: {min: 0.5, max: 10.0}
+    constriction_position_ratio: {min: 0.0, max: 1.0}
+    profile_types: [straight, conical, curved, cup_like, hybrid]
+
+bell:
+  mode: auto_best
+  geometry_constraints:
+    length_cm: {min: 0.0, max: 80.0}
+    throat_diameter_cm: {min: 1.0, max: 20.0}
+    exit_diameter_cm: {min: 1.0, max: 50.0}
+    flare_parameter: {min: 0.01, max: 20.0}
+
+materials:
+  mode: multi_auto
+  assignment_granularity: segment
+  database_file: "./materials_base_v1.yaml"
+  variant_rules_file: "./wood_variant_rules_v1.yaml"
+  allowed_materials:
+    - birch
+    - beech
+    - oak
+    - ash
+    - maple
+    - walnut
+    - mahogany
+    - pine
+    - spruce
+    - bamboo_raw
+    - birch_plywood
+    - mdf
+    - oak_varnished
+    - maple_varnished
+    - plywood_varnished
+    - wood_epoxy_lined
+    - wood_polyester_lined
+    - wood_polyurethane_lined
+    - pvc_pressure
+    - pvc_drain
+    - abs
+    - petg
+    - hdpe
+    - pp
+    - pmma
+    - polycarbonate
+    - fiberglass_epoxy
+    - fiberglass_polyester
+    - carbon_epoxy
+    - cast_epoxy
+    - cast_polyurethane
+    - wood_resin_composite
+    - aluminum_6061
+    - mild_steel
+    - stainless_304
+    - brass
+    - copper
+    - cast_iron
+    - spiral_cardboard
+    - papier_mache
+  max_distinct_materials_per_design: 2
+  allow_material_change_every_segment: true
+  allow_mouthpiece_material_override: true
+  allow_bell_material_override: true
+  prefer_simple_material_layouts: true
+  complexity_penalty:
+    enabled: true
+    weight: 0.15
+    extra_penalty_per_material_change: 0.03
+
+player_model:
+  mode: mixed
+  include_vocal_tract: true
+  include_lip_nonlinearity: true
+
+frequency_analysis:
+  f_min_hz: 10.0
+  f_max_hz: 5000.0
+  n_points: 4096
+  peak_detection:
+    min_prominence: 0.01
+    min_distance_hz: 5.0
+    max_number_of_peaks: 30
+
+objectives:
+  drone_f0:
+    enabled: true
+    weight: 1.0
+    direction: match
+    hard_constraint: false
+    target_range_hz: [55.0, 75.0]
+    normalization: range_distance
+  impedance_peaks:
+    enabled: true
+    weight: 0.8
+    direction: maximize
+    hard_constraint: false
+  peak_quality_Q:
+    enabled: true
+    weight: 0.6
+    direction: match
+    hard_constraint: false
+    target_mode: balanced
+  harmonicity:
+    enabled: true
+    weight: 0.5
+    direction: minimize
+    hard_constraint: false
+    preferred_mode: mixed
+  backpressure:
+    enabled: true
+    weight: 0.6
+    direction: match
+    hard_constraint: false
+    target_profile: medium
+  radiation_brightness:
+    enabled: true
+    weight: 0.6
+    direction: maximize
+    hard_constraint: false
+  toot:
+    enabled: true
+    weight: 0.7
+    direction: maximize
+    hard_constraint: false
+    preferred_ratio_range: [2.5, 3.2]
+  vocal_control:
+    enabled: true
+    weight: 0.5
+    direction: maximize
+    hard_constraint: false
+  transients_noise:
+    enabled: true
+    weight: 0.4
+    direction: maximize
+    hard_constraint: false
+  nonlinear_threshold:
+    enabled: false
+    weight: 0.0
+    direction: minimize
+    hard_constraint: false
+  nonlinear_stability:
+    enabled: false
+    weight: 0.0
+    direction: maximize
+    hard_constraint: false
+  beginner_robustness:
+    enabled: true
+    weight: 0.4
+    direction: maximize
+    hard_constraint: false
+  expert_robustness:
+    enabled: true
+    weight: 0.4
+    direction: maximize
+    hard_constraint: false
+  fabrication_simplicity:
+    enabled: true
+    weight: 0.3
+    direction: maximize
+    hard_constraint: false
+  material_simplicity:
+    enabled: true
+    weight: 0.3
+    direction: maximize
+    hard_constraint: false
+
+uncertainty_management:
+  enabled: true
+  sensitivity_analysis:
+    local_enabled: true
+    global_enabled: true
+    local_perturbation_percent: [5, 10]
+    global_method: morris_then_sobol
+    monte_carlo_samples: 200
+  uncertainty_propagation:
+    enabled: true
+    outputs: [score_mean, score_std, score_confidence_interval, probability_meeting_targets]
+  data_refinement_policy:
+    enabled: true
+    trigger_on:
+      min_sensitivity_score: 0.6
+      min_uncertainty_score: 0.6
+      objective_weight_threshold: 0.4
+
+optimization:
+  strategy: pareto_then_compromise
+  optimizer: nsga2
+  random_initial_population: 200
+  generations: 100
+  linear_budget: 20000
+  elite_fraction: 0.05
+  mutation_rate: 0.2
+  crossover_rate: 0.8
+  final_selector: knee
+  keep_top_n_linear: 200
+  top_n_for_robustness: 100
+  top_n_for_nonlinear: 50
+  final_output_count: 20
+
+runtime_estimation:
+  enabled: true
+  method: analytic_plus_microbenchmark
+  benchmark_samples_linear: 5
+  benchmark_samples_nonlinear: 2
+  display_before_launch: true
+  display_cost_factors: true
+  warn_if_estimated_time_exceeds_minutes: 60
+
+nonlinear_simulation:
+  enabled: true
+  run_only_for_top_n: 50
+  time_domain_solver: rk4
+  sample_rate_hz: 44100
+  simulation_duration_s: 2.0
+  warmup_duration_s: 0.5
+  pressure_scan_points: 8
+  detect_threshold: true
+  detect_stability: true
+  detect_regime_switches: true
+  detect_subharmonics: true
+  detect_extinction: true
+
+reporting:
+  save_yaml_summary: true
+  save_json_summary: true
+  save_csv_scores: true
+  save_plots: true
+  textual_summaries:
+    enabled: true
+    language: fr
+    include_strengths: true
+    include_weaknesses: true
+    include_tradeoffs: true

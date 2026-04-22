@@ -1,0 +1,1562 @@
+materials:
+- id: birch
+  base_material: birch
+  family: wood
+  subtype: solid
+  practical:
+    manufacturability: easy
+    cost_level: medium
+    mass_level: medium
+    recommended_for:
+      mouthpiece: false
+      body: true
+      bell: true
+  acoustic_model:
+    beta_nominal: 3.4
+    beta_min: 2.8
+    beta_max: 4.3
+    beta_status: to_calibrate
+    porosity_leak_nominal: 0.02
+    porosity_leak_min: 0.005
+    porosity_leak_max: 0.05
+    porosity_status: inferred
+    wall_loss_nominal: 0.02
+    wall_loss_min: 0.01
+    wall_loss_max: 0.04
+    wall_loss_status: inferred
+  confidence:
+    overall: medium
+    beta: low
+    porosity_leak: medium
+    wall_loss: medium
+  research_priority:
+    beta: high
+    porosity_leak: medium
+    wall_loss: medium
+  source_status:
+    humidity_logic: sourced
+    finish_logic: sourced
+    wood_variability_logic: sourced
+    acoustic_coefficients: inferred
+  notes: Bois polyvalent, base utile.
+  variant_defaults: &id001
+    humidity_state: airdry
+    finish: raw
+    grade: clear
+    knot_class: none
+    density_class: medium
+- id: beech
+  base_material: beech
+  family: wood
+  subtype: solid
+  practical:
+    manufacturability: easy
+    cost_level: medium
+    mass_level: medium
+    recommended_for:
+      mouthpiece: false
+      body: true
+      bell: true
+  acoustic_model:
+    beta_nominal: 3.5
+    beta_min: 2.9
+    beta_max: 4.4
+    beta_status: to_calibrate
+    porosity_leak_nominal: 0.02
+    porosity_leak_min: 0.005
+    porosity_leak_max: 0.05
+    porosity_status: inferred
+    wall_loss_nominal: 0.022
+    wall_loss_min: 0.01
+    wall_loss_max: 0.04
+    wall_loss_status: inferred
+  confidence:
+    overall: medium
+    beta: low
+    porosity_leak: medium
+    wall_loss: medium
+  research_priority:
+    beta: high
+    porosity_leak: medium
+    wall_loss: medium
+  source_status:
+    humidity_logic: sourced
+    finish_logic: sourced
+    wood_variability_logic: sourced
+    acoustic_coefficients: inferred
+  notes: Bois dense et stable, corps et cloche.
+  variant_defaults: *id001
+- id: oak
+  base_material: oak
+  family: wood
+  subtype: solid
+  practical:
+    manufacturability: medium
+    cost_level: medium
+    mass_level: high
+    recommended_for:
+      mouthpiece: false
+      body: true
+      bell: true
+  acoustic_model:
+    beta_nominal: 3.7
+    beta_min: 3.0
+    beta_max: 4.6
+    beta_status: to_calibrate
+    porosity_leak_nominal: 0.02
+    porosity_leak_min: 0.006
+    porosity_leak_max: 0.05
+    porosity_status: inferred
+    wall_loss_nominal: 0.022
+    wall_loss_min: 0.01
+    wall_loss_max: 0.04
+    wall_loss_status: inferred
+  confidence:
+    overall: medium
+    beta: low
+    porosity_leak: medium
+    wall_loss: medium
+  research_priority:
+    beta: high
+    porosity_leak: medium
+    wall_loss: medium
+  source_status:
+    humidity_logic: sourced
+    finish_logic: sourced
+    wood_variability_logic: sourced
+    acoustic_coefficients: inferred
+  notes: Bois dur, potentiellement très bon mais lourd.
+  variant_defaults: *id001
+- id: ash
+  base_material: ash
+  family: wood
+  subtype: solid
+  practical:
+    manufacturability: easy
+    cost_level: medium
+    mass_level: medium
+    recommended_for:
+      mouthpiece: false
+      body: true
+      bell: true
+  acoustic_model:
+    beta_nominal: 3.4
+    beta_min: 2.8
+    beta_max: 4.3
+    beta_status: to_calibrate
+    porosity_leak_nominal: 0.02
+    porosity_leak_min: 0.005
+    porosity_leak_max: 0.05
+    porosity_status: inferred
+    wall_loss_nominal: 0.02
+    wall_loss_min: 0.01
+    wall_loss_max: 0.04
+    wall_loss_status: inferred
+  confidence:
+    overall: medium
+    beta: low
+    porosity_leak: medium
+    wall_loss: medium
+  research_priority:
+    beta: high
+    porosity_leak: medium
+    wall_loss: medium
+  source_status:
+    humidity_logic: sourced
+    finish_logic: sourced
+    wood_variability_logic: sourced
+    acoustic_coefficients: inferred
+  notes: Bois assez homogène, bon candidat général.
+  variant_defaults: *id001
+- id: maple
+  base_material: maple
+  family: wood
+  subtype: solid
+  practical:
+    manufacturability: easy
+    cost_level: medium
+    mass_level: medium
+    recommended_for:
+      mouthpiece: true
+      body: true
+      bell: true
+  acoustic_model:
+    beta_nominal: 3.3
+    beta_min: 2.7
+    beta_max: 4.2
+    beta_status: to_calibrate
+    porosity_leak_nominal: 0.018
+    porosity_leak_min: 0.005
+    porosity_leak_max: 0.045
+    porosity_status: inferred
+    wall_loss_nominal: 0.018
+    wall_loss_min: 0.008
+    wall_loss_max: 0.035
+    wall_loss_status: inferred
+  confidence:
+    overall: medium
+    beta: low
+    porosity_leak: medium
+    wall_loss: medium
+  research_priority:
+    beta: high
+    porosity_leak: medium
+    wall_loss: medium
+  source_status:
+    humidity_logic: sourced
+    finish_logic: sourced
+    wood_variability_logic: sourced
+    acoustic_coefficients: inferred
+  notes: Bois dense, favorable pour embouchure et corps.
+  variant_defaults: *id001
+- id: walnut
+  base_material: walnut
+  family: wood
+  subtype: solid
+  practical:
+    manufacturability: easy
+    cost_level: medium
+    mass_level: medium
+    recommended_for:
+      mouthpiece: false
+      body: true
+      bell: true
+  acoustic_model:
+    beta_nominal: 3.5
+    beta_min: 2.9
+    beta_max: 4.4
+    beta_status: to_calibrate
+    porosity_leak_nominal: 0.018
+    porosity_leak_min: 0.005
+    porosity_leak_max: 0.045
+    porosity_status: inferred
+    wall_loss_nominal: 0.02
+    wall_loss_min: 0.01
+    wall_loss_max: 0.04
+    wall_loss_status: inferred
+  confidence:
+    overall: medium
+    beta: low
+    porosity_leak: medium
+    wall_loss: medium
+  research_priority:
+    beta: high
+    porosity_leak: medium
+    wall_loss: medium
+  source_status:
+    humidity_logic: sourced
+    finish_logic: sourced
+    wood_variability_logic: sourced
+    acoustic_coefficients: inferred
+  notes: Bois dense, bon comportement pratique.
+  variant_defaults: *id001
+- id: mahogany
+  base_material: mahogany
+  family: wood
+  subtype: solid
+  practical:
+    manufacturability: easy
+    cost_level: medium
+    mass_level: medium
+    recommended_for:
+      mouthpiece: false
+      body: true
+      bell: true
+  acoustic_model:
+    beta_nominal: 3.4
+    beta_min: 2.8
+    beta_max: 4.3
+    beta_status: to_calibrate
+    porosity_leak_nominal: 0.018
+    porosity_leak_min: 0.005
+    porosity_leak_max: 0.045
+    porosity_status: inferred
+    wall_loss_nominal: 0.02
+    wall_loss_min: 0.01
+    wall_loss_max: 0.04
+    wall_loss_status: inferred
+  confidence:
+    overall: medium
+    beta: low
+    porosity_leak: medium
+    wall_loss: medium
+  research_priority:
+    beta: high
+    porosity_leak: medium
+    wall_loss: medium
+  source_status:
+    humidity_logic: sourced
+    finish_logic: sourced
+    wood_variability_logic: sourced
+    acoustic_coefficients: inferred
+  notes: Acajou/sapelli, candidat équilibré.
+  variant_defaults: *id001
+- id: pine
+  base_material: pine
+  family: wood
+  subtype: solid
+  practical:
+    manufacturability: easy
+    cost_level: low
+    mass_level: low
+    recommended_for:
+      mouthpiece: false
+      body: true
+      bell: true
+  acoustic_model:
+    beta_nominal: 4.8
+    beta_min: 4.0
+    beta_max: 6.0
+    beta_status: to_calibrate
+    porosity_leak_nominal: 0.03
+    porosity_leak_min: 0.01
+    porosity_leak_max: 0.07
+    porosity_status: inferred
+    wall_loss_nominal: 0.03
+    wall_loss_min: 0.015
+    wall_loss_max: 0.06
+    wall_loss_status: inferred
+  confidence:
+    overall: low
+    beta: low
+    porosity_leak: low
+    wall_loss: low
+  research_priority:
+    beta: high
+    porosity_leak: high
+    wall_loss: medium
+  source_status:
+    humidity_logic: sourced
+    finish_logic: sourced
+    wood_variability_logic: sourced
+    acoustic_coefficients: inferred
+  notes: Bois plus léger et plus poreux.
+  variant_defaults: *id001
+- id: spruce
+  base_material: spruce
+  family: wood
+  subtype: solid
+  practical:
+    manufacturability: easy
+    cost_level: low
+    mass_level: low
+    recommended_for:
+      mouthpiece: false
+      body: true
+      bell: true
+  acoustic_model:
+    beta_nominal: 4.6
+    beta_min: 3.8
+    beta_max: 5.8
+    beta_status: to_calibrate
+    porosity_leak_nominal: 0.03
+    porosity_leak_min: 0.01
+    porosity_leak_max: 0.07
+    porosity_status: inferred
+    wall_loss_nominal: 0.028
+    wall_loss_min: 0.015
+    wall_loss_max: 0.06
+    wall_loss_status: inferred
+  confidence:
+    overall: low
+    beta: low
+    porosity_leak: low
+    wall_loss: low
+  research_priority:
+    beta: high
+    porosity_leak: high
+    wall_loss: medium
+  source_status:
+    humidity_logic: sourced
+    finish_logic: sourced
+    wood_variability_logic: sourced
+    acoustic_coefficients: inferred
+  notes: Bois léger, plus variable, plus sensible à l’humidité.
+  variant_defaults: *id001
+- id: bamboo_raw
+  base_material: bamboo_raw
+  family: wood
+  subtype: fibrous
+  practical:
+    manufacturability: medium
+    cost_level: low
+    mass_level: low
+    recommended_for:
+      mouthpiece: false
+      body: true
+      bell: true
+  acoustic_model:
+    beta_nominal: 5.0
+    beta_min: 4.2
+    beta_max: 6.3
+    beta_status: to_calibrate
+    porosity_leak_nominal: 0.035
+    porosity_leak_min: 0.015
+    porosity_leak_max: 0.08
+    porosity_status: inferred
+    wall_loss_nominal: 0.032
+    wall_loss_min: 0.015
+    wall_loss_max: 0.07
+    wall_loss_status: inferred
+  confidence:
+    overall: low
+    beta: low
+    porosity_leak: low
+    wall_loss: low
+  research_priority:
+    beta: high
+    porosity_leak: high
+    wall_loss: medium
+  source_status:
+    humidity_logic: sourced_general
+    finish_logic: sourced_general
+    wood_variability_logic: sourced_general
+    acoustic_coefficients: inferred
+  notes: Bambou brut, fibreux, sensible à l’humidité.
+  variant_defaults: *id001
+- id: birch_plywood
+  base_material: birch_plywood
+  family: wood
+  subtype: panel
+  practical:
+    manufacturability: easy
+    cost_level: low
+    mass_level: medium
+    recommended_for:
+      mouthpiece: false
+      body: true
+      bell: true
+  acoustic_model:
+    beta_nominal: 3.8
+    beta_min: 3.1
+    beta_max: 4.7
+    beta_status: to_calibrate
+    porosity_leak_nominal: 0.022
+    porosity_leak_min: 0.008
+    porosity_leak_max: 0.05
+    porosity_status: inferred
+    wall_loss_nominal: 0.022
+    wall_loss_min: 0.01
+    wall_loss_max: 0.045
+    wall_loss_status: inferred
+  confidence:
+    overall: medium
+    beta: low
+    porosity_leak: medium
+    wall_loss: medium
+  research_priority:
+    beta: high
+    porosity_leak: medium
+    wall_loss: medium
+  source_status:
+    humidity_logic: sourced
+    finish_logic: sourced
+    wood_variability_logic: sourced_general
+    acoustic_coefficients: inferred
+  notes: Contreplaqué bouleau, bon compromis pratique.
+  variant_defaults: *id001
+- id: mdf
+  base_material: mdf
+  family: wood
+  subtype: fiberboard
+  practical:
+    manufacturability: easy
+    cost_level: low
+    mass_level: medium
+    recommended_for:
+      mouthpiece: false
+      body: true
+      bell: false
+  acoustic_model:
+    beta_nominal: 5.2
+    beta_min: 4.3
+    beta_max: 6.5
+    beta_status: to_calibrate
+    porosity_leak_nominal: 0.04
+    porosity_leak_min: 0.02
+    porosity_leak_max: 0.09
+    porosity_status: inferred
+    wall_loss_nominal: 0.045
+    wall_loss_min: 0.02
+    wall_loss_max: 0.09
+    wall_loss_status: inferred
+  confidence:
+    overall: low
+    beta: low
+    porosity_leak: low
+    wall_loss: low
+  research_priority:
+    beta: high
+    porosity_leak: high
+    wall_loss: high
+  source_status:
+    humidity_logic: sourced_general
+    finish_logic: sourced_general
+    wood_variability_logic: sourced_general
+    acoustic_coefficients: inferred
+  notes: MDF, très sensible à l’humidité, usage prudent.
+  variant_defaults: *id001
+- id: oak_varnished
+  base_material: oak_varnished
+  family: wood
+  subtype: solid_coated
+  practical:
+    manufacturability: medium
+    cost_level: medium
+    mass_level: high
+    recommended_for:
+      mouthpiece: true
+      body: true
+      bell: true
+  acoustic_model:
+    beta_nominal: 3.1
+    beta_min: 2.5
+    beta_max: 3.9
+    beta_status: inferred
+    porosity_leak_nominal: 0.01
+    porosity_leak_min: 0.003
+    porosity_leak_max: 0.025
+    porosity_status: inferred
+    wall_loss_nominal: 0.018
+    wall_loss_min: 0.008
+    wall_loss_max: 0.03
+    wall_loss_status: inferred
+  confidence:
+    overall: medium
+    beta: low
+    porosity_leak: medium
+    wall_loss: medium
+  research_priority:
+    beta: high
+    porosity_leak: medium
+    wall_loss: medium
+  source_status:
+    finish_logic: sourced
+    acoustic_coefficients: inferred
+  notes: Chêne verni, plus stable hygrométriquement.
+- id: maple_varnished
+  base_material: maple_varnished
+  family: wood
+  subtype: solid_coated
+  practical:
+    manufacturability: easy
+    cost_level: medium
+    mass_level: medium
+    recommended_for:
+      mouthpiece: true
+      body: true
+      bell: true
+  acoustic_model:
+    beta_nominal: 3.0
+    beta_min: 2.5
+    beta_max: 3.8
+    beta_status: inferred
+    porosity_leak_nominal: 0.01
+    porosity_leak_min: 0.003
+    porosity_leak_max: 0.025
+    porosity_status: inferred
+    wall_loss_nominal: 0.016
+    wall_loss_min: 0.007
+    wall_loss_max: 0.028
+    wall_loss_status: inferred
+  confidence:
+    overall: medium
+    beta: low
+    porosity_leak: medium
+    wall_loss: medium
+  research_priority:
+    beta: high
+    porosity_leak: medium
+    wall_loss: medium
+  source_status:
+    finish_logic: sourced
+    acoustic_coefficients: inferred
+  notes: Érable verni, bon candidat embouchure.
+- id: plywood_varnished
+  base_material: plywood_varnished
+  family: wood
+  subtype: panel_coated
+  practical:
+    manufacturability: easy
+    cost_level: low
+    mass_level: medium
+    recommended_for:
+      mouthpiece: false
+      body: true
+      bell: true
+  acoustic_model:
+    beta_nominal: 3.2
+    beta_min: 2.6
+    beta_max: 4.0
+    beta_status: inferred
+    porosity_leak_nominal: 0.012
+    porosity_leak_min: 0.004
+    porosity_leak_max: 0.03
+    porosity_status: inferred
+    wall_loss_nominal: 0.018
+    wall_loss_min: 0.008
+    wall_loss_max: 0.032
+    wall_loss_status: inferred
+  confidence:
+    overall: medium
+    beta: low
+    porosity_leak: medium
+    wall_loss: medium
+  research_priority:
+    beta: high
+    porosity_leak: medium
+    wall_loss: medium
+  source_status:
+    finish_logic: sourced
+    acoustic_coefficients: inferred
+  notes: Contreplaqué verni, pratique et stable.
+- id: wood_epoxy_lined
+  base_material: wood_epoxy_lined
+  family: wood
+  subtype: lined
+  practical:
+    manufacturability: medium
+    cost_level: medium
+    mass_level: medium
+    recommended_for:
+      mouthpiece: true
+      body: true
+      bell: true
+  acoustic_model:
+    beta_nominal: 2.6
+    beta_min: 2.2
+    beta_max: 3.2
+    beta_status: inferred
+    porosity_leak_nominal: 0.006
+    porosity_leak_min: 0.001
+    porosity_leak_max: 0.015
+    porosity_status: inferred
+    wall_loss_nominal: 0.014
+    wall_loss_min: 0.005
+    wall_loss_max: 0.025
+    wall_loss_status: inferred
+  confidence:
+    overall: medium
+    beta: low
+    porosity_leak: medium
+    wall_loss: medium
+  research_priority:
+    beta: high
+    porosity_leak: medium
+    wall_loss: medium
+  source_status:
+    finish_logic: sourced
+    acoustic_coefficients: inferred
+  notes: Bois avec lining époxy, lisse et étanche.
+- id: wood_polyester_lined
+  base_material: wood_polyester_lined
+  family: wood
+  subtype: lined
+  practical:
+    manufacturability: medium
+    cost_level: medium
+    mass_level: medium
+    recommended_for:
+      mouthpiece: false
+      body: true
+      bell: true
+  acoustic_model:
+    beta_nominal: 2.9
+    beta_min: 2.4
+    beta_max: 3.6
+    beta_status: inferred
+    porosity_leak_nominal: 0.008
+    porosity_leak_min: 0.002
+    porosity_leak_max: 0.02
+    porosity_status: inferred
+    wall_loss_nominal: 0.015
+    wall_loss_min: 0.006
+    wall_loss_max: 0.028
+    wall_loss_status: inferred
+  confidence:
+    overall: medium
+    beta: low
+    porosity_leak: medium
+    wall_loss: medium
+  research_priority:
+    beta: high
+    porosity_leak: medium
+    wall_loss: medium
+  source_status:
+    finish_logic: sourced_general
+    acoustic_coefficients: inferred
+  notes: Bois avec lining polyester.
+- id: wood_polyurethane_lined
+  base_material: wood_polyurethane_lined
+  family: wood
+  subtype: lined
+  practical:
+    manufacturability: medium
+    cost_level: medium
+    mass_level: medium
+    recommended_for:
+      mouthpiece: true
+      body: true
+      bell: true
+  acoustic_model:
+    beta_nominal: 2.8
+    beta_min: 2.3
+    beta_max: 3.5
+    beta_status: inferred
+    porosity_leak_nominal: 0.007
+    porosity_leak_min: 0.002
+    porosity_leak_max: 0.018
+    porosity_status: inferred
+    wall_loss_nominal: 0.015
+    wall_loss_min: 0.006
+    wall_loss_max: 0.028
+    wall_loss_status: inferred
+  confidence:
+    overall: medium
+    beta: low
+    porosity_leak: medium
+    wall_loss: medium
+  research_priority:
+    beta: high
+    porosity_leak: medium
+    wall_loss: medium
+  source_status:
+    finish_logic: sourced
+    acoustic_coefficients: inferred
+  notes: Bois avec lining polyuréthane.
+- id: pvc_pressure
+  base_material: pvc_pressure
+  family: polymer
+  subtype: pvc
+  practical:
+    manufacturability: easy
+    cost_level: low
+    mass_level: low
+    recommended_for:
+      mouthpiece: true
+      body: true
+      bell: true
+  acoustic_model:
+    beta_nominal: 2.4
+    beta_min: 2.1
+    beta_max: 2.9
+    beta_status: inferred
+    porosity_leak_nominal: 0.001
+    porosity_leak_min: 0.0
+    porosity_leak_max: 0.003
+    porosity_status: inferred
+    wall_loss_nominal: 0.004
+    wall_loss_min: 0.001
+    wall_loss_max: 0.01
+    wall_loss_status: inferred
+  confidence:
+    overall: medium
+    beta: low
+    porosity_leak: medium
+    wall_loss: medium
+  research_priority:
+    beta: medium
+    porosity_leak: low
+    wall_loss: low
+  source_status:
+    surface_class: sourced
+    acoustic_coefficients: inferred
+  notes: Référence lisse, stable, économique.
+- id: pvc_drain
+  base_material: pvc_drain
+  family: polymer
+  subtype: pvc
+  practical:
+    manufacturability: easy
+    cost_level: low
+    mass_level: low
+    recommended_for:
+      mouthpiece: true
+      body: true
+      bell: true
+  acoustic_model:
+    beta_nominal: 2.8
+    beta_min: 2.4
+    beta_max: 3.4
+    beta_status: inferred
+    porosity_leak_nominal: 0.002
+    porosity_leak_min: 0.0
+    porosity_leak_max: 0.005
+    porosity_status: inferred
+    wall_loss_nominal: 0.006
+    wall_loss_min: 0.002
+    wall_loss_max: 0.015
+    wall_loss_status: inferred
+  confidence:
+    overall: medium
+    beta: low
+    porosity_leak: medium
+    wall_loss: medium
+  research_priority:
+    beta: medium
+    porosity_leak: low
+    wall_loss: low
+  source_status:
+    surface_class: sourced_general
+    acoustic_coefficients: inferred
+  notes: PVC moins “premium” que pression.
+- id: abs
+  base_material: abs
+  family: polymer
+  subtype: abs
+  practical:
+    manufacturability: easy
+    cost_level: low
+    mass_level: low
+    recommended_for:
+      mouthpiece: true
+      body: true
+      bell: true
+  acoustic_model:
+    beta_nominal: 3.0
+    beta_min: 2.6
+    beta_max: 3.5
+    beta_status: inferred
+    porosity_leak_nominal: 0.003
+    porosity_leak_min: 0.001
+    porosity_leak_max: 0.008
+    porosity_status: inferred
+    wall_loss_nominal: 0.008
+    wall_loss_min: 0.003
+    wall_loss_max: 0.018
+    wall_loss_status: inferred
+  confidence:
+    overall: medium
+    beta: low
+    porosity_leak: medium
+    wall_loss: medium
+  research_priority:
+    beta: medium
+    porosity_leak: low
+    wall_loss: low
+  source_status:
+    surface_class: sourced_general
+    acoustic_coefficients: inferred
+  notes: ABS, bon compromis pratique.
+- id: petg
+  base_material: petg
+  family: polymer
+  subtype: petg
+  practical:
+    manufacturability: easy
+    cost_level: low
+    mass_level: low
+    recommended_for:
+      mouthpiece: true
+      body: true
+      bell: true
+  acoustic_model:
+    beta_nominal: 3.1
+    beta_min: 2.7
+    beta_max: 3.6
+    beta_status: inferred
+    porosity_leak_nominal: 0.003
+    porosity_leak_min: 0.001
+    porosity_leak_max: 0.008
+    porosity_status: inferred
+    wall_loss_nominal: 0.009
+    wall_loss_min: 0.003
+    wall_loss_max: 0.02
+    wall_loss_status: inferred
+  confidence:
+    overall: medium
+    beta: low
+    porosity_leak: medium
+    wall_loss: medium
+  research_priority:
+    beta: medium
+    porosity_leak: low
+    wall_loss: low
+  source_status:
+    surface_class: sourced_general
+    acoustic_coefficients: inferred
+  notes: PETG, fabrication facile.
+- id: hdpe
+  base_material: hdpe
+  family: polymer
+  subtype: hdpe
+  practical:
+    manufacturability: easy
+    cost_level: low
+    mass_level: low
+    recommended_for:
+      mouthpiece: false
+      body: true
+      bell: true
+  acoustic_model:
+    beta_nominal: 3.2
+    beta_min: 2.8
+    beta_max: 3.8
+    beta_status: inferred
+    porosity_leak_nominal: 0.003
+    porosity_leak_min: 0.001
+    porosity_leak_max: 0.008
+    porosity_status: inferred
+    wall_loss_nominal: 0.01
+    wall_loss_min: 0.004
+    wall_loss_max: 0.022
+    wall_loss_status: inferred
+  confidence:
+    overall: medium
+    beta: low
+    porosity_leak: medium
+    wall_loss: medium
+  research_priority:
+    beta: medium
+    porosity_leak: low
+    wall_loss: low
+  source_status:
+    surface_class: sourced_general
+    acoustic_coefficients: inferred
+  notes: PEHD, peu rigide mais utilisable.
+- id: pp
+  base_material: pp
+  family: polymer
+  subtype: pp
+  practical:
+    manufacturability: easy
+    cost_level: low
+    mass_level: low
+    recommended_for:
+      mouthpiece: false
+      body: true
+      bell: true
+  acoustic_model:
+    beta_nominal: 3.1
+    beta_min: 2.7
+    beta_max: 3.7
+    beta_status: inferred
+    porosity_leak_nominal: 0.003
+    porosity_leak_min: 0.001
+    porosity_leak_max: 0.008
+    porosity_status: inferred
+    wall_loss_nominal: 0.01
+    wall_loss_min: 0.004
+    wall_loss_max: 0.022
+    wall_loss_status: inferred
+  confidence:
+    overall: medium
+    beta: low
+    porosity_leak: medium
+    wall_loss: medium
+  research_priority:
+    beta: medium
+    porosity_leak: low
+    wall_loss: low
+  source_status:
+    surface_class: sourced_general
+    acoustic_coefficients: inferred
+  notes: Polypropylène, proche du PEHD en logique de départ.
+- id: pmma
+  base_material: pmma
+  family: polymer
+  subtype: pmma
+  practical:
+    manufacturability: medium
+    cost_level: medium
+    mass_level: medium
+    recommended_for:
+      mouthpiece: true
+      body: true
+      bell: true
+  acoustic_model:
+    beta_nominal: 2.5
+    beta_min: 2.2
+    beta_max: 3.0
+    beta_status: inferred
+    porosity_leak_nominal: 0.001
+    porosity_leak_min: 0.0
+    porosity_leak_max: 0.003
+    porosity_status: inferred
+    wall_loss_nominal: 0.004
+    wall_loss_min: 0.001
+    wall_loss_max: 0.01
+    wall_loss_status: inferred
+  confidence:
+    overall: medium
+    beta: low
+    porosity_leak: medium
+    wall_loss: medium
+  research_priority:
+    beta: medium
+    porosity_leak: low
+    wall_loss: low
+  source_status:
+    surface_class: sourced_general
+    acoustic_coefficients: inferred
+  notes: Acrylique, lisse et rigide.
+- id: polycarbonate
+  base_material: polycarbonate
+  family: polymer
+  subtype: pc
+  practical:
+    manufacturability: medium
+    cost_level: medium
+    mass_level: medium
+    recommended_for:
+      mouthpiece: true
+      body: true
+      bell: true
+  acoustic_model:
+    beta_nominal: 2.5
+    beta_min: 2.2
+    beta_max: 3.0
+    beta_status: inferred
+    porosity_leak_nominal: 0.001
+    porosity_leak_min: 0.0
+    porosity_leak_max: 0.003
+    porosity_status: inferred
+    wall_loss_nominal: 0.005
+    wall_loss_min: 0.001
+    wall_loss_max: 0.012
+    wall_loss_status: inferred
+  confidence:
+    overall: medium
+    beta: low
+    porosity_leak: medium
+    wall_loss: medium
+  research_priority:
+    beta: medium
+    porosity_leak: low
+    wall_loss: low
+  source_status:
+    surface_class: sourced_general
+    acoustic_coefficients: inferred
+  notes: Polycarbonate, robuste et lisse.
+- id: fiberglass_epoxy
+  base_material: fiberglass_epoxy
+  family: composite
+  subtype: fiberglass_epoxy
+  practical:
+    manufacturability: medium
+    cost_level: medium
+    mass_level: medium
+    recommended_for:
+      mouthpiece: false
+      body: true
+      bell: true
+  acoustic_model:
+    beta_nominal: 3.0
+    beta_min: 2.6
+    beta_max: 3.6
+    beta_status: inferred
+    porosity_leak_nominal: 0.003
+    porosity_leak_min: 0.001
+    porosity_leak_max: 0.008
+    porosity_status: inferred
+    wall_loss_nominal: 0.01
+    wall_loss_min: 0.004
+    wall_loss_max: 0.02
+    wall_loss_status: inferred
+  confidence:
+    overall: medium
+    beta: low
+    porosity_leak: medium
+    wall_loss: medium
+  research_priority:
+    beta: medium
+    porosity_leak: low
+    wall_loss: low
+  source_status:
+    surface_class: sourced_general
+    acoustic_coefficients: inferred
+  notes: Composite verre/époxy avec surface interne soignée.
+- id: fiberglass_polyester
+  base_material: fiberglass_polyester
+  family: composite
+  subtype: fiberglass_polyester
+  practical:
+    manufacturability: medium
+    cost_level: medium
+    mass_level: medium
+    recommended_for:
+      mouthpiece: false
+      body: true
+      bell: true
+  acoustic_model:
+    beta_nominal: 3.1
+    beta_min: 2.7
+    beta_max: 3.8
+    beta_status: inferred
+    porosity_leak_nominal: 0.004
+    porosity_leak_min: 0.001
+    porosity_leak_max: 0.01
+    porosity_status: inferred
+    wall_loss_nominal: 0.012
+    wall_loss_min: 0.005
+    wall_loss_max: 0.025
+    wall_loss_status: inferred
+  confidence:
+    overall: medium
+    beta: low
+    porosity_leak: medium
+    wall_loss: medium
+  research_priority:
+    beta: medium
+    porosity_leak: low
+    wall_loss: low
+  source_status:
+    surface_class: sourced_general
+    acoustic_coefficients: inferred
+  notes: Composite verre/polyester.
+- id: carbon_epoxy
+  base_material: carbon_epoxy
+  family: composite
+  subtype: carbon_epoxy
+  practical:
+    manufacturability: hard
+    cost_level: high
+    mass_level: low
+    recommended_for:
+      mouthpiece: false
+      body: true
+      bell: true
+  acoustic_model:
+    beta_nominal: 3.0
+    beta_min: 2.6
+    beta_max: 3.6
+    beta_status: inferred
+    porosity_leak_nominal: 0.002
+    porosity_leak_min: 0.001
+    porosity_leak_max: 0.006
+    porosity_status: inferred
+    wall_loss_nominal: 0.008
+    wall_loss_min: 0.003
+    wall_loss_max: 0.018
+    wall_loss_status: inferred
+  confidence:
+    overall: medium
+    beta: low
+    porosity_leak: medium
+    wall_loss: medium
+  research_priority:
+    beta: medium
+    porosity_leak: low
+    wall_loss: low
+  source_status:
+    surface_class: sourced_general
+    acoustic_coefficients: inferred
+  notes: Composite carbone/époxy, performant mais plus coûteux.
+- id: cast_epoxy
+  base_material: cast_epoxy
+  family: resin
+  subtype: epoxy_cast
+  practical:
+    manufacturability: medium
+    cost_level: medium
+    mass_level: medium
+    recommended_for:
+      mouthpiece: true
+      body: true
+      bell: true
+  acoustic_model:
+    beta_nominal: 2.4
+    beta_min: 2.1
+    beta_max: 2.9
+    beta_status: inferred
+    porosity_leak_nominal: 0.001
+    porosity_leak_min: 0.0
+    porosity_leak_max: 0.004
+    porosity_status: inferred
+    wall_loss_nominal: 0.006
+    wall_loss_min: 0.002
+    wall_loss_max: 0.015
+    wall_loss_status: inferred
+  confidence:
+    overall: medium
+    beta: low
+    porosity_leak: medium
+    wall_loss: medium
+  research_priority:
+    beta: medium
+    porosity_leak: low
+    wall_loss: low
+  source_status:
+    surface_class: sourced_general
+    acoustic_coefficients: inferred
+  notes: Résine époxy moulée.
+- id: cast_polyurethane
+  base_material: cast_polyurethane
+  family: resin
+  subtype: polyurethane_cast
+  practical:
+    manufacturability: medium
+    cost_level: medium
+    mass_level: medium
+    recommended_for:
+      mouthpiece: true
+      body: true
+      bell: true
+  acoustic_model:
+    beta_nominal: 3.0
+    beta_min: 2.6
+    beta_max: 3.6
+    beta_status: inferred
+    porosity_leak_nominal: 0.002
+    porosity_leak_min: 0.001
+    porosity_leak_max: 0.006
+    porosity_status: inferred
+    wall_loss_nominal: 0.01
+    wall_loss_min: 0.004
+    wall_loss_max: 0.02
+    wall_loss_status: inferred
+  confidence:
+    overall: medium
+    beta: low
+    porosity_leak: medium
+    wall_loss: medium
+  research_priority:
+    beta: medium
+    porosity_leak: low
+    wall_loss: low
+  source_status:
+    surface_class: sourced_general
+    acoustic_coefficients: inferred
+  notes: Résine PU moulée.
+- id: wood_resin_composite
+  base_material: wood_resin_composite
+  family: composite
+  subtype: wood_resin
+  practical:
+    manufacturability: medium
+    cost_level: medium
+    mass_level: medium
+    recommended_for:
+      mouthpiece: false
+      body: true
+      bell: true
+  acoustic_model:
+    beta_nominal: 3.8
+    beta_min: 3.1
+    beta_max: 4.8
+    beta_status: to_calibrate
+    porosity_leak_nominal: 0.015
+    porosity_leak_min: 0.005
+    porosity_leak_max: 0.04
+    porosity_status: inferred
+    wall_loss_nominal: 0.02
+    wall_loss_min: 0.01
+    wall_loss_max: 0.04
+    wall_loss_status: inferred
+  confidence:
+    overall: low
+    beta: low
+    porosity_leak: low
+    wall_loss: low
+  research_priority:
+    beta: high
+    porosity_leak: medium
+    wall_loss: medium
+  source_status:
+    surface_class: sourced_general
+    acoustic_coefficients: inferred
+  notes: Composite bois-résine, variable selon formulation.
+- id: aluminum_6061
+  base_material: aluminum_6061
+  family: metal
+  subtype: aluminum
+  practical:
+    manufacturability: medium
+    cost_level: medium
+    mass_level: medium
+    recommended_for:
+      mouthpiece: true
+      body: true
+      bell: true
+  acoustic_model:
+    beta_nominal: 2.4
+    beta_min: 2.1
+    beta_max: 2.9
+    beta_status: inferred
+    porosity_leak_nominal: 0.0
+    porosity_leak_min: 0.0
+    porosity_leak_max: 0.002
+    porosity_status: inferred
+    wall_loss_nominal: 0.003
+    wall_loss_min: 0.001
+    wall_loss_max: 0.008
+    wall_loss_status: inferred
+  confidence:
+    overall: medium
+    beta: low
+    porosity_leak: medium
+    wall_loss: medium
+  research_priority:
+    beta: medium
+    porosity_leak: low
+    wall_loss: low
+  source_status:
+    surface_class: sourced_general
+    acoustic_coefficients: inferred
+  notes: Aluminium 6061, lisse et peu poreux.
+- id: mild_steel
+  base_material: mild_steel
+  family: metal
+  subtype: steel
+  practical:
+    manufacturability: medium
+    cost_level: low
+    mass_level: high
+    recommended_for:
+      mouthpiece: true
+      body: true
+      bell: true
+  acoustic_model:
+    beta_nominal: 2.9
+    beta_min: 2.5
+    beta_max: 3.5
+    beta_status: inferred
+    porosity_leak_nominal: 0.0
+    porosity_leak_min: 0.0
+    porosity_leak_max: 0.002
+    porosity_status: inferred
+    wall_loss_nominal: 0.004
+    wall_loss_min: 0.001
+    wall_loss_max: 0.01
+    wall_loss_status: inferred
+  confidence:
+    overall: medium
+    beta: low
+    porosity_leak: medium
+    wall_loss: medium
+  research_priority:
+    beta: medium
+    porosity_leak: low
+    wall_loss: low
+  source_status:
+    surface_class: sourced_general
+    acoustic_coefficients: inferred
+  notes: Acier doux, dépend beaucoup de la finition intérieure.
+- id: stainless_304
+  base_material: stainless_304
+  family: metal
+  subtype: stainless
+  practical:
+    manufacturability: medium
+    cost_level: medium
+    mass_level: high
+    recommended_for:
+      mouthpiece: true
+      body: true
+      bell: true
+  acoustic_model:
+    beta_nominal: 2.4
+    beta_min: 2.1
+    beta_max: 2.9
+    beta_status: inferred
+    porosity_leak_nominal: 0.0
+    porosity_leak_min: 0.0
+    porosity_leak_max: 0.002
+    porosity_status: inferred
+    wall_loss_nominal: 0.003
+    wall_loss_min: 0.001
+    wall_loss_max: 0.008
+    wall_loss_status: inferred
+  confidence:
+    overall: medium
+    beta: low
+    porosity_leak: medium
+    wall_loss: medium
+  research_priority:
+    beta: medium
+    porosity_leak: low
+    wall_loss: low
+  source_status:
+    surface_class: sourced_general
+    acoustic_coefficients: inferred
+  notes: Inox 304, très lisse en bon état de surface.
+- id: brass
+  base_material: brass
+  family: metal
+  subtype: brass
+  practical:
+    manufacturability: medium
+    cost_level: medium
+    mass_level: high
+    recommended_for:
+      mouthpiece: true
+      body: true
+      bell: true
+  acoustic_model:
+    beta_nominal: 2.4
+    beta_min: 2.1
+    beta_max: 2.9
+    beta_status: inferred
+    porosity_leak_nominal: 0.0
+    porosity_leak_min: 0.0
+    porosity_leak_max: 0.002
+    porosity_status: inferred
+    wall_loss_nominal: 0.003
+    wall_loss_min: 0.001
+    wall_loss_max: 0.008
+    wall_loss_status: inferred
+  confidence:
+    overall: medium
+    beta: low
+    porosity_leak: medium
+    wall_loss: medium
+  research_priority:
+    beta: medium
+    porosity_leak: low
+    wall_loss: low
+  source_status:
+    surface_class: sourced_general
+    acoustic_coefficients: inferred
+  notes: Laiton, bon candidat embouchure/cloche.
+- id: copper
+  base_material: copper
+  family: metal
+  subtype: copper
+  practical:
+    manufacturability: medium
+    cost_level: medium
+    mass_level: high
+    recommended_for:
+      mouthpiece: true
+      body: true
+      bell: true
+  acoustic_model:
+    beta_nominal: 2.4
+    beta_min: 2.1
+    beta_max: 2.9
+    beta_status: inferred
+    porosity_leak_nominal: 0.0
+    porosity_leak_min: 0.0
+    porosity_leak_max: 0.002
+    porosity_status: inferred
+    wall_loss_nominal: 0.003
+    wall_loss_min: 0.001
+    wall_loss_max: 0.008
+    wall_loss_status: inferred
+  confidence:
+    overall: medium
+    beta: low
+    porosity_leak: medium
+    wall_loss: medium
+  research_priority:
+    beta: medium
+    porosity_leak: low
+    wall_loss: low
+  source_status:
+    surface_class: sourced_general
+    acoustic_coefficients: inferred
+  notes: Cuivre, très lisse si bien fini.
+- id: cast_iron
+  base_material: cast_iron
+  family: metal
+  subtype: cast_iron
+  practical:
+    manufacturability: hard
+    cost_level: low
+    mass_level: very_high
+    recommended_for:
+      mouthpiece: false
+      body: true
+      bell: false
+  acoustic_model:
+    beta_nominal: 3.1
+    beta_min: 2.7
+    beta_max: 3.8
+    beta_status: inferred
+    porosity_leak_nominal: 0.0
+    porosity_leak_min: 0.0
+    porosity_leak_max: 0.003
+    porosity_status: inferred
+    wall_loss_nominal: 0.006
+    wall_loss_min: 0.002
+    wall_loss_max: 0.015
+    wall_loss_status: inferred
+  confidence:
+    overall: low
+    beta: low
+    porosity_leak: low
+    wall_loss: low
+  research_priority:
+    beta: medium
+    porosity_leak: low
+    wall_loss: low
+  source_status:
+    surface_class: sourced_general
+    acoustic_coefficients: inferred
+  notes: Fonte, très lourde, usage surtout exploratoire.
+- id: spiral_cardboard
+  base_material: spiral_cardboard
+  family: paper
+  subtype: cardboard
+  practical:
+    manufacturability: easy
+    cost_level: low
+    mass_level: very_low
+    recommended_for:
+      mouthpiece: false
+      body: true
+      bell: false
+  acoustic_model:
+    beta_nominal: 5.4
+    beta_min: 4.2
+    beta_max: 6.8
+    beta_status: to_calibrate
+    porosity_leak_nominal: 0.05
+    porosity_leak_min: 0.02
+    porosity_leak_max: 0.12
+    porosity_status: inferred
+    wall_loss_nominal: 0.06
+    wall_loss_min: 0.025
+    wall_loss_max: 0.12
+    wall_loss_status: inferred
+  confidence:
+    overall: low
+    beta: low
+    porosity_leak: low
+    wall_loss: low
+  research_priority:
+    beta: high
+    porosity_leak: high
+    wall_loss: high
+  source_status:
+    family_behavior: sourced_general
+    acoustic_coefficients: inferred
+  notes: Carton spiralé, très sensible à l’humidité.
+- id: papier_mache
+  base_material: papier_mache
+  family: paper
+  subtype: papier_mache
+  practical:
+    manufacturability: medium
+    cost_level: low
+    mass_level: very_low
+    recommended_for:
+      mouthpiece: false
+      body: true
+      bell: false
+  acoustic_model:
+    beta_nominal: 7.2
+    beta_min: 5.5
+    beta_max: 9.0
+    beta_status: to_calibrate
+    porosity_leak_nominal: 0.08
+    porosity_leak_min: 0.04
+    porosity_leak_max: 0.15
+    porosity_status: inferred
+    wall_loss_nominal: 0.07
+    wall_loss_min: 0.04
+    wall_loss_max: 0.12
+    wall_loss_status: inferred
+  confidence:
+    overall: low
+    beta: low
+    porosity_leak: low
+    wall_loss: low
+  research_priority:
+    beta: high
+    porosity_leak: high
+    wall_loss: high
+  source_status:
+    family_behavior: sourced_general
+    acoustic_coefficients: inferred
+  notes: Papier mâché, très variable, très sensible à l’humidité.
