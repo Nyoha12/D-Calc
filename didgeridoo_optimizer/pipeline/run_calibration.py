@@ -47,6 +47,7 @@ class CalibrationRunner:
         advisor = TargetedCalibrationAdvisor()
         prioritized = advisor.prioritize_materials(sensitivity_report, context["material_db"])
         proposals = advisor.propose_adjustments(prioritized, context["material_db"])
+        proposal_patch = self._normalize_patch(dict(proposals.get("patch", {}) or {}))
 
         output = {
             "config_path": str(Path(config_path)),
@@ -55,6 +56,10 @@ class CalibrationRunner:
             "sensitivity_report": sensitivity_report,
             "prioritized_materials": prioritized,
             "proposals": proposals,
+            "patch_proposal": proposal_patch,
+            "patch_replayed": self._empty_patch(),
+            "patch_accepted": self._empty_patch(),
+            "patch_to_calibrate": proposal_patch,
         }
         if export_results:
             output["exports"] = self._export(output, context["output_dir"] / "calibration")
@@ -106,6 +111,7 @@ class CalibrationRunner:
         worsened_count = sum(delta < 0 for delta in deltas)
         mean_delta = float(mean(deltas)) if deltas else 0.0
         decision = self._decide_local_patch(validation["all_passed"], patched_validation["all_passed"], mean_delta, improved_count, worsened_count)
+        patch_tracking = self._patch_tracking(proposals.get("patch", {}), directed_patch, decision)
 
         output = {
             "config_path": str(Path(config_path)),
@@ -118,6 +124,10 @@ class CalibrationRunner:
             "prioritized_materials": prioritized,
             "proposals": proposals,
             "directed_patch": directed_patch,
+            "patch_proposal": patch_tracking["proposal_patch"],
+            "patch_replayed": patch_tracking["replayed_patch"],
+            "patch_accepted": patch_tracking["accepted_patch"],
+            "patch_to_calibrate": patch_tracking["patch_to_calibrate"],
             "deltas": {
                 "mean_delta": mean_delta,
                 "min_delta": min(deltas) if deltas else 0.0,
@@ -127,6 +137,7 @@ class CalibrationRunner:
                 "all_candidate_deltas": deltas,
             },
             "decision": decision,
+            "patch_material_ids": patch_tracking["material_ids"],
         }
         if export_results:
             output["exports"] = self._export(output, context["output_dir"] / "calibration_material_directed")
@@ -210,6 +221,45 @@ class CalibrationRunner:
             return "accept_local_only"
         return "keep_as_to_calibrate"
 
+    def _empty_patch(self) -> dict[str, Any]:
+        return {"materials": {}}
+
+    def _normalize_patch(self, patch: Mapping[str, Any] | None) -> dict[str, Any]:
+        materials_patch = dict((patch or {}).get("materials", {}) or {})
+        normalized_materials = {
+            str(material_id): {str(key): float(value) for key, value in dict(updates or {}).items()}
+            for material_id, updates in materials_patch.items()
+        }
+        return {"materials": normalized_materials}
+
+    def _patch_material_ids(self, patch: Mapping[str, Any] | None) -> list[str]:
+        return sorted(str(material_id) for material_id in dict((patch or {}).get("materials", {}) or {}).keys())
+
+    def _is_patch_accepted(self, decision: str | None) -> bool:
+        return decision in {"accept_local_only", "accept_family", "accept_weighted"}
+
+    def _patch_tracking(
+        self,
+        proposal_patch: Mapping[str, Any] | None,
+        replayed_patch: Mapping[str, Any] | None,
+        decision: str | None,
+    ) -> dict[str, Any]:
+        normalized_proposal = self._normalize_patch(proposal_patch)
+        normalized_replayed = self._normalize_patch(replayed_patch)
+        accepted_patch = normalized_replayed if self._is_patch_accepted(decision) else self._empty_patch()
+        to_calibrate_patch = normalized_replayed if decision == "keep_as_to_calibrate" else self._empty_patch()
+        return {
+            "proposal_patch": normalized_proposal,
+            "replayed_patch": normalized_replayed,
+            "accepted_patch": accepted_patch,
+            "patch_to_calibrate": to_calibrate_patch,
+            "material_ids": {
+                "proposal": self._patch_material_ids(normalized_proposal),
+                "replayed": self._patch_material_ids(normalized_replayed),
+                "accepted": self._patch_material_ids(accepted_patch),
+                "to_calibrate": self._patch_material_ids(to_calibrate_patch),
+            },
+        }
 
     def validate_material_family_patch(
         self,
@@ -244,6 +294,7 @@ class CalibrationRunner:
 
         deltas = self._score_deltas(context["linear_pipeline"], pool, family_config, patched_db)
         decision = self._decide_family_patch(validation["all_passed"], patched_validation["all_passed"], deltas["mean_delta"], deltas["improved_count"], deltas["worsened_count"])
+        patch_tracking = self._patch_tracking(proposals.get("patch", {}), patch, decision)
 
         output = {
             "config_path": str(Path(config_path)),
@@ -257,9 +308,14 @@ class CalibrationRunner:
             "prioritized_materials": prioritized,
             "proposals": proposals,
             "family_patch": patch,
+            "patch_proposal": patch_tracking["proposal_patch"],
+            "patch_replayed": patch_tracking["replayed_patch"],
+            "patch_accepted": patch_tracking["accepted_patch"],
+            "patch_to_calibrate": patch_tracking["patch_to_calibrate"],
             "pool_material_mix": [self._segment_material_ids(result.get("design", {})) for result in pool],
             "deltas": deltas,
             "decision": decision,
+            "patch_material_ids": patch_tracking["material_ids"],
         }
         if export_results:
             output["exports"] = self._export(output, context["output_dir"] / "calibration_material_family")
@@ -298,6 +354,7 @@ class CalibrationRunner:
 
         deltas = self._score_deltas(context["linear_pipeline"], pool, weighted_config, patched_db)
         decision = self._decide_family_weighted_patch(validation["all_passed"], patched_validation["all_passed"], deltas["mean_delta"], deltas["improved_count"], deltas["worsened_count"])
+        patch_tracking = self._patch_tracking(proposals.get("patch", {}), patch, decision)
 
         output = {
             "config_path": str(Path(config_path)),
@@ -311,9 +368,14 @@ class CalibrationRunner:
             "prioritized_materials": prioritized,
             "proposals": proposals,
             "weighted_patch": patch,
+            "patch_proposal": patch_tracking["proposal_patch"],
+            "patch_replayed": patch_tracking["replayed_patch"],
+            "patch_accepted": patch_tracking["accepted_patch"],
+            "patch_to_calibrate": patch_tracking["patch_to_calibrate"],
             "pool_material_mix": [self._segment_material_ids(result.get("design", {})) for result in pool],
             "deltas": deltas,
             "decision": decision,
+            "patch_material_ids": patch_tracking["material_ids"],
         }
         if export_results:
             output["exports"] = self._export(output, context["output_dir"] / "calibration_material_family_weighted")
@@ -508,19 +570,48 @@ class CalibrationRunner:
         out_dir.mkdir(parents=True, exist_ok=True)
         json_path = out_dir / "calibration_report.json"
         yaml_path = out_dir / "calibration_report.yaml"
-        patch_yaml_path = out_dir / "materials_patch_suggestions.yaml"
+        proposal_patch_yaml_path = out_dir / "materials_patch_suggestions.yaml"
+        replayed_patch_yaml_path = out_dir / "materials_patch_replayed.yaml"
+        accepted_patch_yaml_path = out_dir / "materials_patch_accepted.yaml"
+        to_calibrate_patch_yaml_path = out_dir / "materials_patch_to_calibrate.yaml"
+        patch_status_yaml_path = out_dir / "materials_patch_status.yaml"
+
+        proposal_patch = self._normalize_patch(output.get("patch_proposal", dict(output.get("proposals", {}) or {}).get("patch", {})))
+        replayed_patch = self._normalize_patch(output.get("patch_replayed", output.get("directed_patch", output.get("family_patch", output.get("weighted_patch", {})))))
+        accepted_patch = self._normalize_patch(output.get("patch_accepted", {}))
+        to_calibrate_patch = self._normalize_patch(output.get("patch_to_calibrate", {}))
+        patch_status = {
+            "decision": output.get("decision"),
+            "validation_preserved": bool(output.get("validation_preserved", False)),
+            "proposal_patch_material_ids": self._patch_material_ids(proposal_patch),
+            "replayed_patch_material_ids": self._patch_material_ids(replayed_patch),
+            "accepted_patch_material_ids": self._patch_material_ids(accepted_patch),
+            "patch_to_calibrate_material_ids": self._patch_material_ids(to_calibrate_patch),
+        }
 
         with open(json_path, "w", encoding="utf-8") as handle:
             json.dump(_to_serializable(output), handle, ensure_ascii=False, indent=2)
         with open(yaml_path, "w", encoding="utf-8") as handle:
             yaml.safe_dump(_to_serializable(output), handle, sort_keys=False, allow_unicode=True)
-        with open(patch_yaml_path, "w", encoding="utf-8") as handle:
-            yaml.safe_dump(_to_serializable(dict(output.get("proposals", {}) or {}).get("patch", {})), handle, sort_keys=False, allow_unicode=True)
+        with open(proposal_patch_yaml_path, "w", encoding="utf-8") as handle:
+            yaml.safe_dump(_to_serializable(proposal_patch), handle, sort_keys=False, allow_unicode=True)
+        with open(replayed_patch_yaml_path, "w", encoding="utf-8") as handle:
+            yaml.safe_dump(_to_serializable(replayed_patch), handle, sort_keys=False, allow_unicode=True)
+        with open(accepted_patch_yaml_path, "w", encoding="utf-8") as handle:
+            yaml.safe_dump(_to_serializable(accepted_patch), handle, sort_keys=False, allow_unicode=True)
+        with open(to_calibrate_patch_yaml_path, "w", encoding="utf-8") as handle:
+            yaml.safe_dump(_to_serializable(to_calibrate_patch), handle, sort_keys=False, allow_unicode=True)
+        with open(patch_status_yaml_path, "w", encoding="utf-8") as handle:
+            yaml.safe_dump(_to_serializable(patch_status), handle, sort_keys=False, allow_unicode=True)
 
         return {
             "json": str(json_path),
             "yaml": str(yaml_path),
-            "patch_yaml": str(patch_yaml_path),
+            "patch_yaml": str(proposal_patch_yaml_path),
+            "replayed_patch_yaml": str(replayed_patch_yaml_path),
+            "accepted_patch_yaml": str(accepted_patch_yaml_path),
+            "to_calibrate_patch_yaml": str(to_calibrate_patch_yaml_path),
+            "patch_status_yaml": str(patch_status_yaml_path),
         }
 
 
