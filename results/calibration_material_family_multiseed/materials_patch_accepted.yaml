@@ -1,0 +1,11 @@
+materials:
+  plywood_varnished:
+    beta_nominal: 3.04
+    beta_min: 2.4699999999999998
+    beta_max: 3.8
+    porosity_leak_nominal: 0.0114
+    porosity_leak_min: 0.0038
+    porosity_leak_max: 0.028499999999999998
+    wall_loss_nominal: 0.017099999999999997
+    wall_loss_min: 0.0076
+    wall_loss_max: 0.0304
