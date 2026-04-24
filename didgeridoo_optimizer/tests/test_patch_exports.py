@@ -184,6 +184,50 @@ class PatchExportsTests(unittest.TestCase):
         )
         self.assertEqual(state["patch_status"]["patch_to_calibrate_material_ids"], [])
 
+    def test_derive_patch_state_accepts_semidirected_patch(self) -> None:
+        report = {
+            "decision": "accept_local_only",
+            "validation_preserved": True,
+            "proposals": {
+                "patch": {
+                    "materials": {
+                        "birch": {
+                            "beta_nominal": 3.23,
+                        },
+                        "birch_plywood": {
+                            "beta_nominal": 3.04,
+                        },
+                        "plywood_varnished": {
+                            "beta_nominal": 3.04,
+                        },
+                    }
+                }
+            },
+            "semidirected_patch": {
+                "materials": {
+                    "plywood_varnished": {
+                        "beta_nominal": 3.04,
+                    }
+                }
+            },
+        }
+
+        state = derive_patch_state(report)
+
+        self.assertEqual(
+            state["patch_status"]["proposal_patch_material_ids"],
+            ["birch", "birch_plywood", "plywood_varnished"],
+        )
+        self.assertEqual(
+            state["patch_status"]["replayed_patch_material_ids"],
+            ["plywood_varnished"],
+        )
+        self.assertEqual(
+            state["patch_status"]["accepted_patch_material_ids"],
+            ["plywood_varnished"],
+        )
+        self.assertEqual(state["patch_status"]["patch_to_calibrate_material_ids"], [])
+
     def test_export_patch_state_files_supports_mapping_decision_shape(self) -> None:
         report = {
             "decision": {"status": "keep_as_to_calibrate"},
