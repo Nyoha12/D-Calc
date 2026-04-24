@@ -247,20 +247,26 @@ After implementation:
 
 This project is developed on Windows with Codex CLI.
 
-Known issue:
-Python tests that use tempfile.TemporaryDirectory or create temporary directories may fail inside the Codex Windows sandbox because of filesystem permission issues.
+Python tests or Python CLI checks may hit Codex sandbox permission issues when Python uses the system temp directory.
 
-If a test fails only because Python cannot write to or clean a temporary directory:
-- treat it as an environment issue, not a code failure;
-- rerun the exact same test outside the sandbox or in normal local PowerShell if needed;
-- clean leftover tmp* directories before continuing;
-- do not count the test as failed unless the same command also fails outside the sandbox.
+For Python commands that may use temporary files, prefer a workspace-local temp directory.
 
-If sandbox-created temp directories remain in the repo and cannot be deleted normally:
-- report their names;
-- ask the user to clean them from elevated PowerShell;
-- do not commit them;
-- do not let them affect the PR or merge decision.
+PowerShell setup before running such Python commands:
+
+    New-Item -ItemType Directory -Force .codex_tmp | Out-Null
+    $env:TEMP = (Resolve-Path .\.codex_tmp).Path
+    $env:TMP = (Resolve-Path .\.codex_tmp).Path
+
+Run the Python command in the same shell after setting TEMP and TMP.
+
+Rules:
+- do not commit .codex_tmp/;
+- if .codex_tmp/ appears in Git status, leave it untracked or remove it;
+- if a test fails only because of temp-directory permissions, treat it as an environment issue, not a code failure;
+- do not count such a test as failed unless the same command also fails outside the sandbox;
+- if sandbox-created temp directories remain in the repo and cannot be deleted normally, report their names and ask the user to clean them from elevated PowerShell.
+
+
 
 ## GitHub authentication notes
 
