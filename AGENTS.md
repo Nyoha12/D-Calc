@@ -303,6 +303,36 @@ Codex must still stop before:
 - running long or global replays;
 - modifying secrets, .env, credentials, API keys, or private files.
 
+## GitHub authentication notes
+
+GitHub CLI (`gh`) is used for pull request operations.
+
+Expected checks:
+
+```powershell
+gh auth status
+gh api user --jq .login
+gh pr status
+```
+
+If Codex gets HTTP 401 while normal PowerShell works, check that `GH_TOKEN` is available in the environment used to launch Codex.
+After changing environment variables, restart PowerShell and Codex before retrying GitHub API operations.
+
+Never paste, print, log, commit, or store the token in AGENTS.md or any repo file.
+
+With autonomous mode enabled, Codex may use `gh` for routine pull request operations:
+- checking pull request status;
+- creating pull requests;
+- updating pull request bodies;
+- pushing the current working branch.
+
+Codex must still stop before:
+- merging pull requests;
+- pushing main;
+- force-pushing;
+- changing authentication settings;
+- exposing secrets.
+
 ## Git rules
 
 Do not commit unless explicitly asked.
