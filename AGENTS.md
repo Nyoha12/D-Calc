@@ -261,6 +261,48 @@ After implementation:
 - summarize risks;
 - propose the next step.
 
+## Windows / Codex sandbox notes
+
+This project is currently developed on Windows with Codex CLI.
+
+Known issue:
+Python tests that use tempfile.TemporaryDirectory or create temporary directories may fail inside the Codex Windows sandbox because of filesystem permission issues.
+
+If a test fails only because Python cannot write to or clean a temporary directory:
+- treat it as an environment issue, not a code failure;
+- rerun the exact same test outside the sandbox or in normal local PowerShell if needed;
+- clean leftover tmp* directories before continuing;
+- do not count the test as failed unless the same command also fails outside the sandbox.
+
+If sandbox-created temp directories remain in the repo and cannot be deleted normally:
+- report their names;
+- ask the user to clean them from elevated PowerShell;
+- do not commit them;
+- do not let them affect the PR or merge decision.
+
+With autonomous mode enabled, Codex may proceed without asking for routine actions:
+- read files;
+- run git status, git diff, git log, git grep;
+- run targeted unit tests;
+- rerun known safe tests when the only issue is the Windows tempfile sandbox problem;
+- edit files inside an explicitly approved block scope;
+- commit approved block changes;
+- push the current working branch;
+- create or update pull requests.
+
+Codex must still stop before:
+- merging a pull request;
+- pushing to main;
+- force-pushing;
+- rebasing or resetting destructive history;
+- changing material coefficients or material database values;
+- promoting any material;
+- changing physics or acoustic formulas;
+- changing validation policy;
+- installing dependencies;
+- running long or global replays;
+- modifying secrets, .env, credentials, API keys, or private files.
+
 ## Git rules
 
 Do not commit unless explicitly asked.
