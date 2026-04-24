@@ -1,0 +1,12 @@
+decision: accept_local_only
+validation_preserved: true
+proposal_patch_material_ids:
+- birch
+- mahogany
+- maple
+- plywood_varnished
+replayed_patch_material_ids:
+- plywood_varnished
+accepted_patch_material_ids:
+- plywood_varnished
+patch_to_calibrate_material_ids: []
