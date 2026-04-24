@@ -7,3 +7,5 @@ venv/
 .env
 .DS_Store
 .ipynb_checkpoints/
+# Codex local temp directory
+.codex_tmp/
