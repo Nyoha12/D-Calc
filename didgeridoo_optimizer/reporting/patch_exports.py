@@ -52,6 +52,7 @@ def derive_patch_state(report: Mapping[str, Any]) -> dict[str, Any]:
         report.get("patch_replayed")
         or report.get("directed_patch")
         or report.get("family_patch")
+        or report.get("family_multiseed_patch")
         or report.get("weighted_patch")
         or {}
     )
