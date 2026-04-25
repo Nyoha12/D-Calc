@@ -46,6 +46,7 @@ class RunOptimizerCliTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("--config", result.stdout)
         self.assertIn("--dry-run", result.stdout)
+        self.assertNotIn("RuntimeWarning", result.stderr)
 
     def test_missing_config_returns_nonzero_with_useful_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -103,6 +104,12 @@ class RunOptimizerCliTests(unittest.TestCase):
             self.assertEqual(run_optimizer.run("config.yaml"), {"ok": True})
 
         mocked_run.assert_called_once_with("config.yaml")
+
+    def test_pipeline_package_run_exports_remain_available(self) -> None:
+        import didgeridoo_optimizer.pipeline as pipeline
+
+        self.assertTrue(callable(pipeline.run))
+        self.assertTrue(callable(pipeline.OptimizerRunner))
 
 
 if __name__ == "__main__":
