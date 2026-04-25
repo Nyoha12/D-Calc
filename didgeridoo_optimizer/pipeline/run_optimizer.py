@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import argparse
 import copy
+import json
+import sys
 import time
+from collections.abc import Mapping as MappingABC
 from pathlib import Path
-from typing import Any, Callable, Mapping, Sequence
+from typing import Any, Mapping, Sequence, TextIO
 
 import yaml
 
@@ -18,15 +22,14 @@ from ..pipeline.evaluate_robustness import RobustnessPipeline
 
 
 class OptimizerRunner:
-    def load_context(self, config_path: str | Path) -> dict[str, Any]:
-        config_file = Path(config_path)
-        with open(config_file, "r", encoding="utf-8") as handle:
-            config = yaml.safe_load(handle) or {}
+    def load_context(self, config_path: str | Path, *, output_dir_override: str | Path | None = None) -> dict[str, Any]:
+        config_file, config = self._load_config_file(config_path)
+        config = self._apply_output_dir_override(config, output_dir_override)
 
-        materials_cfg = dict(config.get("materials", {}) or {})
+        materials_cfg = self._config_section(config, "materials")
         materials_path = self._resolve_path(config_file, materials_cfg.get("database_file", "materials_base_v1.yaml"))
         variant_rules_path = self._resolve_path(config_file, materials_cfg.get("variant_rules_file", "wood_variant_rules_v1.yaml"))
-        output_dir = self._resolve_output_dir(config_file, config)
+        output_dir = self._resolve_output_dir(config_file, config, create=True)
 
         material_db = MaterialDatabase.from_yaml(materials_path, variant_rules_path=variant_rules_path)
         linear_pipeline = LinearEvaluationPipeline()
@@ -168,8 +171,8 @@ class OptimizerRunner:
             "exports": exports,
         }
 
-    def run(self, config_path: str | Path) -> dict[str, Any]:
-        context = self.load_context(config_path)
+    def run(self, config_path: str | Path, *, output_dir_override: str | Path | None = None) -> dict[str, Any]:
+        context = self.load_context(config_path, output_dir_override=output_dir_override)
         config = context["config"]
         started = time.perf_counter()
         runtime_info = self.estimate_runtime(config, context["linear_pipeline"], context)
@@ -188,14 +191,92 @@ class OptimizerRunner:
             runtime_actual_seconds=runtime_actual_seconds,
         )
 
-    def _resolve_output_dir(self, config_file: Path, config: Mapping[str, Any]) -> Path:
-        project_cfg = dict(config.get("project", {}) or {})
+    def dry_run(self, config_path: str | Path, *, output_dir_override: str | Path | None = None) -> dict[str, Any]:
+        config_file, config = self._load_config_file(config_path)
+        config = self._apply_output_dir_override(config, output_dir_override)
+        materials_cfg = self._config_section(config, "materials")
+
+        database_file = materials_cfg.get("database_file", "materials_base_v1.yaml")
+        materials_path = self._resolve_path(config_file, database_file)
+        materials_exists = materials_path.exists()
+
+        variant_rules_configured = "variant_rules_file" in materials_cfg
+        variant_rules_file = materials_cfg.get("variant_rules_file", "wood_variant_rules_v1.yaml")
+        variant_rules_path = self._resolve_path(config_file, variant_rules_file)
+        variant_rules_exists = variant_rules_path.exists()
+
+        output_dir = self._resolve_output_dir(config_file, config, create=False)
+
+        errors: list[str] = []
+        warnings: list[str] = []
+        if not materials_exists:
+            errors.append(f"Material database not found: {materials_path}")
+        if not variant_rules_exists:
+            warnings.append(f"Variant rules file absent: {variant_rules_path}")
+
+        return {
+            "ok": not errors,
+            "dry_run": True,
+            "config_path": str(config_file.resolve()),
+            "materials": {
+                "database_file": str(database_file),
+                "database_path": str(materials_path),
+                "database_exists": materials_exists,
+                "variant_rules_file": str(variant_rules_file),
+                "variant_rules_configured": variant_rules_configured,
+                "variant_rules_path": str(variant_rules_path),
+                "variant_rules_exists": variant_rules_exists,
+            },
+            "output_dir": str(output_dir),
+            "output_dir_exists": output_dir.exists(),
+            "output_dir_created": False,
+            "output_dir_source": "cli_override" if output_dir_override is not None else "config_or_default",
+            "errors": errors,
+            "warnings": warnings,
+        }
+
+    def _load_config_file(self, config_path: str | Path) -> tuple[Path, dict[str, Any]]:
+        config_file = Path(config_path)
+        if not config_file.exists():
+            raise FileNotFoundError(f"Config file not found: {config_file}")
+        if not config_file.is_file():
+            raise IsADirectoryError(f"Config path is not a file: {config_file}")
+
+        with open(config_file, "r", encoding="utf-8") as handle:
+            loaded = yaml.safe_load(handle)
+        if loaded is None:
+            return config_file, {}
+        if not isinstance(loaded, MappingABC):
+            raise TypeError(f"Config YAML must be a mapping: {config_file}")
+        return config_file, dict(loaded)
+
+    def _apply_output_dir_override(self, config: Mapping[str, Any], output_dir_override: str | Path | None) -> dict[str, Any]:
+        merged = copy.deepcopy(dict(config))
+        if output_dir_override is None:
+            return merged
+
+        project_cfg = dict(merged.get("project", {}) or {})
+        project_cfg["output_dir"] = str(output_dir_override)
+        merged["project"] = project_cfg
+        return merged
+
+    def _config_section(self, config: Mapping[str, Any], section_name: str) -> dict[str, Any]:
+        section = config.get(section_name, {}) or {}
+        if not isinstance(section, MappingABC):
+            raise TypeError(f"Config section {section_name!r} must be a mapping.")
+        return dict(section)
+
+    def _resolve_output_dir(self, config_file: Path, config: Mapping[str, Any], *, create: bool = True) -> Path:
+        project_cfg = self._config_section(config, "project")
         output_dir = Path(str(project_cfg.get("output_dir", "./results")))
         if output_dir.is_absolute():
-            output_dir.mkdir(parents=True, exist_ok=True)
-            return output_dir
+            resolved = output_dir.resolve()
+            if create:
+                resolved.mkdir(parents=True, exist_ok=True)
+            return resolved
         resolved = (config_file.parent / output_dir).resolve()
-        resolved.mkdir(parents=True, exist_ok=True)
+        if create:
+            resolved.mkdir(parents=True, exist_ok=True)
         return resolved
 
     def _resolve_path(self, config_file: Path, maybe_path: str | Path) -> Path:
@@ -353,7 +434,66 @@ def finalize(
     )
 
 
+def _build_argument_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="python -m didgeridoo_optimizer.pipeline.run_optimizer",
+        description="Run the D-Calc optimizer from an explicit YAML config path.",
+    )
+    parser.add_argument("--config", required=True, help="Path to the optimizer YAML config.")
+    parser.add_argument(
+        "--output-dir",
+        help="Optional output directory override. Relative paths are resolved like project.output_dir.",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Validate config/path resolution without running optimization or writing optimizer artifacts.",
+    )
+    return parser
+
+
+def _best_design_id(summary: Mapping[str, Any]) -> Any:
+    best = dict(summary.get("best_design", {}) or {})
+    result = dict(best.get("result", best) or {})
+    return result.get("design_id")
+
+
+def _run_cli_payload(summary: Mapping[str, Any]) -> dict[str, Any]:
+    exports = dict(summary.get("exports", {}) or {})
+    return {
+        "ok": True,
+        "dry_run": False,
+        "best_design_id": _best_design_id(summary),
+        "output_dir": exports.get("output_dir"),
+        "exports": exports,
+        "warnings": list(summary.get("warnings", []) or []),
+    }
+
+
+def _print_json(payload: Mapping[str, Any], stream: TextIO) -> None:
+    print(json.dumps(payload, indent=2, sort_keys=True), file=stream)
+
+
+def main(argv: Sequence[str] | None = None, *, stdout: TextIO | None = None, stderr: TextIO | None = None) -> int:
+    out = stdout or sys.stdout
+    err = stderr or sys.stderr
+    parser = _build_argument_parser()
+    args = parser.parse_args(argv)
+    runner = OptimizerRunner()
+
+    try:
+        if args.dry_run:
+            payload = runner.dry_run(args.config, output_dir_override=args.output_dir)
+            _print_json(payload, out)
+            return 0 if bool(payload.get("ok")) else 1
+
+        summary = runner.run(args.config, output_dir_override=args.output_dir)
+        _print_json(_run_cli_payload(summary), out)
+        return 0
+    except Exception as exc:
+        print(f"error: {exc}", file=err)
+        return 1
+
+
 if __name__ == "__main__":
-    default_cfg = Path("/mnt/data/CONFIG_TEMPLATE_V1.yaml")
-    summary = run(default_cfg)
-    print(f"best_design={summary.get('best_design', {}).get('result', {}).get('design_id')}")
+    raise SystemExit(main())
