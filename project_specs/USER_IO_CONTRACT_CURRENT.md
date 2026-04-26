@@ -3,12 +3,13 @@
 ## 1. Document status
 
 This document describes the current user-facing input/output contract for D-Calc.
-It is a current-state contract for documentation and planning, not a formal schema implementation.
+It is a current-state contract for documentation and planning, not a full schema framework.
 
 | Claim | Status | Sources |
 |---|---|---|
 | The full optimizer now has a first stable user-facing CLI entry point around the existing Python pipeline. | sourced | `didgeridoo_optimizer/pipeline/run_optimizer.py`, `didgeridoo_optimizer/tests/test_run_optimizer_cli.py` |
-| The repo does not yet define a versioned public config schema or report schema. | sourced | `project_specs/PRODUCT_MODEL_SPEC_CURRENT.md`, `didgeridoo_optimizer/reporting/export.py` |
+| The optimizer config, CLI payload, and optimizer report payload now carry minimal schema/version metadata. | sourced | `project_specs/CONFIG_TEMPLATE_V1.yaml`, `didgeridoo_optimizer/pipeline/run_optimizer.py`, `didgeridoo_optimizer/tests/test_run_optimizer_cli.py` |
+| The repo does not yet define a full schema framework or broad backward-compatibility policy. | sourced | `didgeridoo_optimizer/pipeline/run_optimizer.py`, `project_specs/PRODUCT_MODEL_SPEC_CURRENT.md` |
 | Generated artifacts and calibration results are not product truth by themselves. | sourced | `AGENTS.md`, `project_specs/PRODUCT_MODEL_SPEC_CURRENT.md` |
 
 ## 2. Current user input contract
@@ -17,6 +18,7 @@ It is a current-state contract for documentation and planning, not a formal sche
 |---|---|---|---|---|
 | Config path | `python -m didgeridoo_optimizer.pipeline.run_optimizer --config <path>`, `OptimizerRunner.run(config_path)`, and module-level `run(config_path)` read a YAML config from the supplied path. | Yes for full optimizer runs. | sourced | `didgeridoo_optimizer/pipeline/run_optimizer.py`, `didgeridoo_optimizer/tests/test_run_optimizer_cli.py` |
 | Config file format | YAML mapping matching the broad shape of `CONFIG_TEMPLATE_V1.yaml`. | Practically yes, though not enforced by a formal schema. | sourced | `project_specs/CONFIG_TEMPLATE_V1.yaml`, `didgeridoo_optimizer/pipeline/run_optimizer.py` |
+| Config schema version | `schema_version: "dcalc.optimizer.config.v1"` is the current explicit config schema marker. Missing `schema_version` is accepted as legacy/current v1 and reported as `missing_assumed_v1`. Unsupported schema versions fail early. | Optional for backward compatibility; recommended for new configs. | sourced | `project_specs/CONFIG_TEMPLATE_V1.yaml`, `didgeridoo_optimizer/pipeline/run_optimizer.py`, `didgeridoo_optimizer/tests/test_run_optimizer_cli.py` |
 | Material DB path | `materials.database_file` is resolved from the config; missing value defaults to `materials_base_v1.yaml`. | Yes: a loadable material DB must exist after resolution. | sourced | `project_specs/CONFIG_TEMPLATE_V1.yaml`, `didgeridoo_optimizer/pipeline/run_optimizer.py` |
 | Variant rules path | `materials.variant_rules_file` is resolved from the config and passed to `MaterialDatabase.from_yaml`. | Optional when variants are not needed; expected by the template. | sourced | `project_specs/CONFIG_TEMPLATE_V1.yaml`, `didgeridoo_optimizer/pipeline/run_optimizer.py` |
 | Output directory | `project.output_dir` is resolved; relative paths are resolved against the config file parent and created if needed. The CLI can override it in memory with `--output-dir <path>`. | Optional in config because the runner defaults to `./results`; CLI override is optional. | sourced | `didgeridoo_optimizer/pipeline/run_optimizer.py`, `didgeridoo_optimizer/tests/test_run_optimizer_cli.py` |
@@ -39,9 +41,9 @@ Current config fields are best read in three groups.
 |---|---|---|---|---|
 | Currently consumed | `project.random_seed`, `project.output_dir`, `materials.database_file`, `materials.variant_rules_file`, `materials.allowed_materials`, `materials.max_distinct_materials_per_design`, `geometry_constraints`, `topology.allow_bell`, `topology.allow_bell_types`, `bell.geometry_constraints`, `frequency_analysis`, `objectives`, `optimization`, `nonlinear_simulation.enabled`, `nonlinear_simulation.run_only_for_top_n`, `reporting.save_*`. | Used by current optimizer, search, evaluation, nonlinear, or export code. | sourced | `project_specs/CONFIG_TEMPLATE_V1.yaml`, `didgeridoo_optimizer/pipeline/run_optimizer.py`, `didgeridoo_optimizer/optimization/search_space.py` |
 | Present but partly advisory | `units`, `player_model`, `uncertainty_management`, detailed reporting text settings, some objective metadata such as `direction` and `normalization`. | Present in the template, but not all fields are fully enforced as public behavior. | inferred | Template fields exceed direct consumers in inspected code. |
-| Experimental / MVP placeholder | `vocal_control`, `transients_noise`, branch/Helmholtz topology flags, broad nonlinear controls beyond enable/top-N, and full report schema versioning. | Do not treat as stable user contract yet. | experimental / MVP placeholder | `project_specs/PRODUCT_MODEL_SPEC_CURRENT.md`, `project_specs/CONFIG_TEMPLATE_V1.yaml` |
+| Experimental / MVP placeholder | `vocal_control`, `transients_noise`, branch/Helmholtz topology flags, broad nonlinear controls beyond enable/top-N, and full report compatibility policy beyond current version metadata. | Do not treat as stable user contract yet. | experimental / MVP placeholder | `project_specs/PRODUCT_MODEL_SPEC_CURRENT.md`, `project_specs/CONFIG_TEMPLATE_V1.yaml` |
 
-Open decision: the repo should eventually define a schema version and decide which config fields are public compatibility guarantees.
+Open decision: the repo should decide which config fields are public compatibility guarantees beyond the current `dcalc.optimizer.config.v1` metadata.
 
 ## 4. Current execution interface
 
@@ -54,20 +56,21 @@ Open decision: the repo should eventually define a schema version and decide whi
 | `--dry-run` | Performs preflight validation and path resolution without running optimization or writing optimizer result artifacts. | sourced | `didgeridoo_optimizer/pipeline/run_optimizer.py`, `didgeridoo_optimizer/tests/test_run_optimizer_cli.py` |
 | Full optimizer execution via CLI | Implemented through the CLI wrapper, but not exercised by tests in order to avoid optimizer artifact generation. | sourced | `didgeridoo_optimizer/pipeline/run_optimizer.py`, `didgeridoo_optimizer/tests/test_run_optimizer_cli.py` |
 | Fixed-design CLI | Not part of the stable CLI. Fixed designs remain lower-level/internal. | sourced | `didgeridoo_optimizer/pipeline/run_optimizer.py`, `didgeridoo_optimizer/optimization/search_space.py` |
-| Report schema versioning | No explicit stable report schema version is emitted by this CLI step. | open decision | `project_specs/PRODUCT_MODEL_SPEC_CURRENT.md`, `didgeridoo_optimizer/reporting/export.py` |
+| CLI payload metadata | CLI payloads include `schema_version: dcalc.optimizer.cli.v1` and `payload_type` as `dry_run` or `run_summary`. | sourced | `didgeridoo_optimizer/pipeline/run_optimizer.py`, `didgeridoo_optimizer/tests/test_run_optimizer_cli.py` |
+| Report schema versioning | Optimizer summary payloads include `schema_version: dcalc.optimizer.report.v1` plus config schema metadata, but broader compatibility policy remains open. | sourced / open decision | `didgeridoo_optimizer/pipeline/run_optimizer.py`, `didgeridoo_optimizer/tests/test_run_optimizer_cli.py`, `project_specs/PRODUCT_MODEL_SPEC_CURRENT.md` |
 
 Current CLI validation coverage:
 
 | Validation command | Result | Status |
 |---|---|---|
-| `python -m unittest discover -s didgeridoo_optimizer/tests` | Ran 11 tests; OK. | sourced |
+| `python -m unittest discover -s didgeridoo_optimizer/tests` | Ran 16 tests; OK. | sourced |
 
 Remaining CLI and schema decisions:
 
 | Remaining promise / decision | Status |
 |---|---|
-| Define a formal config schema version and compatibility policy. | open decision |
-| Emit a stable machine-readable run summary with schema version. | open decision |
+| Define a formal compatibility policy for config fields beyond `dcalc.optimizer.config.v1`. | open decision |
+| Define payload evolution and compatibility expectations beyond the current CLI/report schema metadata. | open decision |
 | Decide whether full CLI runs should print resolved config/material/output paths before running, not only in `--dry-run`. | open decision |
 | Decide whether to expose fixed-design evaluation as a public CLI/API. | open decision |
 
@@ -75,14 +78,14 @@ Remaining CLI and schema decisions:
 
 | Output | Current contract | Controlled by | Status | Sources |
 |---|---|---|---|---|
-| Python return payload | Contains `config`, `runtime_estimate`, `runtime_actual_seconds`, `linear_results`, `robust_results`, `nonlinear_results`, `best_design`, `top_20`, `warnings`, and `exports`. | Always returned by `run()`. | sourced | `didgeridoo_optimizer/pipeline/run_optimizer.py` |
-| `optimizer_summary.json` | Lightened final payload without full `freq_hz`, `zin`, or `zin_mag` arrays. | `reporting.save_json_summary` | sourced | `didgeridoo_optimizer/pipeline/run_optimizer.py`, `didgeridoo_optimizer/reporting/export.py` |
+| Python return payload | Contains `schema_version: dcalc.optimizer.report.v1`, config schema metadata, `config`, `runtime_estimate`, `runtime_actual_seconds`, `linear_results`, `robust_results`, `nonlinear_results`, `best_design`, `top_20`, `warnings`, and `exports`. | Always returned by `run()`. | sourced | `didgeridoo_optimizer/pipeline/run_optimizer.py` |
+| `optimizer_summary.json` | Lightened final payload without full `freq_hz`, `zin`, or `zin_mag` arrays; includes optimizer report schema metadata. | `reporting.save_json_summary` | sourced | `didgeridoo_optimizer/pipeline/run_optimizer.py`, `didgeridoo_optimizer/reporting/export.py` |
 | `optimizer_summary.yaml` | YAML form of the same lightened final payload. | `reporting.save_yaml_summary` | sourced | `didgeridoo_optimizer/pipeline/run_optimizer.py`, `didgeridoo_optimizer/reporting/export.py` |
 | `top20_scores.csv` | Ranked candidates with score, validity, core features, objective scores, and penalties. | `reporting.save_csv_scores` | sourced | `didgeridoo_optimizer/reporting/export.py` |
 | `pareto_overview.png` | Pareto plot for ranked candidates. | `reporting.save_plots` | sourced | `didgeridoo_optimizer/pipeline/run_optimizer.py` |
 | `best_design/` bundle | French text summary, JSON/YAML best result, impedance plot, and radiation plot when a best candidate exists. | Best candidate exists; plot/report helpers run. | sourced | `didgeridoo_optimizer/reporting/export.py`, `didgeridoo_optimizer/reporting/summaries.py` |
 | Warnings | Runtime warnings plus best-candidate warnings are deduplicated into final `warnings`. | Internal pipeline behavior. | sourced | `didgeridoo_optimizer/pipeline/run_optimizer.py`, `didgeridoo_optimizer/pipeline/evaluate_linear.py` |
-| Schema version | No explicit report schema version is currently emitted. | Not implemented. | open decision | `project_specs/PRODUCT_MODEL_SPEC_CURRENT.md`, `didgeridoo_optimizer/reporting/export.py` |
+| Schema version | Optimizer summary payloads emit `schema_version: dcalc.optimizer.report.v1`, plus `config_schema_version` and `config_schema_status`; full report compatibility policy is not yet defined. | Minimal metadata implemented; broader policy open. | sourced / open decision | `didgeridoo_optimizer/pipeline/run_optimizer.py`, `didgeridoo_optimizer/tests/test_run_optimizer_cli.py` |
 
 Output interpretation rules:
 
@@ -120,7 +123,7 @@ The first CLI step now exposes `--dry-run` as a preflight command, but the full 
 |---|---|---|
 | What does a user provide for the full optimizer? | A YAML config path, with referenced material DB and optional variant rules resolvable from that config. | sourced |
 | What does the program write? | Optional JSON/YAML summaries, CSV scores, plots, and a best-design bundle under the resolved output directory. | sourced |
-| Is there a stable CLI? | Yes, as a first step: `python -m didgeridoo_optimizer.pipeline.run_optimizer --config <path>`, with optional `--output-dir <path>` and `--dry-run`. This does not yet imply a complete versioned config/report schema. | sourced |
-| Is there a stable report schema? | No explicit schema version or compatibility policy exists yet. | open decision |
+| Is there a stable CLI? | Yes, as a first step: `python -m didgeridoo_optimizer.pipeline.run_optimizer --config <path>`, with optional `--output-dir <path>` and `--dry-run`. This does not yet imply a complete schema framework or compatibility policy. | sourced |
+| Is there a stable report schema? | Minimal report schema metadata exists as `dcalc.optimizer.report.v1`, but no full compatibility policy exists yet. | sourced / open decision |
 | Can a user pass a fixed design file? | Not through a documented full-optimizer interface. | open decision |
-| What should happen next? | Define the next CLI/schema decisions, especially report schema versioning and any public fixed-design input contract. | open decision |
+| What should happen next? | Define the next CLI/schema decisions, especially report compatibility policy and any public fixed-design input contract. | open decision |
