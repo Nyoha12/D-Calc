@@ -1,3 +1,5 @@
+schema_version: "dcalc.optimizer.config.v1"
+
 project:
   name: "didgeridoo_optimizer_v1"
   description: "Optimisation géométrique, acoustique et de jouabilité de didgeridoos"

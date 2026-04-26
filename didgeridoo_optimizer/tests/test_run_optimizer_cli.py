@@ -17,7 +17,14 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 class RunOptimizerCliTests(unittest.TestCase):
-    def _write_config(self, tmp_path: Path, output_dir: Path | None = None) -> Path:
+    def _write_config(
+        self,
+        tmp_path: Path,
+        output_dir: Path | None = None,
+        *,
+        include_schema_version: bool = False,
+        schema_version: str | None = None,
+    ) -> Path:
         config_path = tmp_path / "optimizer_config.yaml"
         config = {
             "project": {
@@ -28,6 +35,8 @@ class RunOptimizerCliTests(unittest.TestCase):
                 "variant_rules_file": str(REPO_ROOT / "project_specs" / "wood_variant_rules_v1.yaml"),
             },
         }
+        if include_schema_version:
+            config["schema_version"] = schema_version or run_optimizer.CONFIG_SCHEMA_VERSION
         config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
         return config_path
 
@@ -67,8 +76,12 @@ class RunOptimizerCliTests(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, result.stderr)
             payload = json.loads(result.stdout)
+            self.assertEqual(payload["schema_version"], run_optimizer.CLI_PAYLOAD_SCHEMA_VERSION)
+            self.assertEqual(payload["payload_type"], "dry_run")
             self.assertTrue(payload["ok"])
             self.assertTrue(payload["dry_run"])
+            self.assertEqual(payload["config_schema_version"], run_optimizer.CONFIG_SCHEMA_VERSION)
+            self.assertEqual(payload["config_schema_status"], run_optimizer.CONFIG_SCHEMA_STATUS_MISSING_ASSUMED_V1)
             self.assertEqual(Path(payload["output_dir"]), output_dir.resolve())
             self.assertTrue(payload["materials"]["database_exists"])
             self.assertTrue(payload["materials"]["variant_rules_exists"])
@@ -98,6 +111,33 @@ class RunOptimizerCliTests(unittest.TestCase):
             config_after = yaml.safe_load(config_path.read_text(encoding="utf-8"))
             self.assertEqual(config_after["project"]["output_dir"], str(configured_output))
 
+    def test_dry_run_explicit_config_schema_v1_succeeds(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            config_path = self._write_config(tmp_path, include_schema_version=True)
+
+            result = self._run_cli("--config", str(config_path), "--dry-run")
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            payload = json.loads(result.stdout)
+            self.assertEqual(payload["config_schema_version"], run_optimizer.CONFIG_SCHEMA_VERSION)
+            self.assertEqual(payload["config_schema_status"], run_optimizer.CONFIG_SCHEMA_STATUS_EXPLICIT)
+
+    def test_dry_run_unsupported_config_schema_returns_useful_error(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            config_path = self._write_config(
+                tmp_path,
+                include_schema_version=True,
+                schema_version="dcalc.optimizer.config.v999",
+            )
+
+            result = self._run_cli("--config", str(config_path), "--dry-run")
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("Unsupported config schema_version", result.stderr)
+            self.assertIn(run_optimizer.CONFIG_SCHEMA_VERSION, result.stderr)
+
     def test_existing_run_callable_remains_importable_without_cli_args(self) -> None:
         self.assertTrue(callable(run_optimizer.run))
         with mock.patch.object(run_optimizer.OptimizerRunner, "run", return_value={"ok": True}) as mocked_run:
@@ -110,6 +150,38 @@ class RunOptimizerCliTests(unittest.TestCase):
 
         self.assertTrue(callable(pipeline.run))
         self.assertTrue(callable(pipeline.OptimizerRunner))
+
+    def test_run_summary_payload_includes_schema_metadata(self) -> None:
+        payload = run_optimizer._run_cli_payload(
+            {
+                "config_schema_version": run_optimizer.CONFIG_SCHEMA_VERSION,
+                "config_schema_status": run_optimizer.CONFIG_SCHEMA_STATUS_EXPLICIT,
+                "exports": {"output_dir": "results"},
+                "warnings": [],
+            }
+        )
+
+        self.assertEqual(payload["schema_version"], run_optimizer.CLI_PAYLOAD_SCHEMA_VERSION)
+        self.assertEqual(payload["payload_type"], "run_summary")
+        self.assertEqual(payload["config_schema_version"], run_optimizer.CONFIG_SCHEMA_VERSION)
+        self.assertEqual(payload["config_schema_status"], run_optimizer.CONFIG_SCHEMA_STATUS_EXPLICIT)
+
+    def test_report_summary_payload_includes_schema_metadata(self) -> None:
+        payload = run_optimizer.OptimizerRunner()._build_summary_payload(
+            config={},
+            context={},
+            runtime_info={},
+            runtime_actual_seconds=0.0,
+            linear_results={},
+            robust_results={},
+            nonlinear_results={},
+            best_candidate={},
+            ranked_top_n=[],
+        )
+
+        self.assertEqual(payload["schema_version"], run_optimizer.REPORT_SCHEMA_VERSION)
+        self.assertEqual(payload["config_schema_version"], run_optimizer.CONFIG_SCHEMA_VERSION)
+        self.assertEqual(payload["config_schema_status"], run_optimizer.CONFIG_SCHEMA_STATUS_MISSING_ASSUMED_V1)
 
 
 if __name__ == "__main__":

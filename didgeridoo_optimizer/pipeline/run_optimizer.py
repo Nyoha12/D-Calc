@@ -21,11 +21,20 @@ from ..pipeline.evaluate_nonlinear import NonlinearPipeline
 from ..pipeline.evaluate_robustness import RobustnessPipeline
 
 
+CONFIG_SCHEMA_VERSION = "dcalc.optimizer.config.v1"
+CLI_PAYLOAD_SCHEMA_VERSION = "dcalc.optimizer.cli.v1"
+REPORT_SCHEMA_VERSION = "dcalc.optimizer.report.v1"
+CONFIG_SCHEMA_STATUS_EXPLICIT = "explicit"
+CONFIG_SCHEMA_STATUS_MISSING_ASSUMED_V1 = "missing_assumed_v1"
+SUPPORTED_CONFIG_SCHEMA_VERSIONS = {CONFIG_SCHEMA_VERSION}
+
+
 class OptimizerRunner:
     def load_context(self, config_path: str | Path, *, output_dir_override: str | Path | None = None) -> dict[str, Any]:
         config_file, config = self._load_config_file(config_path)
         config = self._apply_output_dir_override(config, output_dir_override)
 
+        config_schema = self._config_schema_metadata(config)
         materials_cfg = self._config_section(config, "materials")
         materials_path = self._resolve_path(config_file, materials_cfg.get("database_file", "materials_base_v1.yaml"))
         variant_rules_path = self._resolve_path(config_file, materials_cfg.get("variant_rules_file", "wood_variant_rules_v1.yaml"))
@@ -43,6 +52,8 @@ class OptimizerRunner:
         return {
             "config_path": config_file,
             "config": config,
+            "config_schema_version": config_schema["config_schema_version"],
+            "config_schema_status": config_schema["config_schema_status"],
             "materials_path": materials_path,
             "variant_rules_path": variant_rules_path,
             "output_dir": output_dir,
@@ -159,6 +170,9 @@ class OptimizerRunner:
         warnings = list(dict.fromkeys(str(item) for item in warnings))
 
         return {
+            "schema_version": REPORT_SCHEMA_VERSION,
+            "config_schema_version": str(context.get("config_schema_version", CONFIG_SCHEMA_VERSION)),
+            "config_schema_status": str(context.get("config_schema_status", CONFIG_SCHEMA_STATUS_MISSING_ASSUMED_V1)),
             "config": dict(config),
             "runtime_estimate": dict(runtime_info),
             "runtime_actual_seconds": float(runtime_actual_seconds),
@@ -194,6 +208,7 @@ class OptimizerRunner:
     def dry_run(self, config_path: str | Path, *, output_dir_override: str | Path | None = None) -> dict[str, Any]:
         config_file, config = self._load_config_file(config_path)
         config = self._apply_output_dir_override(config, output_dir_override)
+        config_schema = self._config_schema_metadata(config)
         materials_cfg = self._config_section(config, "materials")
 
         database_file = materials_cfg.get("database_file", "materials_base_v1.yaml")
@@ -215,9 +230,13 @@ class OptimizerRunner:
             warnings.append(f"Variant rules file absent: {variant_rules_path}")
 
         return {
+            "schema_version": CLI_PAYLOAD_SCHEMA_VERSION,
+            "payload_type": "dry_run",
             "ok": not errors,
             "dry_run": True,
             "config_path": str(config_file.resolve()),
+            "config_schema_version": config_schema["config_schema_version"],
+            "config_schema_status": config_schema["config_schema_status"],
             "materials": {
                 "database_file": str(database_file),
                 "database_path": str(materials_path),
@@ -248,7 +267,29 @@ class OptimizerRunner:
             return config_file, {}
         if not isinstance(loaded, MappingABC):
             raise TypeError(f"Config YAML must be a mapping: {config_file}")
-        return config_file, dict(loaded)
+        config = dict(loaded)
+        self._config_schema_metadata(config)
+        return config_file, config
+
+    def _config_schema_metadata(self, config: Mapping[str, Any]) -> dict[str, str]:
+        schema_version = config.get("schema_version")
+        if schema_version is None:
+            return {
+                "config_schema_version": CONFIG_SCHEMA_VERSION,
+                "config_schema_status": CONFIG_SCHEMA_STATUS_MISSING_ASSUMED_V1,
+            }
+
+        schema_version_str = str(schema_version)
+        if schema_version_str not in SUPPORTED_CONFIG_SCHEMA_VERSIONS:
+            supported = ", ".join(sorted(SUPPORTED_CONFIG_SCHEMA_VERSIONS))
+            raise ValueError(
+                f"Unsupported config schema_version {schema_version_str!r}; "
+                f"supported schema_version values: {supported}"
+            )
+        return {
+            "config_schema_version": schema_version_str,
+            "config_schema_status": CONFIG_SCHEMA_STATUS_EXPLICIT,
+        }
 
     def _apply_output_dir_override(self, config: Mapping[str, Any], output_dir_override: str | Path | None) -> dict[str, Any]:
         merged = copy.deepcopy(dict(config))
@@ -342,16 +383,17 @@ class OptimizerRunner:
         reporting_cfg = dict((config or {}).get("reporting", {}) or {})
         exports: dict[str, Any] = {"output_dir": str(output_dir)}
 
-        final_payload = {
-            "config": dict(config),
-            "runtime_estimate": dict(runtime_info),
-            "runtime_actual_seconds": float(runtime_actual_seconds),
-            "linear_results": self._lighten_results(linear_results),
-            "robust_results": self._lighten_results(robust_results),
-            "nonlinear_results": self._lighten_results(nonlinear_results),
-            "best_design": self._lighten_results(best_candidate),
-            "top_20": self._lighten_results(ranked_top_n),
-        }
+        final_payload = self._build_summary_payload(
+            config=config,
+            context=context,
+            runtime_info=runtime_info,
+            runtime_actual_seconds=runtime_actual_seconds,
+            linear_results=linear_results,
+            robust_results=robust_results,
+            nonlinear_results=nonlinear_results,
+            best_candidate=best_candidate,
+            ranked_top_n=ranked_top_n,
+        )
 
         if bool(reporting_cfg.get("save_json_summary", True)):
             exports["summary_json"] = str(export_json(final_payload, output_dir / "optimizer_summary.json"))
@@ -364,6 +406,33 @@ class OptimizerRunner:
         if best_candidate:
             exports["best_design_bundle"] = export_best_design_bundle(best_candidate, output_dir / "best_design")
         return exports
+
+    def _build_summary_payload(
+        self,
+        config: Mapping[str, Any],
+        context: Mapping[str, Any],
+        runtime_info: Mapping[str, Any],
+        runtime_actual_seconds: float,
+        linear_results: Mapping[str, Any],
+        robust_results: Mapping[str, Any],
+        nonlinear_results: Mapping[str, Any],
+        best_candidate: Mapping[str, Any],
+        ranked_top_n: Sequence[Mapping[str, Any]],
+    ) -> dict[str, Any]:
+        config_schema = self._config_schema_metadata(config)
+        return {
+            "schema_version": REPORT_SCHEMA_VERSION,
+            "config_schema_version": str(context.get("config_schema_version", config_schema["config_schema_version"])),
+            "config_schema_status": str(context.get("config_schema_status", config_schema["config_schema_status"])),
+            "config": dict(config),
+            "runtime_estimate": dict(runtime_info),
+            "runtime_actual_seconds": float(runtime_actual_seconds),
+            "linear_results": self._lighten_results(linear_results),
+            "robust_results": self._lighten_results(robust_results),
+            "nonlinear_results": self._lighten_results(nonlinear_results),
+            "best_design": self._lighten_results(best_candidate),
+            "top_20": self._lighten_results(ranked_top_n),
+        }
 
     def _lighten_results(self, value: Any) -> Any:
         if isinstance(value, Mapping):
@@ -461,8 +530,14 @@ def _best_design_id(summary: Mapping[str, Any]) -> Any:
 def _run_cli_payload(summary: Mapping[str, Any]) -> dict[str, Any]:
     exports = dict(summary.get("exports", {}) or {})
     return {
+        "schema_version": CLI_PAYLOAD_SCHEMA_VERSION,
+        "payload_type": "run_summary",
         "ok": True,
         "dry_run": False,
+        "config_schema_version": str(summary.get("config_schema_version", CONFIG_SCHEMA_VERSION)),
+        "config_schema_status": str(
+            summary.get("config_schema_status", CONFIG_SCHEMA_STATUS_MISSING_ASSUMED_V1)
+        ),
         "best_design_id": _best_design_id(summary),
         "output_dir": exports.get("output_dir"),
         "exports": exports,
