@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -40,13 +41,80 @@ class RunOptimizerCliTests(unittest.TestCase):
         config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
         return config_path
 
-    def _run_cli(self, *args: str) -> subprocess.CompletedProcess[str]:
+    def _write_tiny_smoke_config(self, tmp_path: Path) -> Path:
+        config_path = tmp_path / "optimizer_tiny.yaml"
+        config = {
+            "schema_version": run_optimizer.CONFIG_SCHEMA_VERSION,
+            "project": {
+                "name": "cli_e2e_smoke",
+                "random_seed": 7,
+                "output_dir": str(tmp_path / "configured_output_should_be_overridden"),
+            },
+            "materials": {
+                "database_file": str(REPO_ROOT / "project_specs" / "materials_base_v1.yaml"),
+                "variant_rules_file": str(REPO_ROOT / "project_specs" / "wood_variant_rules_v1.yaml"),
+                "allowed_materials": ["pvc_pressure"],
+                "max_distinct_materials_per_design": 1,
+            },
+            "topology": {
+                "allow_bell": False,
+                "allow_bell_types": [],
+                "allow_branches": False,
+                "allow_helmholtz": False,
+            },
+            "frequency_analysis": {
+                "f_min_hz": 40.0,
+                "f_max_hz": 600.0,
+                "n_points": 256,
+                "discretization_max_segment_cm": 5.0,
+                "peak_detection": {
+                    "min_prominence": 0.01,
+                    "min_distance_hz": 5.0,
+                    "max_number_of_peaks": 10,
+                },
+            },
+            "optimization": {
+                "random_initial_population": 2,
+                "generations": 1,
+                "linear_budget": 2,
+                "keep_top_n_linear": 2,
+                "top_n_for_robustness": 1,
+                "top_n_for_nonlinear": 0,
+                "final_output_count": 1,
+                "final_selector": "weighted_sum",
+            },
+            "runtime_estimation": {
+                "benchmark_samples_linear": 1,
+                "benchmark_samples_nonlinear": 0,
+                "warn_if_estimated_time_exceeds_minutes": 1,
+            },
+            "nonlinear_simulation": {
+                "enabled": False,
+                "run_only_for_top_n": 0,
+            },
+            "reporting": {
+                "save_yaml_summary": True,
+                "save_json_summary": True,
+                "save_csv_scores": True,
+                "save_plots": False,
+            },
+        }
+        config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+        return config_path
+
+    def _run_cli(
+        self,
+        *args: str,
+        env: dict[str, str] | None = None,
+        timeout: float = 30,
+    ) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             [sys.executable, "-m", "didgeridoo_optimizer.pipeline.run_optimizer", *args],
             cwd=REPO_ROOT,
             capture_output=True,
             text=True,
-            timeout=30,
+            env=env,
+            timeout=timeout,
         )
 
     def test_cli_help_exits_successfully(self) -> None:
@@ -137,6 +205,54 @@ class RunOptimizerCliTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("Unsupported config schema_version", result.stderr)
             self.assertIn(run_optimizer.CONFIG_SCHEMA_VERSION, result.stderr)
+
+    def test_full_cli_tiny_smoke_exports_expected_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            config_path = self._write_tiny_smoke_config(tmp_path)
+            env = dict(os.environ)
+            env["MPLCONFIGDIR"] = str(tmp_path / "mplconfig")
+
+            result = self._run_cli(
+                "--config",
+                str(config_path),
+                "--output-dir",
+                "output",
+                env=env,
+                timeout=60,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            payload = json.loads(result.stdout)
+            self.assertTrue(payload["ok"])
+            self.assertFalse(payload["dry_run"])
+            self.assertEqual(payload["payload_type"], "run_summary")
+            self.assertEqual(payload["schema_version"], run_optimizer.CLI_PAYLOAD_SCHEMA_VERSION)
+            self.assertEqual(payload["config_schema_version"], run_optimizer.CONFIG_SCHEMA_VERSION)
+
+            output_dir = Path(payload["output_dir"]).resolve()
+            self.assertEqual(output_dir, (tmp_path / "output").resolve())
+            output_dir.relative_to(tmp_path.resolve())
+
+            expected_files = [
+                output_dir / "optimizer_summary.json",
+                output_dir / "optimizer_summary.yaml",
+                output_dir / "top20_scores.csv",
+                output_dir / "best_design" / "best_design_summary.txt",
+                output_dir / "best_design" / "best_design_result.json",
+                output_dir / "best_design" / "best_design_result.yaml",
+                output_dir / "best_design" / "best_design_impedance.png",
+                output_dir / "best_design" / "best_design_radiation.png",
+            ]
+            for path in expected_files:
+                with self.subTest(path=path.name):
+                    self.assertTrue(path.exists(), f"Expected export not found: {path}")
+                    path.resolve().relative_to(output_dir)
+
+            summary = json.loads((output_dir / "optimizer_summary.json").read_text(encoding="utf-8"))
+            self.assertEqual(summary["schema_version"], run_optimizer.REPORT_SCHEMA_VERSION)
+            self.assertEqual(summary["config_schema_version"], run_optimizer.CONFIG_SCHEMA_VERSION)
+            self.assertEqual(summary["nonlinear_results"]["selected_count"], 0)
 
     def test_existing_run_callable_remains_importable_without_cli_args(self) -> None:
         self.assertTrue(callable(run_optimizer.run))
