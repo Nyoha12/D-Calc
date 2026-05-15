@@ -30,7 +30,9 @@ Le principe central est le controle par preuves synthetiques: Codex agit dans un
 Dans un bloc vert, Codex peut inspecter, modifier dans le scope approuve, tester, commit, push et creer une PR avec intervention humaine minimale.
 
 Exemples:
-- tests-only;
+- tests-only bornes;
+- smoke tests tiny ou bornes si aucun code source ni comportement produit n'est modifie;
+- validation rapide et locale;
 - docs-only;
 - petits rapports ou specs de controle;
 - corrections non fonctionnelles;
@@ -54,7 +56,7 @@ Exemples:
 - contrats utilisateur;
 - modification de tests existants qui changent la couverture attendue;
 - compatibilite config/report;
-- automatisation de smoke tests avec execution reelle.
+- smoke tests larges, lents, instables, ou qui touchent un contrat utilisateur, un output contract, la compatibilite config/report ou le comportement CLI.
 
 Controle attendu:
 - expliquer le changement de comportement;
