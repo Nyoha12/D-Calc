@@ -41,8 +41,22 @@ class RunOptimizerCliTests(unittest.TestCase):
         config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
         return config_path
 
-    def _write_tiny_smoke_config(self, tmp_path: Path) -> Path:
+    def _write_tiny_smoke_config(
+        self,
+        tmp_path: Path,
+        *,
+        save_plots: bool = False,
+        save_best_design_plots: bool | None = None,
+    ) -> Path:
         config_path = tmp_path / "optimizer_tiny.yaml"
+        reporting = {
+            "save_yaml_summary": True,
+            "save_json_summary": True,
+            "save_csv_scores": True,
+            "save_plots": save_plots,
+        }
+        if save_best_design_plots is not None:
+            reporting["save_best_design_plots"] = save_best_design_plots
         config = {
             "schema_version": run_optimizer.CONFIG_SCHEMA_VERSION,
             "project": {
@@ -92,12 +106,7 @@ class RunOptimizerCliTests(unittest.TestCase):
                 "enabled": False,
                 "run_only_for_top_n": 0,
             },
-            "reporting": {
-                "save_yaml_summary": True,
-                "save_json_summary": True,
-                "save_csv_scores": True,
-                "save_plots": False,
-            },
+            "reporting": reporting,
         }
         config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
         return config_path
@@ -253,6 +262,56 @@ class RunOptimizerCliTests(unittest.TestCase):
             self.assertEqual(summary["schema_version"], run_optimizer.REPORT_SCHEMA_VERSION)
             self.assertEqual(summary["config_schema_version"], run_optimizer.CONFIG_SCHEMA_VERSION)
             self.assertEqual(summary["nonlinear_results"]["selected_count"], 0)
+            self.assertFalse((output_dir / "pareto_overview.png").exists())
+
+    def test_full_cli_can_skip_best_design_pngs_without_disabling_bundle(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            config_path = self._write_tiny_smoke_config(
+                tmp_path,
+                save_plots=True,
+                save_best_design_plots=False,
+            )
+            env = dict(os.environ)
+            env["MPLCONFIGDIR"] = str(tmp_path / "mplconfig")
+
+            result = self._run_cli(
+                "--config",
+                str(config_path),
+                "--output-dir",
+                "output",
+                env=env,
+                timeout=60,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            payload = json.loads(result.stdout)
+            self.assertTrue(payload["ok"])
+            self.assertEqual(payload["payload_type"], "run_summary")
+
+            output_dir = Path(payload["output_dir"]).resolve()
+            output_dir.relative_to(tmp_path.resolve())
+            best_dir = output_dir / "best_design"
+            expected_bundle_files = [
+                best_dir / "best_design_summary.txt",
+                best_dir / "best_design_result.json",
+                best_dir / "best_design_result.yaml",
+            ]
+            for path in expected_bundle_files:
+                with self.subTest(path=path.name):
+                    self.assertTrue(path.exists(), f"Expected best-design bundle file not found: {path}")
+                    path.resolve().relative_to(output_dir)
+
+            self.assertTrue((output_dir / "pareto_overview.png").exists())
+            self.assertFalse((best_dir / "best_design_impedance.png").exists())
+            self.assertFalse((best_dir / "best_design_radiation.png").exists())
+
+            bundle_exports = payload["exports"]["best_design_bundle"]
+            self.assertIn("summary_txt", bundle_exports)
+            self.assertIn("result_json", bundle_exports)
+            self.assertIn("result_yaml", bundle_exports)
+            self.assertNotIn("impedance_plot", bundle_exports)
+            self.assertNotIn("radiation_plot", bundle_exports)
 
     def test_existing_run_callable_remains_importable_without_cli_args(self) -> None:
         self.assertTrue(callable(run_optimizer.run))

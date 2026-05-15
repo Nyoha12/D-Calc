@@ -73,7 +73,7 @@ Remaining CLI and schema decisions:
 | Define payload evolution and compatibility expectations beyond the current CLI/report schema metadata. | open decision |
 | Decide whether full CLI runs should print resolved config/material/output paths before running, not only in `--dry-run`. | open decision |
 | Decide whether to expose fixed-design evaluation as a public CLI/API. | open decision |
-| Proposed future control: add `reporting.save_best_design_plots`, default `true`, to control only `best_design_impedance.png` and `best_design_radiation.png`. This is not implemented yet. | planned decision / open implementation |
+| Decide whether broader best-design bundle controls are needed beyond the implemented plot toggle. | open decision |
 
 ## 5. Output and report contract
 
@@ -85,7 +85,7 @@ Remaining CLI and schema decisions:
 | `top20_scores.csv` | Ranked candidates with score, validity, core features, objective scores, and penalties. | `reporting.save_csv_scores` | sourced | `didgeridoo_optimizer/reporting/export.py` |
 | `pareto_overview.png` | Pareto plot for ranked candidates. In current code, `reporting.save_plots` controls this overview plot. | `reporting.save_plots` | sourced | `didgeridoo_optimizer/pipeline/run_optimizer.py` |
 | `best_design/` bundle | Written when a best candidate exists. Current files are `best_design_summary.txt`, `best_design_result.json`, `best_design_result.yaml`, `best_design_impedance.png`, and `best_design_radiation.png`. The best-design impedance/radiation plots are currently part of this bundle, not controlled by `reporting.save_plots`. | Best candidate exists; bundle exporter runs. | sourced | `didgeridoo_optimizer/pipeline/run_optimizer.py`, `didgeridoo_optimizer/reporting/export.py`, `didgeridoo_optimizer/reporting/summaries.py` |
-| Future best-design plot control | Proposed future field: `reporting.save_best_design_plots`, default `true`, should control only `best_design_impedance.png` and `best_design_radiation.png`. It should not change the meaning of `reporting.save_plots`, and it should not disable the full `best_design/` bundle. | Not implemented. | planned decision | `didgeridoo_optimizer/pipeline/run_optimizer.py`, `didgeridoo_optimizer/reporting/export.py`, `didgeridoo_optimizer/tests/test_run_optimizer_cli.py` |
+| Best-design plot control | `reporting.save_best_design_plots` defaults to `true` and controls only `best_design_impedance.png` and `best_design_radiation.png`. It does not change the meaning of `reporting.save_plots`, and it does not disable the full `best_design/` bundle. | `reporting.save_best_design_plots` | sourced | `project_specs/CONFIG_TEMPLATE_V1.yaml`, `didgeridoo_optimizer/pipeline/run_optimizer.py`, `didgeridoo_optimizer/reporting/export.py`, `didgeridoo_optimizer/tests/test_run_optimizer_cli.py` |
 | Warnings | Runtime warnings plus best-candidate warnings are deduplicated into final `warnings`. | Internal pipeline behavior. | sourced | `didgeridoo_optimizer/pipeline/run_optimizer.py`, `didgeridoo_optimizer/pipeline/evaluate_linear.py` |
 | Schema version | Optimizer summary payloads emit `schema_version: dcalc.optimizer.report.v1`, plus `config_schema_version` and `config_schema_status`; full report compatibility policy is not yet defined. | Minimal metadata implemented; broader policy open. | sourced / open decision | `didgeridoo_optimizer/pipeline/run_optimizer.py`, `didgeridoo_optimizer/tests/test_run_optimizer_cli.py` |
 

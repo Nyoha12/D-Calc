@@ -281,6 +281,7 @@ reporting:
   save_json_summary: true
   save_csv_scores: true
   save_plots: true
+  save_best_design_plots: true
   textual_summaries:
     enabled: true
     language: fr
