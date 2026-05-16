@@ -41,11 +41,30 @@ Current config fields are best read in three groups.
 |---|---|---|---|---|
 | Currently consumed | `project.random_seed`, `project.output_dir`, `materials.database_file`, `materials.variant_rules_file`, `materials.allowed_materials`, `materials.max_distinct_materials_per_design`, `geometry_constraints`, `topology.allow_bell`, `topology.allow_bell_types`, `bell.geometry_constraints`, `frequency_analysis`, `objectives`, `optimization`, `nonlinear_simulation.enabled`, `nonlinear_simulation.run_only_for_top_n`, `reporting.save_*`. | Used by current optimizer, search, evaluation, nonlinear, or export code. | sourced | `project_specs/CONFIG_TEMPLATE_V1.yaml`, `didgeridoo_optimizer/pipeline/run_optimizer.py`, `didgeridoo_optimizer/optimization/search_space.py` |
 | Present but partly advisory | `units`, `player_model`, `uncertainty_management`, detailed reporting text settings, some objective metadata such as `direction` and `normalization`. | Present in the template, but not all fields are fully enforced as public behavior. | inferred | Template fields exceed direct consumers in inspected code. |
-| Experimental / MVP placeholder | `vocal_control`, `transients_noise`, branch/Helmholtz topology flags, broad nonlinear controls beyond enable/top-N, and full report compatibility policy beyond current version metadata. | Do not treat as stable user contract yet. | experimental / MVP placeholder | `project_specs/PRODUCT_MODEL_SPEC_CURRENT.md`, `project_specs/CONFIG_TEMPLATE_V1.yaml` |
+| Experimental / MVP placeholder | `vocal_control`, `transients_noise`, branch/Helmholtz topology flags, broad nonlinear controls beyond enable/top-N, and broader report/config compatibility beyond the minimal documented policies. | Do not treat as stable user contract yet. | experimental / MVP placeholder | `project_specs/PRODUCT_MODEL_SPEC_CURRENT.md`, `project_specs/CONFIG_TEMPLATE_V1.yaml` |
 
-Open decision: the repo should decide which config fields are public compatibility guarantees beyond the current `dcalc.optimizer.config.v1` metadata.
+The minimal `dcalc.optimizer.config.v1` compatibility policy is documented below. Broader compatibility for the full template remains open.
 
-## 4. Current execution interface
+## 4. Config v1 compatibility policy
+
+This is a minimal compatibility policy for `dcalc.optimizer.config.v1`, not a full schema framework and not a promise to stabilize every field in `CONFIG_TEMPLATE_V1.yaml`.
+
+| Area | Current v1 policy | Status | Sources |
+|---|---|---|---|
+| Schema marker | `schema_version: dcalc.optimizer.config.v1` is the current explicit marker. Explicit v1 is accepted, missing schema is accepted as `missing_assumed_v1`, and unknown schema versions fail early. | sourced | `project_specs/CONFIG_TEMPLATE_V1.yaml`, `didgeridoo_optimizer/pipeline/run_optimizer.py`, `didgeridoo_optimizer/tests/test_run_optimizer_cli.py` |
+| Config file shape | The config file must parse as a YAML mapping. | sourced | `didgeridoo_optimizer/pipeline/run_optimizer.py` |
+| Path resolution | Material and variant-rule paths are resolved from the config value, then relative to the config file parent, then by filename under `/mnt/data`. Relative output directories are resolved from the config file parent. | sourced | `didgeridoo_optimizer/pipeline/run_optimizer.py` |
+| CLI output override | `--output-dir <path>` overrides `project.output_dir` in memory and must not mutate the config file. | sourced | `didgeridoo_optimizer/pipeline/run_optimizer.py`, `didgeridoo_optimizer/tests/test_run_optimizer_cli.py` |
+| Current run sections | The current optimizer run consumes `project`, `environment`, `materials`, `geometry_constraints`, `topology`, `bell`, `frequency_analysis`, `objectives`, `optimization`, `runtime_estimation`, `nonlinear_simulation`, and `reporting`. | sourced | `didgeridoo_optimizer/pipeline/run_optimizer.py`, `didgeridoo_optimizer/optimization/search_space.py`, `didgeridoo_optimizer/optimization/objectives.py`, `didgeridoo_optimizer/pipeline/evaluate_linear.py`, `didgeridoo_optimizer/pipeline/evaluate_nonlinear.py` |
+| Stable minimal fields | Stable minimal fields are `project.output_dir`, `project.random_seed`, `materials.database_file`, `materials.variant_rules_file`, `materials.allowed_materials`, `materials.max_distinct_materials_per_design`, consumed air/environment properties, `geometry_constraints`, `topology.allow_bell`, `topology.allow_bell_types`, `bell.geometry_constraints`, `frequency_analysis`, `peak_detection`, `objectives.<name>.enabled`, `objectives.<name>.weight`, `objectives.<name>.hard_constraint`, consumed per-objective tuning fields, optimization budgets/counts/top-N/final selector, basic consumed nonlinear fields, and the reporting flags listed below. | sourced / inferred | Same code sources as current run sections. |
+| Stable reporting flags | `reporting.save_yaml_summary`, `reporting.save_json_summary`, `reporting.save_csv_scores`, `reporting.save_plots`, and `reporting.save_best_design_plots` keep their documented meanings. | sourced | `project_specs/CONFIG_TEMPLATE_V1.yaml`, `didgeridoo_optimizer/pipeline/run_optimizer.py`, `didgeridoo_optimizer/reporting/export.py`, `didgeridoo_optimizer/tests/test_run_optimizer_cli.py` |
+| Advisory / partly implemented fields | `project.name`, `project.description`, `project.save_intermediate_results`, `project.overwrite_output_dir`, `units`, `materials.mode`, `materials.assignment_granularity`, material preference/override flags, some `complexity_penalty` fields, `player_model`, `uncertainty_management`, objective metadata such as `direction`, `normalization`, and some `preferred_*` fields, `optimization.strategy`, `optimization.optimizer`, `elite_fraction`, `mutation_rate`, `crossover_rate`, and runtime display flags are not fully stabilized as public behavior. | inferred | Template fields exceed direct consumers in inspected code. |
+| Experimental / MVP placeholder fields | Branch topology, Helmholtz topology, mouthpiece generation controls beyond validation of existing segments, `vocal_control`, `transients_noise`, broader nonlinear/detection flags, and any interpretation that treats material coefficients as established truth remain experimental or placeholder. | experimental / MVP placeholder | `project_specs/CONFIG_TEMPLATE_V1.yaml`, `project_specs/PRODUCT_MODEL_SPEC_CURRENT.md`, `AGENTS.md` |
+| Compatible evolution | Compatible v1 changes include adding optional fields or sections, enriching advisory/experimental fields, adding disabled-by-default objectives, adding optional reporting flags with conservative defaults, and improving internal algorithms without changing stable field meanings. | open decision | Minimal v1 policy. |
+| New config schema required | A new `schema_version` should be used for removing or renaming a stable field, changing a stable field's type or meaning incompatibly, changing path-resolution semantics, changing the meaning of `reporting.save_*`, making a currently optional/defaulted stable field mandatory, changing budget/top-N/final-selector semantics incompatibly, or turning a placeholder into incompatible public behavior. | open decision | Minimal v1 policy. |
+| Material caveat | Stabilizing config field shape does not validate material coefficients, promote material patches, or make configured material values globally established. | sourced | `AGENTS.md`, `project_specs/MATERIALS_POLICY_AND_UNCERTAINTY.md` |
+
+## 5. Current execution interface
 
 | Interface | Current contract | Status | Sources |
 |---|---|---|---|
@@ -69,13 +88,13 @@ Remaining CLI and schema decisions:
 
 | Remaining promise / decision | Status |
 |---|---|
-| Define a formal compatibility policy for config fields beyond `dcalc.optimizer.config.v1`. | open decision |
+| Define broader config compatibility beyond the minimal `dcalc.optimizer.config.v1` policy. | open decision |
 | Define payload evolution and compatibility expectations beyond the current CLI/report schema metadata. | open decision |
 | Decide whether full CLI runs should print resolved config/material/output paths before running, not only in `--dry-run`. | open decision |
 | Decide whether to expose fixed-design evaluation as a public CLI/API. | open decision |
 | Decide whether broader best-design bundle controls are needed beyond the implemented plot toggle. | open decision |
 
-## 5. Output and report contract
+## 6. Output and report contract
 
 | Output | Current contract | Controlled by | Status | Sources |
 |---|---|---|---|---|
@@ -89,7 +108,7 @@ Remaining CLI and schema decisions:
 | Warnings | Runtime warnings plus best-candidate warnings are deduplicated into final `warnings`. | Internal pipeline behavior. | sourced | `didgeridoo_optimizer/pipeline/run_optimizer.py`, `didgeridoo_optimizer/pipeline/evaluate_linear.py` |
 | Schema version | Optimizer summary payloads emit `schema_version: dcalc.optimizer.report.v1`, plus `config_schema_version` and `config_schema_status`; a minimal report v1 compatibility policy is documented below. | Minimal metadata and compatibility policy implemented in docs; broader policy open. | sourced / open decision | `didgeridoo_optimizer/pipeline/run_optimizer.py`, `didgeridoo_optimizer/tests/test_run_optimizer_cli.py` |
 
-## 6. Report v1 compatibility policy
+## 7. Report v1 compatibility policy
 
 This is a minimal compatibility policy for `dcalc.optimizer.report.v1`, not a full schema framework and not a promise to freeze all nested optimizer internals.
 
@@ -113,7 +132,7 @@ Output interpretation rules:
 | `model_confidence` is a 1D validity proxy, not empirical proof of playability or build quality. | sourced | `project_specs/PRODUCT_MODEL_SPEC_CURRENT.md` |
 | French text summaries are the only implemented natural-language report summaries. | sourced | `didgeridoo_optimizer/reporting/summaries.py` |
 
-## 7. Fixed-design evaluation status
+## 8. Fixed-design evaluation status
 
 | Mode | Current status | Contract | Sources |
 |---|---|---|---|
@@ -122,7 +141,7 @@ Output interpretation rules:
 | Search candidate/genome input | Internal-only. `SearchSpace` samples, mutates, repairs, and decodes genomes. | Do not expose as stable user schema yet. | sourced | `didgeridoo_optimizer/optimization/search_space.py` |
 | Public fixed-design schema | Not defined. | Needs a decision before a CLI/API should accept design files. | open decision | `project_specs/PRODUCT_MODEL_SPEC_CURRENT.md` |
 
-## 8. Validation expectations
+## 9. Validation expectations
 
 | Validation item | What it means | What it does not mean | Status | Sources |
 |---|---|---|---|---|
@@ -135,13 +154,13 @@ Output interpretation rules:
 Open decision: define a broader output trust checklist for interpreting optimizer results.
 The first CLI step now exposes `--dry-run` as a preflight command, but the full output trust checklist remains open.
 
-## 9. Practical current contract summary
+## 10. Practical current contract summary
 
 | Question | Current answer | Status |
 |---|---|---|
 | What does a user provide for the full optimizer? | A YAML config path, with referenced material DB and optional variant rules resolvable from that config. | sourced |
 | What does the program write? | Optional JSON/YAML summaries, CSV scores, plots, and a best-design bundle under the resolved output directory. | sourced |
-| Is there a stable CLI? | Yes, as a first step: `python -m didgeridoo_optimizer.pipeline.run_optimizer --config <path>`, with optional `--output-dir <path>` and `--dry-run`. This does not yet imply a complete schema framework or compatibility policy. | sourced |
+| Is there a stable CLI? | Yes, as a first step: `python -m didgeridoo_optimizer.pipeline.run_optimizer --config <path>`, with optional `--output-dir <path>` and `--dry-run`. This does not yet imply a complete schema framework or full compatibility policy. | sourced |
 | Is there a stable report schema? | A minimal `dcalc.optimizer.report.v1` compatibility policy exists for metadata, top-level keys, standard output files, and export-control semantics; nested results remain advisory/internal unless stabilized later. | sourced / open decision |
 | Can a user pass a fixed design file? | Not through a documented full-optimizer interface. | open decision |
-| What should happen next? | Define the next CLI/schema decisions, especially report compatibility policy and any public fixed-design input contract. | open decision |
+| What should happen next? | Define the remaining CLI/schema decisions, especially broader config/report compatibility and any public fixed-design input contract. | open decision |
