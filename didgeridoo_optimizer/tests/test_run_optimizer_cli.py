@@ -143,6 +143,18 @@ class RunOptimizerCliTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Config file not found", result.stderr)
 
+    def test_dry_run_rejects_non_mapping_yaml_config(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            config_path = tmp_path / "not_a_mapping.yaml"
+            config_path.write_text("- not\n- a\n- mapping\n", encoding="utf-8")
+
+            result = self._run_cli("--config", str(config_path), "--dry-run")
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("Config YAML must be a mapping", result.stderr)
+            self.assertFalse((tmp_path / "optimizer_summary.json").exists())
+
     def test_dry_run_valid_config_succeeds_without_optimizer_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
