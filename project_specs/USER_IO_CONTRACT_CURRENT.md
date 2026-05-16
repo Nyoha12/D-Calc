@@ -54,7 +54,7 @@ Open decision: the repo should decide which config fields are public compatibili
 | `python -m didgeridoo_optimizer.pipeline.run_optimizer --config <path>` | First stable user-facing CLI entry point for a full optimizer run from an explicit config path. | sourced | `didgeridoo_optimizer/pipeline/run_optimizer.py`, `didgeridoo_optimizer/tests/test_run_optimizer_cli.py` |
 | `--output-dir <path>` | Optional CLI override for the resolved output directory. The override is applied in memory and does not modify the config file. | sourced | `didgeridoo_optimizer/pipeline/run_optimizer.py`, `didgeridoo_optimizer/tests/test_run_optimizer_cli.py` |
 | `--dry-run` | Performs preflight validation and path resolution without running optimization or writing optimizer result artifacts. | sourced | `didgeridoo_optimizer/pipeline/run_optimizer.py`, `didgeridoo_optimizer/tests/test_run_optimizer_cli.py` |
-| Full optimizer execution via CLI | Implemented through the CLI wrapper, but not exercised by tests in order to avoid optimizer artifact generation. | sourced | `didgeridoo_optimizer/pipeline/run_optimizer.py`, `didgeridoo_optimizer/tests/test_run_optimizer_cli.py` |
+| Full optimizer execution via CLI | Implemented through the CLI wrapper and exercised by a tiny full CLI smoke test that writes artifacts only in a temporary output directory. | sourced | `didgeridoo_optimizer/pipeline/run_optimizer.py`, `didgeridoo_optimizer/tests/test_run_optimizer_cli.py` |
 | Fixed-design CLI | Not part of the stable CLI. Fixed designs remain lower-level/internal. | sourced | `didgeridoo_optimizer/pipeline/run_optimizer.py`, `didgeridoo_optimizer/optimization/search_space.py` |
 | CLI payload metadata | CLI payloads include `schema_version: dcalc.optimizer.cli.v1` and `payload_type` as `dry_run` or `run_summary`. | sourced | `didgeridoo_optimizer/pipeline/run_optimizer.py`, `didgeridoo_optimizer/tests/test_run_optimizer_cli.py` |
 | Report schema versioning | Optimizer summary payloads include `schema_version: dcalc.optimizer.report.v1` plus config schema metadata. A minimal compatibility policy exists for top-level fields, standard output files, and export-control semantics; broader compatibility remains open. | sourced / open decision | `didgeridoo_optimizer/pipeline/run_optimizer.py`, `didgeridoo_optimizer/tests/test_run_optimizer_cli.py`, `project_specs/PRODUCT_MODEL_SPEC_CURRENT.md` |
@@ -63,7 +63,7 @@ Current CLI validation coverage:
 
 | Validation command | Result | Status |
 |---|---|---|
-| `python -m unittest discover -s didgeridoo_optimizer/tests` | Ran 16 tests; OK. | sourced |
+| `python -m unittest discover -s didgeridoo_optimizer/tests` | Current local discovery suite; exact count may evolve. | sourced |
 
 Remaining CLI and schema decisions:
 
