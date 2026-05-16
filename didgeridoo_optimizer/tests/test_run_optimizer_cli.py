@@ -177,6 +177,38 @@ class RunOptimizerCliTests(unittest.TestCase):
             self.assertFalse(output_dir.exists())
             self.assertFalse((output_dir / "optimizer_summary.json").exists())
 
+    def test_dry_run_missing_material_database_returns_payload_error(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            output_dir = tmp_path / "dry_run_results"
+            config_path = tmp_path / "optimizer_config.yaml"
+            config = {
+                "project": {
+                    "output_dir": str(output_dir),
+                },
+                "materials": {
+                    "database_file": str(tmp_path / "missing_materials.yaml"),
+                    "variant_rules_file": str(REPO_ROOT / "project_specs" / "wood_variant_rules_v1.yaml"),
+                },
+            }
+            config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+
+            result = self._run_cli("--config", str(config_path), "--dry-run")
+
+            self.assertNotEqual(result.returncode, 0)
+            payload = json.loads(result.stdout)
+            self.assertEqual(payload["schema_version"], run_optimizer.CLI_PAYLOAD_SCHEMA_VERSION)
+            self.assertEqual(payload["payload_type"], "dry_run")
+            self.assertFalse(payload["ok"])
+            self.assertTrue(payload["dry_run"])
+            self.assertFalse(payload["materials"]["database_exists"])
+            self.assertTrue(
+                any("Material database not found" in message for message in payload["errors"]),
+                payload["errors"],
+            )
+            self.assertFalse(output_dir.exists())
+            self.assertFalse((output_dir / "optimizer_summary.json").exists())
+
     def test_output_dir_override_is_reported_without_modifying_config(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
