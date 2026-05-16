@@ -141,6 +141,17 @@ Output interpretation rules:
 | Search candidate/genome input | Internal-only. `SearchSpace` samples, mutates, repairs, and decodes genomes. | Do not expose as stable user schema yet. | sourced | `didgeridoo_optimizer/optimization/search_space.py` |
 | Public fixed-design schema | Not defined. | Needs a decision before a CLI/API should accept design files. | open decision | `project_specs/PRODUCT_MODEL_SPEC_CURRENT.md` |
 
+Planned fixed-design evaluation workflow:
+
+| Candidate workflow item | Planned status | Notes |
+|---|---|---|
+| Future CLI shape | open decision / not yet implemented | Candidate shape is `--config <path>` for evaluation context plus a separate `--design <path>` YAML/JSON design file. |
+| First evaluation scope | open decision | Recommended first step is linear evaluation only. Robustness and nonlinear refinement should remain out of scope or advisory until a later decision. |
+| Config relation | open decision | `dcalc.optimizer.config.v1` should keep its current meaning for materials, environment, frequency, constraints, objectives, and reporting; adding a fixed-design input should not immediately redefine config v1. |
+| Design format | open decision | Do not treat the current internal mapping shape as a final public design schema yet. A minimal candidate would include `id`, `segments`, segment `kind`, `length_cm`, `d_in_cm`, `d_out_cm`, `material_id`, optional `profile_params`, and optional `metadata`. |
+| Candidate outputs | open decision / not yet contract | Possible minimal outputs are stdout JSON with `ok`, `payload_type`, schema metadata, config schema metadata, `design_id`, `valid`, `errors`, `warnings`, `aggregate_score`, and a compact feature summary, plus optional result JSON/YAML files under the output directory. |
+| Interpretation | sourced / inferred | A fixed-design linear evaluation result is an evaluated design under the configured model, not a physical validation, material promotion, or A-E validation result. |
+
 ## 9. Validation expectations
 
 | Validation item | What it means | What it does not mean | Status | Sources |
