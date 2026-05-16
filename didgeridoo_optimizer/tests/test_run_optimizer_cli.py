@@ -358,6 +358,59 @@ class RunOptimizerCliTests(unittest.TestCase):
         self.assertEqual(payload["config_schema_version"], run_optimizer.CONFIG_SCHEMA_VERSION)
         self.assertEqual(payload["config_schema_status"], run_optimizer.CONFIG_SCHEMA_STATUS_MISSING_ASSUMED_V1)
 
+    def test_finalize_payload_covers_minimal_report_v1_contract(self) -> None:
+        runner = run_optimizer.OptimizerRunner()
+        selector = mock.Mock()
+        selector.select_best.return_value = {}
+        selector.rank_top_n.return_value = []
+        config = {
+            "optimization": {
+                "final_output_count": 1,
+                "final_selector": "weighted_sum",
+            }
+        }
+        context = {
+            "selector": selector,
+            "config_schema_version": run_optimizer.CONFIG_SCHEMA_VERSION,
+            "config_schema_status": run_optimizer.CONFIG_SCHEMA_STATUS_EXPLICIT,
+        }
+        runtime_info = {"warnings": ["runtime warning"], "estimated_seconds": 0.0}
+        linear_results = {"ranked": [], "evaluation_count": 0}
+        robust_results = {"ranked": [], "selected_count": 0}
+        nonlinear_results = {"ranked": [], "selected_count": 0}
+
+        with mock.patch.object(runner, "_export_results", return_value={"output_dir": "results"}) as export_mock:
+            payload = runner.finalize(
+                linear_results=linear_results,
+                robust_results=robust_results,
+                nonlinear_results=nonlinear_results,
+                runtime_info=runtime_info,
+                config=config,
+                context=context,
+                runtime_actual_seconds=1.25,
+            )
+
+        stable_top_level_keys = {
+            "config",
+            "runtime_estimate",
+            "runtime_actual_seconds",
+            "linear_results",
+            "robust_results",
+            "nonlinear_results",
+            "best_design",
+            "top_20",
+            "warnings",
+            "exports",
+        }
+        self.assertEqual(payload["schema_version"], run_optimizer.REPORT_SCHEMA_VERSION)
+        self.assertEqual(payload["config_schema_version"], run_optimizer.CONFIG_SCHEMA_VERSION)
+        self.assertEqual(payload["config_schema_status"], run_optimizer.CONFIG_SCHEMA_STATUS_EXPLICIT)
+        self.assertTrue(stable_top_level_keys.issubset(payload.keys()))
+        self.assertIsInstance(payload["warnings"], list)
+        self.assertIsInstance(payload["exports"], dict)
+        self.assertIsInstance(payload["runtime_actual_seconds"], (float, int))
+        export_mock.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()
