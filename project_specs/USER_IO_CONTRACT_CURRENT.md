@@ -57,7 +57,7 @@ Open decision: the repo should decide which config fields are public compatibili
 | Full optimizer execution via CLI | Implemented through the CLI wrapper, but not exercised by tests in order to avoid optimizer artifact generation. | sourced | `didgeridoo_optimizer/pipeline/run_optimizer.py`, `didgeridoo_optimizer/tests/test_run_optimizer_cli.py` |
 | Fixed-design CLI | Not part of the stable CLI. Fixed designs remain lower-level/internal. | sourced | `didgeridoo_optimizer/pipeline/run_optimizer.py`, `didgeridoo_optimizer/optimization/search_space.py` |
 | CLI payload metadata | CLI payloads include `schema_version: dcalc.optimizer.cli.v1` and `payload_type` as `dry_run` or `run_summary`. | sourced | `didgeridoo_optimizer/pipeline/run_optimizer.py`, `didgeridoo_optimizer/tests/test_run_optimizer_cli.py` |
-| Report schema versioning | Optimizer summary payloads include `schema_version: dcalc.optimizer.report.v1` plus config schema metadata, but broader compatibility policy remains open. | sourced / open decision | `didgeridoo_optimizer/pipeline/run_optimizer.py`, `didgeridoo_optimizer/tests/test_run_optimizer_cli.py`, `project_specs/PRODUCT_MODEL_SPEC_CURRENT.md` |
+| Report schema versioning | Optimizer summary payloads include `schema_version: dcalc.optimizer.report.v1` plus config schema metadata. A minimal compatibility policy exists for top-level fields, standard output files, and export-control semantics; broader compatibility remains open. | sourced / open decision | `didgeridoo_optimizer/pipeline/run_optimizer.py`, `didgeridoo_optimizer/tests/test_run_optimizer_cli.py`, `project_specs/PRODUCT_MODEL_SPEC_CURRENT.md` |
 
 Current CLI validation coverage:
 
@@ -87,7 +87,23 @@ Remaining CLI and schema decisions:
 | `best_design/` bundle | Written when a best candidate exists. Current files are `best_design_summary.txt`, `best_design_result.json`, `best_design_result.yaml`, `best_design_impedance.png`, and `best_design_radiation.png`. The best-design impedance/radiation plots are currently part of this bundle, not controlled by `reporting.save_plots`. | Best candidate exists; bundle exporter runs. | sourced | `didgeridoo_optimizer/pipeline/run_optimizer.py`, `didgeridoo_optimizer/reporting/export.py`, `didgeridoo_optimizer/reporting/summaries.py` |
 | Best-design plot control | `reporting.save_best_design_plots` defaults to `true` and controls only `best_design_impedance.png` and `best_design_radiation.png`. It does not change the meaning of `reporting.save_plots`, and it does not disable the full `best_design/` bundle. | `reporting.save_best_design_plots` | sourced | `project_specs/CONFIG_TEMPLATE_V1.yaml`, `didgeridoo_optimizer/pipeline/run_optimizer.py`, `didgeridoo_optimizer/reporting/export.py`, `didgeridoo_optimizer/tests/test_run_optimizer_cli.py` |
 | Warnings | Runtime warnings plus best-candidate warnings are deduplicated into final `warnings`. | Internal pipeline behavior. | sourced | `didgeridoo_optimizer/pipeline/run_optimizer.py`, `didgeridoo_optimizer/pipeline/evaluate_linear.py` |
-| Schema version | Optimizer summary payloads emit `schema_version: dcalc.optimizer.report.v1`, plus `config_schema_version` and `config_schema_status`; full report compatibility policy is not yet defined. | Minimal metadata implemented; broader policy open. | sourced / open decision | `didgeridoo_optimizer/pipeline/run_optimizer.py`, `didgeridoo_optimizer/tests/test_run_optimizer_cli.py` |
+| Schema version | Optimizer summary payloads emit `schema_version: dcalc.optimizer.report.v1`, plus `config_schema_version` and `config_schema_status`; a minimal report v1 compatibility policy is documented below. | Minimal metadata and compatibility policy implemented in docs; broader policy open. | sourced / open decision | `didgeridoo_optimizer/pipeline/run_optimizer.py`, `didgeridoo_optimizer/tests/test_run_optimizer_cli.py` |
+
+## 6. Report v1 compatibility policy
+
+This is a minimal compatibility policy for `dcalc.optimizer.report.v1`, not a full schema framework and not a promise to freeze all nested optimizer internals.
+
+| Area | Current v1 policy | Status | Sources |
+|---|---|---|---|
+| Stable minimal metadata | Reports keep `schema_version` with value `dcalc.optimizer.report.v1`, plus `config_schema_version` and `config_schema_status`. | sourced | `didgeridoo_optimizer/pipeline/run_optimizer.py`, `didgeridoo_optimizer/tests/test_run_optimizer_cli.py` |
+| Stable top-level keys | Reports keep `config`, `runtime_estimate`, `runtime_actual_seconds`, `linear_results`, `robust_results`, `nonlinear_results`, `best_design`, `top_20`, `warnings`, and `exports`. | sourced | `didgeridoo_optimizer/pipeline/run_optimizer.py` |
+| Stable basic types | `warnings` is a list, `exports` is a mapping, and `runtime_actual_seconds` is numeric. | sourced | `didgeridoo_optimizer/pipeline/run_optimizer.py` |
+| Stable standard file names | Current standard outputs are `optimizer_summary.json`, `optimizer_summary.yaml`, `top20_scores.csv`, `pareto_overview.png`, `best_design/best_design_summary.txt`, `best_design/best_design_result.json`, `best_design/best_design_result.yaml`, `best_design/best_design_impedance.png`, and `best_design/best_design_radiation.png`, when their controlling conditions are met. | sourced | `didgeridoo_optimizer/pipeline/run_optimizer.py`, `didgeridoo_optimizer/reporting/export.py`, `didgeridoo_optimizer/tests/test_run_optimizer_cli.py` |
+| Stable export controls | `reporting.save_json_summary`, `reporting.save_yaml_summary`, `reporting.save_csv_scores`, `reporting.save_plots`, and `reporting.save_best_design_plots` keep their documented meanings. | sourced | `project_specs/CONFIG_TEMPLATE_V1.yaml`, `didgeridoo_optimizer/pipeline/run_optimizer.py`, `didgeridoo_optimizer/tests/test_run_optimizer_cli.py` |
+| Stable export truthfulness | `exports` should announce only files that were actually written. | inferred | Current export construction adds paths only when the corresponding writer runs. |
+| Advisory / internal details | Fine structure of `linear_results`, `robust_results`, `nonlinear_results`, candidates in `best_design` and `top_20`, exact warning text, score/objective internals, runtime-estimate details, and plot pixel contents remain advisory/internal unless a future decision stabilizes them. | inferred / open decision | `didgeridoo_optimizer/pipeline/run_optimizer.py`, `project_specs/PRODUCT_MODEL_SPEC_CURRENT.md` |
+| Compatible evolution | It is compatible to add optional fields, optional output files, new `exports` keys, richer advisory results, additional warnings, or improved payloads as long as stable fields remain present and compatible. | open decision | Minimal v1 policy. |
+| New report schema required | A new `schema_version` should be used for removing or renaming a stable field, changing the type or meaning of a stable field, changing standard file names incompatibly, making `exports` stop matching written files, or changing the documented meaning of `best_design`, `top_20`, or export controls. | open decision | Minimal v1 policy. |
 
 Output interpretation rules:
 
@@ -97,7 +113,7 @@ Output interpretation rules:
 | `model_confidence` is a 1D validity proxy, not empirical proof of playability or build quality. | sourced | `project_specs/PRODUCT_MODEL_SPEC_CURRENT.md` |
 | French text summaries are the only implemented natural-language report summaries. | sourced | `didgeridoo_optimizer/reporting/summaries.py` |
 
-## 6. Fixed-design evaluation status
+## 7. Fixed-design evaluation status
 
 | Mode | Current status | Contract | Sources |
 |---|---|---|---|
@@ -106,7 +122,7 @@ Output interpretation rules:
 | Search candidate/genome input | Internal-only. `SearchSpace` samples, mutates, repairs, and decodes genomes. | Do not expose as stable user schema yet. | sourced | `didgeridoo_optimizer/optimization/search_space.py` |
 | Public fixed-design schema | Not defined. | Needs a decision before a CLI/API should accept design files. | open decision | `project_specs/PRODUCT_MODEL_SPEC_CURRENT.md` |
 
-## 7. Validation expectations
+## 8. Validation expectations
 
 | Validation item | What it means | What it does not mean | Status | Sources |
 |---|---|---|---|---|
@@ -119,13 +135,13 @@ Output interpretation rules:
 Open decision: define a broader output trust checklist for interpreting optimizer results.
 The first CLI step now exposes `--dry-run` as a preflight command, but the full output trust checklist remains open.
 
-## 8. Practical current contract summary
+## 9. Practical current contract summary
 
 | Question | Current answer | Status |
 |---|---|---|
 | What does a user provide for the full optimizer? | A YAML config path, with referenced material DB and optional variant rules resolvable from that config. | sourced |
 | What does the program write? | Optional JSON/YAML summaries, CSV scores, plots, and a best-design bundle under the resolved output directory. | sourced |
 | Is there a stable CLI? | Yes, as a first step: `python -m didgeridoo_optimizer.pipeline.run_optimizer --config <path>`, with optional `--output-dir <path>` and `--dry-run`. This does not yet imply a complete schema framework or compatibility policy. | sourced |
-| Is there a stable report schema? | Minimal report schema metadata exists as `dcalc.optimizer.report.v1`, but no full compatibility policy exists yet. | sourced / open decision |
+| Is there a stable report schema? | A minimal `dcalc.optimizer.report.v1` compatibility policy exists for metadata, top-level keys, standard output files, and export-control semantics; nested results remain advisory/internal unless stabilized later. | sourced / open decision |
 | Can a user pass a fixed design file? | Not through a documented full-optimizer interface. | open decision |
 | What should happen next? | Define the next CLI/schema decisions, especially report compatibility policy and any public fixed-design input contract. | open decision |
