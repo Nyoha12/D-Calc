@@ -82,7 +82,7 @@ def export_csv_scores(ranked: Sequence[Mapping[str, Any]], path: str | Path) -> 
     return out
 
 
-def export_best_design_bundle(best: Mapping[str, Any], out_dir: str | Path) -> dict[str, str]:
+def export_best_design_bundle(best: Mapping[str, Any], out_dir: str | Path, *, save_plots: bool = True) -> dict[str, str]:
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     result = dict(best.get('result', best) or {})
@@ -92,12 +92,16 @@ def export_best_design_bundle(best: Mapping[str, Any], out_dir: str | Path) -> d
 
     design_path = export_json(result, out / 'best_design_result.json')
     yaml_path = export_yaml(result, out / 'best_design_result.yaml')
-    imp_path = plot_impedance(result, out / 'best_design_impedance.png')
-    rad_path = plot_radiation(result, out / 'best_design_radiation.png')
-    return {
+    bundle = {
         'summary_txt': str(summary_path),
         'result_json': str(design_path),
         'result_yaml': str(yaml_path),
-        'impedance_plot': str(imp_path),
-        'radiation_plot': str(rad_path),
     }
+    if save_plots:
+        imp_path = plot_impedance(result, out / 'best_design_impedance.png')
+        rad_path = plot_radiation(result, out / 'best_design_radiation.png')
+        bundle.update({
+            'impedance_plot': str(imp_path),
+            'radiation_plot': str(rad_path),
+        })
+    return bundle

@@ -404,7 +404,12 @@ class OptimizerRunner:
         if bool(reporting_cfg.get("save_plots", True)):
             exports["pareto_plot"] = str(plot_pareto(ranked_top_n, output_dir / "pareto_overview.png"))
         if best_candidate:
-            exports["best_design_bundle"] = export_best_design_bundle(best_candidate, output_dir / "best_design")
+            save_best_design_plots = bool(reporting_cfg.get("save_best_design_plots", True))
+            exports["best_design_bundle"] = export_best_design_bundle(
+                best_candidate,
+                output_dir / "best_design",
+                save_plots=save_best_design_plots,
+            )
         return exports
 
     def _build_summary_payload(
