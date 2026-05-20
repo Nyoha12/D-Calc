@@ -3,6 +3,12 @@ from __future__ import annotations
 from typing import Any, Mapping, Sequence
 
 
+INTERPRETATION_DISCLAIMER = (
+    "Interprétation : résultat d’optimisation sous le modèle et la configuration courants ; "
+    "ce n’est pas une validation physique, une garantie de jouabilité, ni une promotion matériau."
+)
+
+
 def strengths(result: Mapping[str, Any]) -> list[str]:
     features = dict(result.get('features', {}) or {})
     objective_scores = dict(result.get('objective_scores', {}) or {})
@@ -85,4 +91,5 @@ def summarize_design(result: Mapping[str, Any], language: str = 'fr') -> str:
         lines.append('Points faibles : ' + '; '.join(w) + '.')
     if t:
         lines.append('Compromis : ' + '; '.join(t) + '.')
+    lines.append(INTERPRETATION_DISCLAIMER)
     return ' '.join(lines)
