@@ -302,6 +302,11 @@ class RunOptimizerCliTests(unittest.TestCase):
                     self.assertTrue(path.exists(), f"Expected export not found: {path}")
                     path.resolve().relative_to(output_dir)
 
+            best_summary = (output_dir / "best_design" / "best_design_summary.txt").read_text(encoding="utf-8")
+            self.assertIn("ce n’est pas une validation physique", best_summary)
+            self.assertIn("garantie de jouabilité", best_summary)
+            self.assertIn("promotion matériau", best_summary)
+
             summary = json.loads((output_dir / "optimizer_summary.json").read_text(encoding="utf-8"))
             self.assertEqual(summary["schema_version"], run_optimizer.REPORT_SCHEMA_VERSION)
             self.assertEqual(summary["config_schema_version"], run_optimizer.CONFIG_SCHEMA_VERSION)
