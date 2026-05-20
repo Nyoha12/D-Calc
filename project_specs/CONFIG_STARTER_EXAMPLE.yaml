@@ -1,0 +1,102 @@
+# Starter example for dcalc.optimizer.config.v1.
+# This is a minimal runnable example, not an exhaustive config contract.
+# See CONFIG_TEMPLATE_V1.yaml for the complete template.
+# Preflight from the repo root:
+# python -m didgeridoo_optimizer.pipeline.run_optimizer --config project_specs/CONFIG_STARTER_EXAMPLE.yaml --dry-run
+
+schema_version: "dcalc.optimizer.config.v1"
+
+project:
+  name: "starter_optimizer_example"
+  random_seed: 7
+  output_dir: "../results/starter_example"
+
+environment:
+  air_temperature_c: 20.0
+  air_density_kg_m3: 1.204
+  sound_speed_m_s: 343.0
+  relative_humidity_percent: 50.0
+
+geometry_constraints:
+  total_length_cm:
+    min: 80.0
+    max: 180.0
+  body_segments:
+    min_count: 1
+    max_count: 3
+    min_length_cm: 10.0
+    max_length_cm: 120.0
+  diameter_cm:
+    min: 1.0
+    max: 8.0
+  allow_steps: true
+  allow_reverse_taper: true
+  allow_local_constrictions: true
+  allow_local_expansions: true
+
+topology:
+  allow_bell: false
+  allow_bell_types: []
+  allow_branches: false
+  allow_helmholtz: false
+
+materials:
+  database_file: "./materials_base_v1.yaml"
+  variant_rules_file: "./wood_variant_rules_v1.yaml"
+  # Existing practical material ID for this example, not a validation claim.
+  allowed_materials: ["pvc_pressure"]
+  max_distinct_materials_per_design: 1
+
+frequency_analysis:
+  f_min_hz: 40.0
+  f_max_hz: 1000.0
+  n_points: 512
+  peak_detection:
+    min_prominence: 0.01
+    min_distance_hz: 5.0
+    max_number_of_peaks: 10
+
+objectives:
+  drone_f0:
+    enabled: true
+    weight: 1.0
+    hard_constraint: false
+    target_range_hz: [55.0, 75.0]
+  impedance_peaks:
+    enabled: true
+    weight: 0.5
+    hard_constraint: false
+  fabrication_simplicity:
+    enabled: true
+    weight: 0.3
+    hard_constraint: false
+  material_simplicity:
+    enabled: true
+    weight: 0.3
+    hard_constraint: false
+
+optimization:
+  random_initial_population: 4
+  generations: 1
+  linear_budget: 4
+  keep_top_n_linear: 4
+  top_n_for_robustness: 1
+  top_n_for_nonlinear: 0
+  final_output_count: 1
+  final_selector: "weighted_sum"
+
+runtime_estimation:
+  benchmark_samples_linear: 1
+  benchmark_samples_nonlinear: 0
+  warn_if_estimated_time_exceeds_minutes: 1
+
+nonlinear_simulation:
+  enabled: false
+  run_only_for_top_n: 0
+
+reporting:
+  save_yaml_summary: true
+  save_json_summary: true
+  save_csv_scores: true
+  save_plots: false
+  save_best_design_plots: false
