@@ -291,6 +291,7 @@ class RunOptimizerCliTests(unittest.TestCase):
                 output_dir / "optimizer_summary.json",
                 output_dir / "optimizer_summary.yaml",
                 output_dir / "top20_scores.csv",
+                output_dir / "post_run_interpretation.txt",
                 output_dir / "best_design" / "best_design_summary.txt",
                 output_dir / "best_design" / "best_design_result.json",
                 output_dir / "best_design" / "best_design_result.yaml",
@@ -306,6 +307,34 @@ class RunOptimizerCliTests(unittest.TestCase):
             self.assertIn("ce n’est pas une validation physique", best_summary)
             self.assertIn("garantie de jouabilité", best_summary)
             self.assertIn("promotion matériau", best_summary)
+
+            interpretation_path = output_dir / "post_run_interpretation.txt"
+            self.assertEqual(Path(payload["exports"]["interpretation_txt"]).resolve(), interpretation_path.resolve())
+            interpretation = interpretation_path.read_text(encoding="utf-8")
+            expected_fragments = [
+                "aide d’interprétation non contractuelle",
+                "compromis calculé",
+                "ne constitue pas une validation physique",
+                "garantie de jouabilité",
+                "promotion matériau",
+                "proxy",
+                "advisory",
+            ]
+            for fragment in expected_fragments:
+                with self.subTest(fragment=fragment):
+                    self.assertIn(fragment, interpretation)
+
+            forbidden_fragments = [
+                "design validé",
+                "meilleur didgeridoo",
+                "preuve physique",
+                "garanti jouable",
+                "matériau validé",
+            ]
+            interpretation_lower = interpretation.lower()
+            for fragment in forbidden_fragments:
+                with self.subTest(fragment=fragment):
+                    self.assertNotIn(fragment, interpretation_lower)
 
             summary = json.loads((output_dir / "optimizer_summary.json").read_text(encoding="utf-8"))
             self.assertEqual(summary["schema_version"], run_optimizer.REPORT_SCHEMA_VERSION)
