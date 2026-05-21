@@ -13,7 +13,13 @@ import yaml
 
 from ..materials import MaterialDatabase
 from ..optimization import FinalSelector, ParetoOptimizer, RuntimeEstimator, SearchSpace, aggregate_score
-from ..reporting.export import export_best_design_bundle, export_csv_scores, export_json, export_yaml
+from ..reporting.export import (
+    export_best_design_bundle,
+    export_csv_scores,
+    export_json,
+    export_post_run_interpretation,
+    export_yaml,
+)
 from ..reporting.plots import plot_pareto
 from ..reporting.ranking import rank
 from ..pipeline.evaluate_linear import LinearEvaluationPipeline
@@ -410,6 +416,9 @@ class OptimizerRunner:
                 output_dir / "best_design",
                 save_plots=save_best_design_plots,
             )
+        exports["interpretation_txt"] = str(
+            export_post_run_interpretation(final_payload, exports, output_dir / "post_run_interpretation.txt")
+        )
         return exports
 
     def _build_summary_payload(

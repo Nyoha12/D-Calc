@@ -10,7 +10,7 @@ import numpy as np
 import yaml
 
 from .plots import plot_impedance, plot_pareto, plot_radiation
-from .summaries import summarize_design
+from .summaries import summarize_design, summarize_post_run_interpretation
 
 
 def _to_builtin(value: Any) -> Any:
@@ -79,6 +79,18 @@ def export_csv_scores(ranked: Sequence[Mapping[str, Any]], path: str | Path) -> 
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
+    return out
+
+
+def export_post_run_interpretation(
+    summary: Mapping[str, Any],
+    exports: Mapping[str, Any],
+    path: str | Path,
+) -> Path:
+    out = Path(path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    text = summarize_post_run_interpretation(summary, exports=exports, language='fr')
+    out.write_text(text + '\n', encoding='utf-8')
     return out
 
 

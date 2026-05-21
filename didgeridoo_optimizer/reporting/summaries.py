@@ -93,3 +93,172 @@ def summarize_design(result: Mapping[str, Any], language: str = 'fr') -> str:
         lines.append('Compromis : ' + '; '.join(t) + '.')
     lines.append(INTERPRETATION_DISCLAIMER)
     return ' '.join(lines)
+
+
+def summarize_post_run_interpretation(
+    summary: Mapping[str, Any],
+    *,
+    exports: Mapping[str, Any] | None = None,
+    language: str = 'fr',
+) -> str:
+    if language.lower() != 'fr':
+        raise ValueError("Only French interpretation notes are implemented in this MVP reporting block.")
+
+    summary_map = dict(summary or {})
+    exports_map = dict(exports if exports is not None else summary_map.get('exports', {}) or {})
+    best = dict(summary_map.get('best_design', {}) or {})
+    result = dict(best.get('result', best) or {})
+    features = dict(result.get('features', {}) or {})
+    result_warnings = [str(item) for item in list(result.get('warnings', []) or [])]
+    summary_warnings = [str(item) for item in list(summary_map.get('warnings', []) or [])]
+    warnings = list(dict.fromkeys([*summary_warnings, *result_warnings]))
+    top_20 = summary_map.get('top_20', [])
+    top_20_count = len(top_20) if isinstance(top_20, Sequence) and not isinstance(top_20, (str, bytes)) else 0
+
+    sections: list[str] = [
+        "\n".join(
+            [
+                "Aide non contractuelle",
+                "Ce fichier est une aide d’interprétation non contractuelle pour le run courant.",
+                "Il ne constitue pas une validation physique, une garantie de jouabilité, une recommandation de fabrication ou une promotion matériau.",
+            ]
+        ),
+        "\n".join(
+            [
+                "Run summary",
+                f"- Schema report : {_display(summary_map.get('schema_version'))}",
+                (
+                    "- Config schema : "
+                    f"{_display(summary_map.get('config_schema_version'))} "
+                    f"({_display(summary_map.get('config_schema_status'))})"
+                ),
+                f"- Runtime actual seconds : {_format_number(summary_map.get('runtime_actual_seconds'))}",
+                f"- Linear phase : {_phase_line(summary_map.get('linear_results'))}",
+                f"- Robustness phase : {_phase_line(summary_map.get('robust_results'))}",
+                f"- Nonlinear phase : {_phase_line(summary_map.get('nonlinear_results'))}",
+                f"- Exports principaux : {_export_summary(exports_map)}",
+            ]
+        ),
+        "\n".join(
+            [
+                "Best design",
+                f"- Candidat sélectionné : {_display(result.get('design_id') or best.get('design_id') or best.get('id'))}",
+                "- Lecture : compromis calculé sous le modèle et la configuration courants.",
+                f"- Score agrégé : {_format_number(result.get('aggregate_score') or best.get('aggregate_score'))}",
+                f"- f0_hz : {_format_number(features.get('f0_hz'))}",
+                f"- peak_count : {_display(features.get('peak_count'))}",
+                f"- fundamental_q : {_format_number(features.get('fundamental_q'))}",
+                f"- toot_ratio : {_format_number(features.get('toot_ratio'))}",
+                f"- brightness_proxy : {_format_number(features.get('brightness_proxy'))}",
+                f"- backpressure_proxy : {_format_number(features.get('backpressure_proxy'))}",
+                f"- model_confidence : {_format_number(features.get('model_confidence'))}",
+                f"- warnings : {_list_summary(warnings)}",
+            ]
+        ),
+        "\n".join(
+            [
+                "Metric status",
+                "- f0, peaks et Q sont des métriques calculées par le modèle.",
+                "- brightness, backpressure, toot et harmonicity sont des proxy, pas des garanties de qualité.",
+                "- warnings est advisory : à lire comme signal de prudence, pas comme politique de validation.",
+                "- vocal_control_proxy et transient_proxy restent des placeholders si leur valeur est absente.",
+                "- Les matériaux doivent être lus selon leurs statuts ; ce fichier ne promeut aucun matériau.",
+            ]
+        ),
+        "\n".join(
+            [
+                "Physical limits",
+                "- Le modèle acoustique principal est linéaire et 1D.",
+                "- Les résultats dépendent de la bande de fréquence configurée.",
+                "- Les pertes, la radiation et les paramètres matériaux doivent être lus prudemment.",
+                "- Robustness et nonlinear, même présents, ne constituent pas une validation physique.",
+            ]
+        ),
+        "\n".join(
+            [
+                "Alternatives to inspect",
+                (
+                    "- top20_scores.csv peut être consulté pour comparer des compromis calculés "
+                    f"({top_20_count} candidat(s) dans le payload courant)."
+                ),
+                "- Ce fichier ne choisit pas automatiquement une meilleure alternative physique.",
+            ]
+        ),
+        "\n".join(
+            [
+                "What to try next",
+                "- Modifier un seul axe à la fois, relancer, puis comparer score, warnings, f0, model_confidence et alternatives.",
+                "- Éviter de lire ce run comme prescription de fabrication.",
+            ]
+        ),
+        "\n".join(["Raw outputs guide", *_raw_output_lines(exports_map)]),
+    ]
+    return "\n\n".join(sections)
+
+
+def _display(value: Any) -> str:
+    if value is None:
+        return "non renseigné"
+    return str(value)
+
+
+def _format_number(value: Any) -> str:
+    if value is None:
+        return "non renseigné"
+    try:
+        return f"{float(value):.3f}"
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def _phase_line(value: Any) -> str:
+    if not isinstance(value, Mapping) or not value:
+        return "non présente"
+    data = dict(value)
+    parts: list[str] = ["présente"]
+    if "evaluation_count" in data:
+        parts.append(f"evaluation_count={_display(data.get('evaluation_count'))}")
+    if "selected_count" in data:
+        parts.append(f"selected_count={_display(data.get('selected_count'))}")
+    if isinstance(data.get("ranked"), Sequence):
+        parts.append(f"ranked_count={len(data.get('ranked') or [])}")
+    return ", ".join(parts)
+
+
+def _export_summary(exports: Mapping[str, Any]) -> str:
+    keys = [key for key in ("summary_json", "summary_yaml", "top20_csv", "pareto_plot", "best_design_bundle") if key in exports]
+    return ", ".join(keys) if keys else "aucun export principal annoncé"
+
+
+def _list_summary(items: Sequence[str]) -> str:
+    return ", ".join(items) if items else "aucun warning annoncé"
+
+
+def _raw_output_lines(exports: Mapping[str, Any]) -> list[str]:
+    if not exports:
+        return ["- Aucun export annoncé dans le payload courant."]
+
+    lines: list[str] = []
+    labels = {
+        "summary_json": "optimizer_summary.json",
+        "summary_yaml": "optimizer_summary.yaml",
+        "top20_csv": "top20_scores.csv",
+        "pareto_plot": "pareto_overview.png",
+    }
+    for key, label in labels.items():
+        if key in exports:
+            lines.append(f"- {label} : {exports[key]}")
+
+    bundle = dict(exports.get('best_design_bundle', {}) or {})
+    bundle_labels = {
+        "summary_txt": "best_design_summary.txt",
+        "result_json": "best_design_result.json",
+        "result_yaml": "best_design_result.yaml",
+        "impedance_plot": "best_design_impedance.png",
+        "radiation_plot": "best_design_radiation.png",
+    }
+    for key, label in bundle_labels.items():
+        if key in bundle:
+            lines.append(f"- {label} : {bundle[key]}")
+
+    return lines or ["- Aucun export brut principal annoncé dans le payload courant."]
