@@ -61,7 +61,8 @@ class LinearEvaluationPipeline:
         air = AirProperties.from_config(config)
         zin = input_impedance(freq_hz, discretized_design, material_db, air)
         zin_mag = np.abs(zin)
-        exit_radius_m = float(discretized_design.segments[-1].d_out_cm) / 200.0
+        # Radiation happens at the physical outlet, not the midpoint of the last discretized slice.
+        exit_radius_m = float(built_design.segments[-1].d_out_cm) / 200.0
         zr = radiation_impedance(2.0 * np.pi * freq_hz, exit_radius_m, air)
         peaks = find_peaks(freq_hz, zin_mag, config)
         features = extract(freq_hz, zin, peaks, discretized_design, air, zr=zr)
@@ -71,7 +72,7 @@ class LinearEvaluationPipeline:
         penalty_map["total_penalty"] = float(sum(v for k, v in penalty_map.items() if k != "total_penalty"))
         aggregate = aggregate_score(objective_scores, penalty_map, config)
         valid = hard_constraints_ok(features, discretized_design, config)
-        warnings = self._build_warnings(discretized_design, material_db, features)
+        warnings = self._build_warnings(built_design, material_db, features)
 
         return {
             "design_id": built_design.id,
