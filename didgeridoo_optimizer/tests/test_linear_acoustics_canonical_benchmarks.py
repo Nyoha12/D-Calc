@@ -411,6 +411,54 @@ class LinearAcousticsCanonicalBenchmarks(unittest.TestCase):
 
         self.assertAlmostEqual(scores["radiation_brightness"], 0.75)
 
+    def test_exit_hf_radiation_objective_uses_configured_reference(self) -> None:
+        config = {
+            "objectives": {
+                "exit_hf_radiation": {
+                    "enabled": True,
+                    "weight": 1.0,
+                    "reference_value": 1.0e-5,
+                }
+            }
+        }
+        design = self._cylinder_design()
+
+        at_reference = score_objectives({"exit_hf_radiation_proxy": 1.0e-5}, design, config)
+        above_reference = score_objectives({"exit_hf_radiation_proxy": 2.0e-5}, design, config)
+        missing_value = score_objectives({}, design, config)
+
+        self.assertAlmostEqual(at_reference["exit_hf_radiation"], 0.5)
+        self.assertAlmostEqual(above_reference["exit_hf_radiation"], 2.0 / 3.0)
+        self.assertEqual(missing_value["exit_hf_radiation"], 0.0)
+
+    def test_exit_hf_radiation_objective_is_decoupled_from_brightness_ratio(self) -> None:
+        config = {
+            "objectives": {
+                "radiation_brightness": {
+                    "enabled": True,
+                    "weight": 1.0,
+                },
+                "exit_hf_radiation": {
+                    "enabled": True,
+                    "weight": 1.0,
+                    "reference_value": 1.0e-5,
+                },
+            }
+        }
+
+        scores = score_objectives(
+            {
+                "radiation_brightness_ratio": 0.5,
+                "brightness_proxy": 0.5,
+                "exit_hf_radiation_proxy": 1.0e-5,
+            },
+            self._cylinder_design(),
+            config,
+        )
+
+        self.assertAlmostEqual(scores["radiation_brightness"], 0.5 / 1.5)
+        self.assertAlmostEqual(scores["exit_hf_radiation"], 0.5)
+
     def test_higher_test_only_losses_reduce_fundamental_q_and_magnitude(self) -> None:
         materials = {
             "low_loss_test": self._test_material("low_loss_test"),

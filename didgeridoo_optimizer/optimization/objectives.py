@@ -44,6 +44,11 @@ def score_objectives(features: Mapping[str, Any], design: Design, config: Mappin
                 float(features.get("radiation_brightness_ratio", features.get("brightness_proxy", 0.0))),
             )
             value = bright / (bright + 1.0)
+        elif name == "exit_hf_radiation":
+            raw = max(0.0, float(features.get("exit_hf_radiation_proxy", 0.0)))
+            reference = max(float(cfg.get("reference_value", 1.0e-5)), 1e-18)
+            normalized = raw / reference
+            value = normalized / (normalized + 1.0)
         elif name == "toot":
             ratio = features.get("toot_ratio")
             quality = features.get("toot_quality")

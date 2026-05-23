@@ -173,6 +173,12 @@ objectives:
     weight: 0.6
     direction: maximize
     hard_constraint: false
+  exit_hf_radiation:
+    enabled: false
+    weight: 0.0
+    direction: maximize
+    hard_constraint: false
+    reference_value: 1.0e-5
   toot:
     enabled: true
     weight: 0.7
