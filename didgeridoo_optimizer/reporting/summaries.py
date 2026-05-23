@@ -22,7 +22,7 @@ def strengths(result: Mapping[str, Any]) -> list[str]:
     if float(features.get('peak_count', 0.0)) >= 5:
         out.append('plusieurs pics d’impédance exploitables')
     if float(objective_scores.get('radiation_brightness', 0.0)) >= 0.55:
-        out.append('bonne présence en hautes fréquences / rayonnement favorable')
+        out.append('proxy relatif de brillance/rayonnement HF favorable dans le modèle')
     if float(objective_scores.get('toot', 0.0)) >= 0.55 and features.get('toot_ratio') is not None:
         out.append(f"toot plausible avec ratio ≈ {float(features['toot_ratio']):.2f}")
     if float(objective_scores.get('material_simplicity', 0.0)) >= 0.9 and float(penalties.get('material_change_penalty', 0.0)) == 0.0:
@@ -58,7 +58,7 @@ def tradeoffs(result: Mapping[str, Any]) -> list[str]:
     out: list[str] = []
 
     if float(objective_scores.get('radiation_brightness', 0.0)) >= 0.55 and float(features.get('model_confidence', 1.0)) < 0.85:
-        out.append('plus de rayonnement HF au prix d’une confiance 1D un peu plus basse')
+        out.append('proxy relatif de brillance/rayonnement HF plus élevé au prix d’une confiance 1D un peu plus basse')
     if float(features.get('fundamental_q') or 0.0) >= 15.0 and float(objective_scores.get('beginner_robustness', 1.0)) < 0.6:
         out.append('pics marqués et précis, mais tolérance joueur probablement moindre')
     if float(objective_scores.get('material_simplicity', 0.0)) < 0.8 and float(objective_scores.get('fabrication_simplicity', 0.0)) < 0.5:
