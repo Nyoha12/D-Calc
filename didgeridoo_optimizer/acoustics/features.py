@@ -29,11 +29,15 @@ def extract(
 
     band_stats = band_statistics(freq, zin_mag, bands=bands)
     rad_metrics = radiation_proxy_metrics(freq, zr, bands=bands) if zr is not None else None
-    brightness_proxy = (
-        float(rad_metrics["hf_mean_real_admittance"])
-        if rad_metrics is not None
-        else float(band_stats.get("high", {}).get("mean", 0.0))
-    )
+    high_band_mean = float(band_stats.get("high", {}).get("mean", 0.0))
+    low_band_mean = float(band_stats.get("low", {}).get("mean", 0.0))
+    if rad_metrics is not None:
+        exit_hf_radiation_proxy = float(rad_metrics["hf_mean_real_admittance"])
+        radiation_brightness_ratio = float(rad_metrics["brightness_proxy"])
+    else:
+        exit_hf_radiation_proxy = high_band_mean
+        radiation_brightness_ratio = high_band_mean / max(low_band_mean, 1e-18)
+    brightness_proxy = radiation_brightness_ratio
 
     ratio, toot_quality = _toot_metrics(peaks)
     model_conf = model_confidence(design, air, float(freq.max()) if freq.size else 0.0)
@@ -48,6 +52,8 @@ def extract(
         "odd_only_score": odd_only_score(peaks, f0_hz),
         "backpressure_proxy": float(fundamental_mag or 0.0),
         "band_stats": band_stats,
+        "exit_hf_radiation_proxy": exit_hf_radiation_proxy,
+        "radiation_brightness_ratio": radiation_brightness_ratio,
         "brightness_proxy": brightness_proxy,
         "toot_ratio": ratio,
         "toot_quality": toot_quality,

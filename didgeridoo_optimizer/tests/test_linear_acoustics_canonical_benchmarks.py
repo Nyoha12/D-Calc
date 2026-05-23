@@ -9,6 +9,7 @@ from didgeridoo_optimizer.acoustics import AirProperties, extract, find_peaks, i
 from didgeridoo_optimizer.geometry.builders import DesignBuilder
 from didgeridoo_optimizer.geometry.models import Design
 from didgeridoo_optimizer.materials.models import AcousticParameter, Material
+from didgeridoo_optimizer.optimization.objectives import score_objectives
 from didgeridoo_optimizer.pipeline.evaluate_linear import LinearEvaluationPipeline
 
 
@@ -329,6 +330,86 @@ class LinearAcousticsCanonicalBenchmarks(unittest.TestCase):
 
         self.assertLess(brightness_relative_spread, 0.01)
         self.assertLess(f0_relative_spread, 0.01)
+
+    def test_radiation_feature_fields_separate_absolute_and_relative_proxies(self) -> None:
+        design = {
+            "id": "canonical_conical_bell_semantics",
+            "segments": [
+                {
+                    "kind": "cylinder",
+                    "length_cm": 120.0,
+                    "d_in_cm": 3.8,
+                    "d_out_cm": 3.8,
+                    "material_id": "lossless_test",
+                },
+                {
+                    "kind": "flare_conical",
+                    "length_cm": 20.0,
+                    "d_in_cm": 3.8,
+                    "d_out_cm": 12.0,
+                    "material_id": "lossless_test",
+                },
+            ],
+        }
+        config = self._pipeline_config(
+            n_points=8192,
+            f_min_hz=40.0,
+            f_max_hz=3000.0,
+            discretization_max_segment_cm=1.0,
+        )
+        config["topology"] = {
+            "allow_bell": True,
+            "allow_bell_types": ["conical"],
+        }
+        config["bell"] = {
+            "geometry_constraints": {
+                "length_cm": {"min": 1.0, "max": 40.0},
+                "throat_diameter_cm": {"min": 1.0, "max": 12.0},
+                "exit_diameter_cm": {"min": 1.0, "max": 12.0},
+            }
+        }
+
+        result = LinearEvaluationPipeline().evaluate(design, config, self._lossless_materials())
+
+        self.assertEqual(result["errors"], [])
+        self.assertTrue(result["valid"])
+        features = result["features"]
+        radiation_metrics = features["radiation_metrics"]
+        self.assertIsNotNone(radiation_metrics)
+        self.assertAlmostEqual(
+            float(features["exit_hf_radiation_proxy"]),
+            float(radiation_metrics["hf_mean_real_admittance"]),
+        )
+        self.assertAlmostEqual(
+            float(features["radiation_brightness_ratio"]),
+            float(radiation_metrics["brightness_proxy"]),
+        )
+        self.assertAlmostEqual(
+            float(features["brightness_proxy"]),
+            float(features["radiation_brightness_ratio"]),
+        )
+
+    def test_radiation_brightness_objective_scores_relative_ratio(self) -> None:
+        config = {
+            "objectives": {
+                "radiation_brightness": {
+                    "enabled": True,
+                    "weight": 1.0,
+                }
+            }
+        }
+
+        scores = score_objectives(
+            {
+                "radiation_brightness_ratio": 3.0,
+                "brightness_proxy": 1e-9,
+                "exit_hf_radiation_proxy": 1e-9,
+            },
+            self._cylinder_design(),
+            config,
+        )
+
+        self.assertAlmostEqual(scores["radiation_brightness"], 0.75)
 
     def test_higher_test_only_losses_reduce_fundamental_q_and_magnitude(self) -> None:
         materials = {

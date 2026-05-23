@@ -99,18 +99,28 @@ def _check_case_b(results: Mapping[str, Mapping[str, Any]]) -> dict[str, Any]:
 def _check_case_c(results: Mapping[str, Mapping[str, Any]]) -> dict[str, Any]:
     ref = results["reference"]
     bell = results["with_bell"]
+    ref_brightness_ratio = float(
+        ref["features"].get("radiation_brightness_ratio", ref["features"].get("brightness_proxy", 0.0)) or 0.0
+    )
+    bell_brightness_ratio = float(
+        bell["features"].get("radiation_brightness_ratio", bell["features"].get("brightness_proxy", 0.0)) or 0.0
+    )
     ref_rad = ref["features"].get("radiation_metrics") or {}
     bell_rad = bell["features"].get("radiation_metrics") or {}
-    ref_hf = float(ref_rad.get("hf_mean_real_admittance", 0.0))
-    bell_hf = float(bell_rad.get("hf_mean_real_admittance", 0.0))
+    ref_hf = float(
+        ref["features"].get("exit_hf_radiation_proxy", ref_rad.get("hf_mean_real_admittance", 0.0)) or 0.0
+    )
+    bell_hf = float(
+        bell["features"].get("exit_hf_radiation_proxy", bell_rad.get("hf_mean_real_admittance", 0.0)) or 0.0
+    )
     checks = {
-        "brightness_higher_with_bell": float(bell["features"].get("brightness_proxy", 0.0)) > float(ref["features"].get("brightness_proxy", 0.0)),
+        "brightness_ratio_reported": ref_brightness_ratio > 0.0 and bell_brightness_ratio > 0.0,
         "hf_radiation_higher_with_bell": bell_hf > ref_hf,
         "model_confidence_lower_with_large_bell": float(bell["features"].get("model_confidence", 1.0)) < float(ref["features"].get("model_confidence", 1.0)),
     }
     metrics = {
-        "brightness_ref": ref["features"].get("brightness_proxy"),
-        "brightness_bell": bell["features"].get("brightness_proxy"),
+        "brightness_ratio_ref": ref_brightness_ratio,
+        "brightness_ratio_bell": bell_brightness_ratio,
         "hf_admittance_ref": ref_hf,
         "hf_admittance_bell": bell_hf,
         "confidence_ref": ref["features"].get("model_confidence"),

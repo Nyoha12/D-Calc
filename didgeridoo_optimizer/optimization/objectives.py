@@ -39,7 +39,10 @@ def score_objectives(features: Mapping[str, Any], design: Design, config: Mappin
             bp = float(features.get("backpressure_proxy", 0.0))
             value = bp / (bp + 1e6)
         elif name == "radiation_brightness":
-            bright = float(features.get("brightness_proxy", 0.0))
+            bright = max(
+                0.0,
+                float(features.get("radiation_brightness_ratio", features.get("brightness_proxy", 0.0))),
+            )
             value = bright / (bright + 1.0)
         elif name == "toot":
             ratio = features.get("toot_ratio")
