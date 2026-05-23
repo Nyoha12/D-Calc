@@ -268,6 +268,68 @@ class LinearAcousticsCanonicalBenchmarks(unittest.TestCase):
         self.assertLess(abs(medium - fine), abs(coarse - fine))
         self.assertLessEqual(abs(medium - fine), 3.0 * grid_step_hz)
 
+    def test_flare_radiation_uses_true_exit_diameter_across_discretization(self) -> None:
+        design = {
+            "id": "canonical_hard_exponential_flare",
+            "segments": [
+                {
+                    "kind": "cylinder",
+                    "length_cm": 120.0,
+                    "d_in_cm": 3.8,
+                    "d_out_cm": 3.8,
+                    "material_id": "lossless_test",
+                },
+                {
+                    "kind": "flare_exponential",
+                    "length_cm": 20.0,
+                    "d_in_cm": 3.8,
+                    "d_out_cm": 12.0,
+                    "material_id": "lossless_test",
+                    "profile_params": {"flare_parameter": 5.0},
+                },
+            ],
+        }
+        materials = self._lossless_materials()
+        brightness_values: list[float] = []
+        f0_values: list[float] = []
+
+        for max_segment_cm in [5.0, 1.0, 0.25]:
+            with self.subTest(discretization_max_segment_cm=max_segment_cm):
+                config = self._pipeline_config(
+                    n_points=8192,
+                    f_min_hz=40.0,
+                    f_max_hz=3000.0,
+                    discretization_max_segment_cm=max_segment_cm,
+                )
+                config["topology"] = {
+                    "allow_bell": True,
+                    "allow_bell_types": ["exponential"],
+                }
+                config["bell"] = {
+                    "geometry_constraints": {
+                        "length_cm": {"min": 1.0, "max": 40.0},
+                        "throat_diameter_cm": {"min": 1.0, "max": 12.0},
+                        "exit_diameter_cm": {"min": 1.0, "max": 12.0},
+                        "flare_parameter": {"min": 0.05, "max": 6.0},
+                    }
+                }
+
+                result = LinearEvaluationPipeline().evaluate(design, config, materials)
+
+                self.assertEqual(result["errors"], [])
+                self.assertTrue(result["valid"])
+                self.assertEqual(float(result["design"].segments[-1].d_out_cm), 12.0)
+                self.assertLess(float(result["analysis_design"].segments[-1].d_out_cm), 12.0)
+                self.assertIn("large_bell_may_reduce_1d_validity", result["warnings"])
+                brightness_values.append(float(result["features"]["brightness_proxy"]))
+                f0_values.append(float(result["features"]["f0_hz"]))
+
+        brightness_relative_spread = (max(brightness_values) - min(brightness_values)) / min(brightness_values)
+        f0_relative_spread = (max(f0_values) - min(f0_values)) / min(f0_values)
+
+        self.assertLess(brightness_relative_spread, 0.01)
+        self.assertLess(f0_relative_spread, 0.01)
+
     def test_higher_test_only_losses_reduce_fundamental_q_and_magnitude(self) -> None:
         materials = {
             "low_loss_test": self._test_material("low_loss_test"),
