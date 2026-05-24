@@ -49,8 +49,8 @@ class LinearEvaluationPipeline:
         discretization_cm = float(
             dict((config or {}).get("frequency_analysis", {}) or {}).get("discretization_max_segment_cm", 1.0)
         )
+        built_design.metadata["geometry_soft_penalty"] = float(geometry_penalties.get("total_penalty", 0.0))
         discretized_design = self.discretizer.discretize(built_design, max_segment_cm=discretization_cm)
-        discretized_design.metadata["geometry_soft_penalty"] = float(geometry_penalties.get("total_penalty", 0.0))
 
         freq_cfg = dict((config or {}).get("frequency_analysis", {}) or {})
         freq_hz = np.linspace(
@@ -65,13 +65,11 @@ class LinearEvaluationPipeline:
         exit_radius_m = float(built_design.segments[-1].d_out_cm) / 200.0
         zr = radiation_impedance(2.0 * np.pi * freq_hz, exit_radius_m, air)
         peaks = find_peaks(freq_hz, zin_mag, config)
-        features = extract(freq_hz, zin, peaks, discretized_design, air, zr=zr)
-        objective_scores = score_objectives(features, discretized_design, config)
-        penalty_map = penalties(discretized_design, features, config)
-        penalty_map.update({k: float(v) for k, v in geometry_penalties.items() if k not in penalty_map})
-        penalty_map["total_penalty"] = float(sum(v for k, v in penalty_map.items() if k != "total_penalty"))
+        features = extract(freq_hz, zin, peaks, built_design, air, zr=zr)
+        objective_scores = score_objectives(features, built_design, config)
+        penalty_map = penalties(built_design, features, config)
         aggregate = aggregate_score(objective_scores, penalty_map, config)
-        valid = hard_constraints_ok(features, discretized_design, config)
+        valid = hard_constraints_ok(features, built_design, config)
         warnings = self._build_warnings(built_design, material_db, features)
 
         return {
