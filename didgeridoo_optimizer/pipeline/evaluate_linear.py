@@ -97,6 +97,8 @@ class LinearEvaluationPipeline:
             warnings.append("low_model_confidence")
         if int(features.get("peak_count", 0)) < 3:
             warnings.append("few_detected_peaks")
+        if features.get("odd_only_score") is not None and int(features.get("peak_count", 0)) < 12:
+            warnings.append("odd_only_score_limited_by_peak_count")
         if any(
             material.beta.nominal > 5.0
             or material.wall_loss.nominal > 0.03

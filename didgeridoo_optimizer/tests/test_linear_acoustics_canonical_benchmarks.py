@@ -9,7 +9,7 @@ from didgeridoo_optimizer.acoustics import AirProperties, extract, find_peaks, i
 from didgeridoo_optimizer.geometry.builders import DesignBuilder
 from didgeridoo_optimizer.geometry.models import Design
 from didgeridoo_optimizer.materials.models import AcousticParameter, Material
-from didgeridoo_optimizer.optimization.objectives import score_objectives
+from didgeridoo_optimizer.optimization.objectives import aggregate_score, penalties, score_objectives
 from didgeridoo_optimizer.pipeline.evaluate_linear import LinearEvaluationPipeline
 
 
@@ -654,6 +654,58 @@ class LinearAcousticsCanonicalBenchmarks(unittest.TestCase):
         for key in snapshots[0]:
             self.assertAlmostEqual(snapshots[0][key], snapshots[1][key])
             self.assertAlmostEqual(snapshots[1][key], snapshots[2][key])
+
+    def test_odd_only_score_warns_when_peak_window_is_truncated(self) -> None:
+        config = self._pipeline_config(n_points=8192, f_max_hz=3000.0)
+        config["frequency_analysis"]["peak_detection"]["max_number_of_peaks"] = 8
+
+        result = LinearEvaluationPipeline().evaluate(
+            self._cylinder_design(),
+            config,
+            self._lossless_materials(),
+        )
+
+        self.assertEqual(result["errors"], [])
+        self.assertTrue(result["valid"])
+        self.assertEqual(result["features"]["peak_count"], 8)
+        self.assertIsNotNone(result["features"]["odd_only_score"])
+        self.assertIn("odd_only_score_limited_by_peak_count", result["warnings"])
+
+        recomputed_scores = score_objectives(result["features"], result["design"], config)
+        recomputed_penalties = penalties(result["design"], result["features"], config)
+        recomputed_aggregate = aggregate_score(recomputed_scores, recomputed_penalties, config)
+        self.assertEqual(result["objective_scores"], recomputed_scores)
+        self.assertEqual(result["penalties"], recomputed_penalties)
+        self.assertAlmostEqual(result["aggregate_score"], recomputed_aggregate)
+
+    def test_odd_only_score_warning_absent_when_peak_window_is_available(self) -> None:
+        config = self._pipeline_config(n_points=8192, f_max_hz=3000.0)
+        config["frequency_analysis"]["peak_detection"]["max_number_of_peaks"] = 12
+
+        result = LinearEvaluationPipeline().evaluate(
+            self._cylinder_design(),
+            config,
+            self._lossless_materials(),
+        )
+
+        self.assertEqual(result["errors"], [])
+        self.assertTrue(result["valid"])
+        self.assertGreaterEqual(result["features"]["peak_count"], 12)
+        self.assertIsNotNone(result["features"]["odd_only_score"])
+        self.assertNotIn("odd_only_score_limited_by_peak_count", result["warnings"])
+
+    def test_odd_only_score_warning_absent_when_score_is_unavailable(self) -> None:
+        warnings = LinearEvaluationPipeline()._build_warnings(
+            self._cylinder_design(),
+            self._lossless_materials(),
+            {
+                "model_confidence": 1.0,
+                "peak_count": 1,
+                "odd_only_score": None,
+            },
+        )
+
+        self.assertNotIn("odd_only_score_limited_by_peak_count", warnings)
 
     def test_higher_test_only_losses_reduce_fundamental_q_and_magnitude(self) -> None:
         materials = {
