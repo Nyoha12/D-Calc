@@ -135,6 +135,55 @@ class LinearAcousticsCanonicalBenchmarks(unittest.TestCase):
             }
         )
 
+    def _conical_bell_mapping(self, *, material_id: str = "lossless_test") -> dict[str, object]:
+        return {
+            "id": f"canonical_conical_bell_{material_id}",
+            "segments": [
+                {
+                    "kind": "cylinder",
+                    "length_cm": 120.0,
+                    "d_in_cm": 3.8,
+                    "d_out_cm": 3.8,
+                    "material_id": material_id,
+                },
+                {
+                    "kind": "flare_conical",
+                    "length_cm": 20.0,
+                    "d_in_cm": 3.8,
+                    "d_out_cm": 12.0,
+                    "material_id": material_id,
+                },
+            ],
+        }
+
+    def _bell_pipeline_config(
+        self,
+        *,
+        n_points: int = 8192,
+        f_min_hz: float = 40.0,
+        f_max_hz: float = 3000.0,
+        discretization_max_segment_cm: float = 1.0,
+    ) -> dict[str, object]:
+        config = self._pipeline_config(
+            n_points=n_points,
+            f_min_hz=f_min_hz,
+            f_max_hz=f_max_hz,
+            discretization_max_segment_cm=discretization_max_segment_cm,
+        )
+        config["topology"] = {
+            "allow_bell": True,
+            "allow_bell_types": ["conical", "exponential", "powerlaw"],
+        }
+        config["bell"] = {
+            "geometry_constraints": {
+                "length_cm": {"min": 1.0, "max": 40.0},
+                "throat_diameter_cm": {"min": 1.0, "max": 12.0},
+                "exit_diameter_cm": {"min": 1.0, "max": 12.0},
+                "flare_parameter": {"min": 0.05, "max": 6.0},
+            }
+        }
+        return config
+
     def _direct_linear_features(
         self,
         design: Design,
@@ -458,6 +507,96 @@ class LinearAcousticsCanonicalBenchmarks(unittest.TestCase):
 
         self.assertAlmostEqual(scores["radiation_brightness"], 0.5 / 1.5)
         self.assertAlmostEqual(scores["exit_hf_radiation"], 0.5)
+
+    def test_physical_segment_count_controls_penalty_not_discretization_slices(self) -> None:
+        result = LinearEvaluationPipeline().evaluate(
+            self._conical_bell_mapping(),
+            self._bell_pipeline_config(discretization_max_segment_cm=1.0),
+            self._lossless_materials(),
+        )
+
+        self.assertEqual(result["errors"], [])
+        self.assertTrue(result["valid"])
+        self.assertGreater(result["analysis_design"].segment_count, result["design"].segment_count)
+        self.assertEqual(result["design"].segment_count, 2)
+        self.assertEqual(result["penalties"]["segment_count_penalty"], 0.0)
+
+    def test_physical_penalties_are_stable_across_discretization(self) -> None:
+        penalty_keys = [
+            "segment_count_penalty",
+            "material_change_penalty",
+            "topology_penalty",
+        ]
+        penalty_snapshots: list[dict[str, float]] = []
+
+        for max_segment_cm in [5.0, 1.0, 0.25]:
+            result = LinearEvaluationPipeline().evaluate(
+                self._conical_bell_mapping(),
+                self._bell_pipeline_config(discretization_max_segment_cm=max_segment_cm),
+                self._lossless_materials(),
+            )
+
+            self.assertEqual(result["errors"], [])
+            self.assertTrue(result["valid"])
+            self.assertGreater(result["analysis_design"].segment_count, result["design"].segment_count)
+            penalty_snapshots.append({key: float(result["penalties"][key]) for key in penalty_keys})
+
+        self.assertEqual(penalty_snapshots[0], penalty_snapshots[1])
+        self.assertEqual(penalty_snapshots[1], penalty_snapshots[2])
+
+    def test_fabrication_and_material_scores_use_physical_design(self) -> None:
+        score_snapshots: list[dict[str, float]] = []
+
+        for max_segment_cm in [5.0, 1.0, 0.25]:
+            config = self._bell_pipeline_config(discretization_max_segment_cm=max_segment_cm)
+            config["objectives"] = {
+                "fabrication_simplicity": {
+                    "enabled": True,
+                    "weight": 1.0,
+                },
+                "material_simplicity": {
+                    "enabled": True,
+                    "weight": 1.0,
+                },
+            }
+
+            result = LinearEvaluationPipeline().evaluate(
+                self._conical_bell_mapping(),
+                config,
+                self._lossless_materials(),
+            )
+
+            self.assertEqual(result["errors"], [])
+            self.assertTrue(result["valid"])
+            score_snapshots.append(
+                {
+                    "fabrication_simplicity": float(result["objective_scores"]["fabrication_simplicity"]),
+                    "material_simplicity": float(result["objective_scores"]["material_simplicity"]),
+                }
+            )
+
+        for scores in score_snapshots:
+            self.assertAlmostEqual(scores["fabrication_simplicity"], 0.5)
+            self.assertAlmostEqual(scores["material_simplicity"], 1.0)
+        self.assertEqual(score_snapshots[0], score_snapshots[1])
+        self.assertEqual(score_snapshots[1], score_snapshots[2])
+
+    def test_model_confidence_uses_physical_diameter_across_discretization(self) -> None:
+        confidences: list[float] = []
+
+        for max_segment_cm in [5.0, 1.0, 0.25]:
+            result = LinearEvaluationPipeline().evaluate(
+                self._conical_bell_mapping(),
+                self._bell_pipeline_config(discretization_max_segment_cm=max_segment_cm),
+                self._lossless_materials(),
+            )
+
+            self.assertEqual(result["errors"], [])
+            self.assertTrue(result["valid"])
+            confidences.append(float(result["features"]["model_confidence"]))
+
+        self.assertAlmostEqual(confidences[0], confidences[1])
+        self.assertAlmostEqual(confidences[1], confidences[2])
 
     def test_higher_test_only_losses_reduce_fundamental_q_and_magnitude(self) -> None:
         materials = {
