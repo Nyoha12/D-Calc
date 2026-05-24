@@ -37,11 +37,19 @@ def weaknesses(result: Mapping[str, Any]) -> list[str]:
     out: list[str] = []
 
     if float(features.get('model_confidence', 1.0)) < 0.7:
-        out.append('confiance 1D limitée ; lecture prudente des métriques')
+        validity = _validity_band_line(features, prefix='prudence 1D estimée')
+        if validity:
+            out.append(f"confiance 1D limitée ; {validity}")
+        else:
+            out.append('confiance 1D limitée ; lecture prudente des métriques')
     if int(features.get('peak_count', 0)) < 3:
         out.append('peu de pics détectés pour caractériser finement le comportement')
     if 'large_bell_may_reduce_1d_validity' in warnings:
-        out.append('grande cloche : gain potentiel de rayonnement mais validité 1D plus fragile')
+        conf_085 = _positive_float(features.get('model_validity_band_conf_085_hz'))
+        if conf_085 is not None:
+            out.append(f"grande cloche : validité 1D plus fragile ; prudence ≥0.85 estimée jusqu’à ~{_format_hz(conf_085)}")
+        else:
+            out.append('grande cloche : gain potentiel de rayonnement mais validité 1D plus fragile')
     if float(penalties.get('geometry_soft_penalty', 0.0)) > 0.1:
         out.append('géométrie un peu éloignée des contraintes souples de recherche')
     if float(penalties.get('segment_count_penalty', 0.0)) > 0.1:
@@ -81,6 +89,9 @@ def summarize_design(result: Mapping[str, Any], language: str = 'fr') -> str:
         lines.append(f"Fondamentale estimée : {float(f0):.1f} Hz ; {int(features.get('peak_count', 0))} pics détectés.")
     if features.get('toot_ratio') is not None:
         lines.append(f"Toot ratio estimé : {float(features['toot_ratio']):.2f}.")
+    validity_line = _validity_band_line(features)
+    if validity_line:
+        lines.append(validity_line + ".")
 
     s = strengths(result)
     w = weaknesses(result)
@@ -152,6 +163,7 @@ def summarize_post_run_interpretation(
                 f"- brightness_proxy : {_format_number(features.get('brightness_proxy'))}",
                 f"- backpressure_proxy : {_format_number(features.get('backpressure_proxy'))}",
                 f"- model_confidence : {_format_number(features.get('model_confidence'))}",
+                *_model_validity_output_lines(features),
                 f"- warnings : {_list_summary(warnings)}",
             ]
         ),
@@ -170,6 +182,7 @@ def summarize_post_run_interpretation(
                 "Physical limits",
                 "- Le modèle acoustique principal est linéaire et 1D.",
                 "- Les résultats dépendent de la bande de fréquence configurée.",
+                "- Les bandes de validité 1D sont des seuils calculés du modèle courant ; elles ne constituent pas une validation expérimentale.",
                 "- Les pertes, la radiation et les paramètres matériaux doivent être lus prudemment.",
                 "- Robustness et nonlinear, même présents, ne constituent pas une validation physique.",
             ]
@@ -209,6 +222,36 @@ def _format_number(value: Any) -> str:
         return f"{float(value):.3f}"
     except (TypeError, ValueError):
         return str(value)
+
+
+def _positive_float(value: Any) -> float | None:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0.0 else None
+
+
+def _format_hz(value: float) -> str:
+    return f"{value:.0f} Hz"
+
+
+def _validity_band_line(features: Mapping[str, Any], *, prefix: str = 'Bande de prudence 1D estimée') -> str | None:
+    conf_085 = _positive_float(features.get('model_validity_band_conf_085_hz'))
+    conf_070 = _positive_float(features.get('model_validity_band_conf_070_hz'))
+    if conf_085 is None or conf_070 is None:
+        return None
+    return f"{prefix} : confiance ≥0.85 jusqu’à ~{_format_hz(conf_085)}, ≥0.70 jusqu’à ~{_format_hz(conf_070)}"
+
+
+def _model_validity_output_lines(features: Mapping[str, Any]) -> list[str]:
+    fields = [
+        "model_validity_f10_hz",
+        "model_validity_band_conf_085_hz",
+        "model_validity_band_conf_070_hz",
+        "model_validity_band_conf_060_hz",
+    ]
+    return [f"- {field} : {_format_number(features.get(field))}" for field in fields if _positive_float(features.get(field)) is not None]
 
 
 def _phase_line(value: Any) -> str:

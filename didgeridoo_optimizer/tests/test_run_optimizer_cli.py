@@ -12,6 +12,7 @@ from unittest import mock
 import yaml
 
 from didgeridoo_optimizer.pipeline import run_optimizer
+from didgeridoo_optimizer.reporting.summaries import summarize_design, summarize_post_run_interpretation
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -403,6 +404,93 @@ class RunOptimizerCliTests(unittest.TestCase):
 
         self.assertTrue(callable(pipeline.run))
         self.assertTrue(callable(pipeline.OptimizerRunner))
+
+    def test_summarize_design_includes_model_validity_bands_when_available(self) -> None:
+        summary = summarize_design(
+            {
+                "design_id": "validity_band_case",
+                "aggregate_score": 0.12,
+                "features": {
+                    "f0_hz": 67.8,
+                    "peak_count": 20,
+                    "model_confidence": 0.558,
+                    "model_validity_f10_hz": 1674.098,
+                    "model_validity_band_conf_085_hz": 1969.527,
+                    "model_validity_band_conf_070_hz": 2391.568,
+                    "model_validity_band_conf_060_hz": 2790.163,
+                },
+                "warnings": ["large_bell_may_reduce_1d_validity"],
+            }
+        )
+
+        self.assertIn("Bande de prudence 1D estimée", summary)
+        self.assertIn("≥0.85 jusqu’à ~1970 Hz", summary)
+        self.assertIn("≥0.70 jusqu’à ~2392 Hz", summary)
+        self.assertIn("ce n’est pas une validation physique", summary)
+        self.assertIn("garantie de jouabilité", summary)
+        self.assertIn("promotion matériau", summary)
+        self.assertNotIn("validé réel", summary.lower())
+        self.assertNotIn("garanti jouable", summary.lower())
+
+    def test_summarize_design_omits_model_validity_line_when_unavailable(self) -> None:
+        summary = summarize_design(
+            {
+                "design_id": "legacy_features_case",
+                "aggregate_score": 0.12,
+                "features": {
+                    "f0_hz": 67.8,
+                    "peak_count": 20,
+                    "model_confidence": 0.558,
+                },
+                "warnings": [],
+            }
+        )
+
+        self.assertNotIn("Bande de prudence 1D estimée", summary)
+        self.assertNotIn("model_validity", summary)
+        self.assertNotIn("non renseigné", summary)
+
+    def test_post_run_interpretation_includes_model_validity_fields(self) -> None:
+        interpretation = summarize_post_run_interpretation(
+            {
+                "schema_version": run_optimizer.REPORT_SCHEMA_VERSION,
+                "config_schema_version": run_optimizer.CONFIG_SCHEMA_VERSION,
+                "config_schema_status": run_optimizer.CONFIG_SCHEMA_STATUS_EXPLICIT,
+                "runtime_actual_seconds": 1.25,
+                "best_design": {
+                    "result": {
+                        "design_id": "validity_band_case",
+                        "aggregate_score": 0.12,
+                        "features": {
+                            "f0_hz": 67.8,
+                            "peak_count": 20,
+                            "model_confidence": 0.558,
+                            "model_validity_f10_hz": 1674.098,
+                            "model_validity_band_conf_085_hz": 1969.527,
+                            "model_validity_band_conf_070_hz": 2391.568,
+                            "model_validity_band_conf_060_hz": 2790.163,
+                        },
+                        "warnings": ["large_bell_may_reduce_1d_validity"],
+                    }
+                },
+                "warnings": [],
+                "top_20": [],
+                "exports": {},
+            }
+        )
+
+        self.assertIn("model_validity_f10_hz", interpretation)
+        self.assertIn("model_validity_band_conf_085_hz", interpretation)
+        self.assertIn("model_validity_band_conf_070_hz", interpretation)
+        self.assertIn("model_validity_band_conf_060_hz", interpretation)
+        self.assertIn("1674.098", interpretation)
+        self.assertIn("1969.527", interpretation)
+        self.assertIn("ne constituent pas une validation expérimentale", interpretation)
+        self.assertIn("aide d’interprétation non contractuelle", interpretation)
+        self.assertIn("ne constitue pas une validation physique", interpretation)
+        self.assertNotIn("design validé", interpretation.lower())
+        self.assertNotIn("validé réel", interpretation.lower())
+        self.assertNotIn("garanti jouable", interpretation.lower())
 
     def test_run_summary_payload_includes_schema_metadata(self) -> None:
         payload = run_optimizer._run_cli_payload(
