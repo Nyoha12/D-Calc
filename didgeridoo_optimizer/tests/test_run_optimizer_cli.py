@@ -527,6 +527,45 @@ class RunOptimizerCliTests(unittest.TestCase):
         self.assertNotIn("matériau validé", combined)
         self.assertNotIn("garanti jouable", combined)
 
+    def test_reporting_surfaces_odd_only_peak_count_limit_prudently(self) -> None:
+        result = {
+            "design_id": "odd_only_limited_case",
+            "aggregate_score": 0.12,
+            "features": {
+                "f0_hz": 67.8,
+                "peak_count": 8,
+                "model_confidence": 0.9,
+                "odd_only_score": 0.5,
+            },
+            "warnings": ["odd_only_score_limited_by_peak_count"],
+        }
+
+        summary = summarize_design(result)
+        interpretation = summarize_post_run_interpretation(
+            {
+                "schema_version": run_optimizer.REPORT_SCHEMA_VERSION,
+                "config_schema_version": run_optimizer.CONFIG_SCHEMA_VERSION,
+                "config_schema_status": run_optimizer.CONFIG_SCHEMA_STATUS_EXPLICIT,
+                "runtime_actual_seconds": 1.25,
+                "best_design": {"result": result},
+                "warnings": [],
+                "top_20": [],
+                "exports": {},
+            }
+        )
+
+        self.assertIn("score odd/even limité par le nombre de pics détectés", summary)
+        self.assertIn("lecture prudente du profil harmonique", summary)
+        self.assertIn("toot, harmonicity et odd/even sont des proxy", interpretation)
+        self.assertIn("pas des garanties de qualité ou de jouabilité", interpretation)
+        self.assertIn("odd_only_score dépend du nombre de pics conservés", interpretation)
+        self.assertIn("lu prudemment si peu de pics sont disponibles", interpretation)
+        combined = f"{summary}\n{interpretation}".lower()
+        self.assertNotIn("design validé", combined)
+        self.assertNotIn("profil harmonique validé", combined)
+        self.assertNotIn("meilleur profil harmonique", combined)
+        self.assertNotIn("garanti jouable", combined)
+
     def test_run_summary_payload_includes_schema_metadata(self) -> None:
         payload = run_optimizer._run_cli_payload(
             {

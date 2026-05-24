@@ -44,6 +44,8 @@ def weaknesses(result: Mapping[str, Any]) -> list[str]:
             out.append('confiance 1D limitée ; lecture prudente des métriques')
     if int(features.get('peak_count', 0)) < 3:
         out.append('peu de pics détectés pour caractériser finement le comportement')
+    if 'odd_only_score_limited_by_peak_count' in warnings:
+        out.append('score odd/even limité par le nombre de pics détectés ; lecture prudente du profil harmonique')
     if 'large_bell_may_reduce_1d_validity' in warnings:
         conf_085 = _positive_float(features.get('model_validity_band_conf_085_hz'))
         if conf_085 is not None:
@@ -175,7 +177,8 @@ def summarize_post_run_interpretation(
             [
                 "Metric status",
                 "- f0, peaks et Q sont des métriques calculées par le modèle.",
-                "- brightness, backpressure, toot et harmonicity sont des proxy, pas des garanties de qualité.",
+                "- brightness, backpressure, toot, harmonicity et odd/even sont des proxy, pas des garanties de qualité ou de jouabilité.",
+                "- odd_only_score dépend du nombre de pics conservés par la détection ; il doit être lu prudemment si peu de pics sont disponibles.",
                 "- Q, magnitude de pic et backpressure dépendent fortement des paramètres de pertes matériaux ; ces paramètres doivent être lus selon leur statut de calibration.",
                 "- warnings est advisory : à lire comme signal de prudence, pas comme politique de validation.",
                 "- vocal_control_proxy et transient_proxy restent des placeholders si leur valeur est absente.",
