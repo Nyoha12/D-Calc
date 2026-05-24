@@ -598,6 +598,63 @@ class LinearAcousticsCanonicalBenchmarks(unittest.TestCase):
         self.assertAlmostEqual(confidences[0], confidences[1])
         self.assertAlmostEqual(confidences[1], confidences[2])
 
+    def test_model_validity_band_features_for_twelve_cm_exit(self) -> None:
+        result = LinearEvaluationPipeline().evaluate(
+            self._conical_bell_mapping(),
+            self._bell_pipeline_config(discretization_max_segment_cm=1.0),
+            self._lossless_materials(),
+        )
+
+        self.assertEqual(result["errors"], [])
+        self.assertTrue(result["valid"])
+        features = result["features"]
+        expected_f10_hz = 1.84 * self._air().c / (2.0 * math.pi * 0.06)
+
+        self.assertAlmostEqual(float(features["model_validity_f10_hz"]), expected_f10_hz)
+        self.assertAlmostEqual(float(features["model_validity_band_conf_085_hz"]), expected_f10_hz / 0.85)
+        self.assertAlmostEqual(float(features["model_validity_band_conf_070_hz"]), expected_f10_hz / 0.70)
+        self.assertAlmostEqual(float(features["model_validity_band_conf_060_hz"]), expected_f10_hz / 0.60)
+        self.assertAlmostEqual(float(features["model_confidence"]), expected_f10_hz / 3000.0)
+        for key in [
+            "model_validity_f10_hz",
+            "model_validity_band_conf_085_hz",
+            "model_validity_band_conf_070_hz",
+            "model_validity_band_conf_060_hz",
+        ]:
+            self.assertGreater(float(features[key]), 0.0)
+
+    def test_model_validity_bands_use_physical_diameter_across_discretization(self) -> None:
+        snapshots: list[dict[str, float]] = []
+        analysis_segment_counts: list[int] = []
+
+        for max_segment_cm in [5.0, 1.0, 0.25]:
+            result = LinearEvaluationPipeline().evaluate(
+                self._conical_bell_mapping(),
+                self._bell_pipeline_config(discretization_max_segment_cm=max_segment_cm),
+                self._lossless_materials(),
+            )
+
+            self.assertEqual(result["errors"], [])
+            self.assertTrue(result["valid"])
+            self.assertEqual(result["design"].segment_count, 2)
+            self.assertGreater(result["analysis_design"].segment_count, result["design"].segment_count)
+            analysis_segment_counts.append(result["analysis_design"].segment_count)
+            features = result["features"]
+            snapshots.append(
+                {
+                    "model_confidence": float(features["model_confidence"]),
+                    "model_validity_f10_hz": float(features["model_validity_f10_hz"]),
+                    "model_validity_band_conf_085_hz": float(features["model_validity_band_conf_085_hz"]),
+                    "model_validity_band_conf_070_hz": float(features["model_validity_band_conf_070_hz"]),
+                    "model_validity_band_conf_060_hz": float(features["model_validity_band_conf_060_hz"]),
+                }
+            )
+
+        self.assertEqual(len(set(analysis_segment_counts)), 3)
+        for key in snapshots[0]:
+            self.assertAlmostEqual(snapshots[0][key], snapshots[1][key])
+            self.assertAlmostEqual(snapshots[1][key], snapshots[2][key])
+
     def test_higher_test_only_losses_reduce_fundamental_q_and_magnitude(self) -> None:
         materials = {
             "low_loss_test": self._test_material("low_loss_test"),
