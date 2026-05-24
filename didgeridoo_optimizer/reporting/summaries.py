@@ -54,6 +54,8 @@ def weaknesses(result: Mapping[str, Any]) -> list[str]:
         out.append('géométrie un peu éloignée des contraintes souples de recherche')
     if float(penalties.get('segment_count_penalty', 0.0)) > 0.1:
         out.append('segmentation relativement complexe pour la fabrication')
+    if 'material_loss_calibration_limited' in warnings:
+        out.append('paramètres de pertes matériau à lire prudemment ; Q, magnitude et backpressure peuvent être sensibles à une calibration non établie')
     if 'high_losses_material' in warnings:
         out.append('matériau dissipatif : pics plus larges mais appui spectral potentiellement réduit')
     return out[:4]
@@ -71,6 +73,8 @@ def tradeoffs(result: Mapping[str, Any]) -> list[str]:
         out.append('pics marqués et précis, mais tolérance joueur probablement moindre')
     if float(objective_scores.get('material_simplicity', 0.0)) < 0.8 and float(objective_scores.get('fabrication_simplicity', 0.0)) < 0.5:
         out.append('gains acoustiques partiels contre davantage de complexité de fabrication')
+    if 'material_loss_calibration_limited' in warnings:
+        out.append('Q, magnitude et backpressure peuvent refléter des paramètres de pertes non calibrés')
     if 'placeholder_feature_used' in warnings:
         out.append('certaines métriques restent MVP / placeholders et devront être raffinées plus tard')
     return out[:4]
@@ -172,6 +176,7 @@ def summarize_post_run_interpretation(
                 "Metric status",
                 "- f0, peaks et Q sont des métriques calculées par le modèle.",
                 "- brightness, backpressure, toot et harmonicity sont des proxy, pas des garanties de qualité.",
+                "- Q, magnitude de pic et backpressure dépendent fortement des paramètres de pertes matériaux ; ces paramètres doivent être lus selon leur statut de calibration.",
                 "- warnings est advisory : à lire comme signal de prudence, pas comme politique de validation.",
                 "- vocal_control_proxy et transient_proxy restent des placeholders si leur valeur est absente.",
                 "- Les matériaux doivent être lus selon leurs statuts ; ce fichier ne promeut aucun matériau.",
