@@ -41,6 +41,7 @@ def extract(
 
     ratio, toot_quality = _toot_metrics(peaks)
     model_conf = model_confidence(design, air, float(freq.max()) if freq.size else 0.0)
+    validity_metrics = model_validity_metrics(design, air)
 
     return {
         "f0_hz": f0_hz,
@@ -58,6 +59,7 @@ def extract(
         "toot_ratio": ratio,
         "toot_quality": toot_quality,
         "model_confidence": model_conf,
+        **validity_metrics,
         "radiation_metrics": rad_metrics,
         "vocal_control_proxy": None,
         "transient_proxy": None,
@@ -144,10 +146,27 @@ def band_statistics(
 def model_confidence(design: Design, air: AirProperties, f_max_hz: float) -> float:
     if not design.segments or f_max_hz <= 0.0:
         return 1.0
+    f10 = model_validity_metrics(design, air)["model_validity_f10_hz"]
+    return float(max(0.0, min(1.0, f10 / f_max_hz)))
+
+
+def model_validity_metrics(design: Design, air: AirProperties) -> dict[str, float]:
+    if not design.segments:
+        return {
+            "model_validity_f10_hz": 0.0,
+            "model_validity_band_conf_085_hz": 0.0,
+            "model_validity_band_conf_070_hz": 0.0,
+            "model_validity_band_conf_060_hz": 0.0,
+        }
     max_diameter_m = max(segment.d_out_cm for segment in design.segments) / 100.0
     a = max(max_diameter_m / 2.0, 1e-9)
     f10 = 1.84 * float(air.c) / (2.0 * math.pi * a)
-    return float(max(0.0, min(1.0, f10 / f_max_hz)))
+    return {
+        "model_validity_f10_hz": float(f10),
+        "model_validity_band_conf_085_hz": float(f10 / 0.85),
+        "model_validity_band_conf_070_hz": float(f10 / 0.70),
+        "model_validity_band_conf_060_hz": float(f10 / 0.60),
+    }
 
 
 def _toot_metrics(peaks: list[dict[str, Any]]) -> tuple[float | None, float | None]:
