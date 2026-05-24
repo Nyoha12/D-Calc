@@ -492,6 +492,41 @@ class RunOptimizerCliTests(unittest.TestCase):
         self.assertNotIn("validé réel", interpretation.lower())
         self.assertNotIn("garanti jouable", interpretation.lower())
 
+    def test_reporting_surfaces_material_loss_calibration_limits_prudently(self) -> None:
+        result = {
+            "design_id": "loss_calibration_case",
+            "aggregate_score": 0.12,
+            "features": {
+                "f0_hz": 67.8,
+                "peak_count": 20,
+                "model_confidence": 0.9,
+            },
+            "warnings": ["material_loss_calibration_limited"],
+        }
+
+        summary = summarize_design(result)
+        interpretation = summarize_post_run_interpretation(
+            {
+                "schema_version": run_optimizer.REPORT_SCHEMA_VERSION,
+                "config_schema_version": run_optimizer.CONFIG_SCHEMA_VERSION,
+                "config_schema_status": run_optimizer.CONFIG_SCHEMA_STATUS_EXPLICIT,
+                "runtime_actual_seconds": 1.25,
+                "best_design": {"result": result},
+                "warnings": [],
+                "top_20": [],
+                "exports": {},
+            }
+        )
+
+        self.assertIn("paramètres de pertes matériau à lire prudemment", summary)
+        self.assertIn("Q, magnitude et backpressure", summary)
+        self.assertIn("Q, magnitude de pic et backpressure dépendent fortement", interpretation)
+        self.assertIn("statut de calibration", interpretation)
+        combined = f"{summary}\n{interpretation}".lower()
+        self.assertNotIn("meilleur matériau", combined)
+        self.assertNotIn("matériau validé", combined)
+        self.assertNotIn("garanti jouable", combined)
+
     def test_run_summary_payload_includes_schema_metadata(self) -> None:
         payload = run_optimizer._run_cli_payload(
             {

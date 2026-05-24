@@ -184,6 +184,77 @@ class MaterialLossesInvariantTests(unittest.TestCase):
         self.assertIn("high_losses_material", self._warnings_for_material(high_wall_loss))
         self.assertIn("high_losses_material", self._warnings_for_material(high_porosity))
 
+    def test_material_loss_calibration_limited_warning_follows_status_and_confidence(self) -> None:
+        to_calibrate = self._material(
+            "to_calibrate_losses",
+            beta_status="to_calibrate",
+            wall_loss_status="sourced",
+            porosity_status="sourced",
+            beta_confidence="high",
+            wall_loss_confidence="high",
+            porosity_confidence="high",
+        )
+        inferred = self._material(
+            "inferred_losses",
+            beta_status="sourced",
+            wall_loss_status="inferred",
+            porosity_status="sourced",
+            beta_confidence="high",
+            wall_loss_confidence="high",
+            porosity_confidence="high",
+        )
+        low_confidence = self._material(
+            "low_confidence_losses",
+            beta_status="sourced",
+            wall_loss_status="sourced",
+            porosity_status="sourced",
+            beta_confidence="high",
+            wall_loss_confidence="low",
+            porosity_confidence="high",
+        )
+
+        self.assertIn("material_loss_calibration_limited", self._warnings_for_material(to_calibrate))
+        self.assertIn("material_loss_calibration_limited", self._warnings_for_material(inferred))
+        self.assertIn("material_loss_calibration_limited", self._warnings_for_material(low_confidence))
+
+    def test_material_loss_calibration_limited_warning_absent_for_sourced_high_confidence(self) -> None:
+        sourced_high = self._material(
+            "sourced_high_confidence_losses",
+            beta=1.0,
+            wall_loss=0.0,
+            porosity_leak=0.0,
+            beta_status="sourced",
+            wall_loss_status="sourced",
+            porosity_status="sourced",
+            beta_confidence="high",
+            wall_loss_confidence="high",
+            porosity_confidence="high",
+        )
+
+        warnings = self._warnings_for_material(sourced_high)
+
+        self.assertNotIn("material_loss_calibration_limited", warnings)
+        self.assertNotIn("high_losses_material", warnings)
+
+    def test_high_losses_warning_is_independent_from_calibration_status_warning(self) -> None:
+        sourced_high_loss = self._material(
+            "sourced_high_loss",
+            beta=5.01,
+            wall_loss=0.0,
+            porosity_leak=0.0,
+            beta_status="sourced",
+            wall_loss_status="sourced",
+            porosity_status="sourced",
+            beta_confidence="high",
+            wall_loss_confidence="high",
+            porosity_confidence="high",
+        )
+
+        warnings = self._warnings_for_material(sourced_high_loss)
+
+        self.assertIn("high_losses_material", warnings)
+        self.assertNotIn("material_loss_calibration_limited", warnings)
+
     def test_wood_variants_preserve_parameter_status_and_confidence(self) -> None:
         generator = MaterialVariantGenerator.from_yaml(REPO_ROOT / "project_specs" / "wood_variant_rules_v1.yaml")
         base = self._material(

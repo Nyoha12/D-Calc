@@ -92,17 +92,20 @@ class LinearEvaluationPipeline:
     def _build_warnings(self, design: Design, materials: MaterialDatabase | dict[str, Any], features: Mapping[str, Any]) -> list[str]:
         warnings: list[str] = []
         material_lookup = materials.materials if isinstance(materials, MaterialDatabase) else materials
+        used_materials = [material_lookup[segment.material_id] for segment in design.segments]
         if float(features.get("model_confidence", 1.0)) < 0.7:
             warnings.append("low_model_confidence")
         if int(features.get("peak_count", 0)) < 3:
             warnings.append("few_detected_peaks")
         if any(
-            material_lookup[segment.material_id].beta.nominal > 5.0
-            or material_lookup[segment.material_id].wall_loss.nominal > 0.03
-            or material_lookup[segment.material_id].porosity_leak.nominal > 0.03
-            for segment in design.segments
+            material.beta.nominal > 5.0
+            or material.wall_loss.nominal > 0.03
+            or material.porosity_leak.nominal > 0.03
+            for material in used_materials
         ):
             warnings.append("high_losses_material")
+        if any(_has_limited_loss_calibration(material) for material in used_materials):
+            warnings.append("material_loss_calibration_limited")
         if design.segments and design.segments[-1].d_out_cm >= 10.0:
             warnings.append("large_bell_may_reduce_1d_validity")
         warnings.append("placeholder_feature_used")
@@ -115,3 +118,10 @@ def evaluate(
     materials: MaterialDatabase | str | Path,
 ) -> dict[str, Any]:
     return LinearEvaluationPipeline().evaluate(design, config, materials)
+
+
+def _has_limited_loss_calibration(material: Any) -> bool:
+    for parameter in (material.beta, material.wall_loss, material.porosity_leak):
+        if str(parameter.status) in {"inferred", "to_calibrate"} or str(parameter.confidence) == "low":
+            return True
+    return False
