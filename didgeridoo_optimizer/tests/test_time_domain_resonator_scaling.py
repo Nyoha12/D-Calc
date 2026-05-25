@@ -32,6 +32,26 @@ class TimeDomainResonatorScalingTests(unittest.TestCase):
         )
         return {"lossless_test": material}
 
+    def _controlled_loss_materials(self) -> dict[str, Material]:
+        material = Material(
+            id="lossless_test",
+            base_material="lossless_test",
+            family="test_only",
+            subtype="test_only",
+            variant=None,
+            beta=AcousticParameter(1.0, 1.0, 1.0, "sourced", "high"),
+            wall_loss=AcousticParameter(0.0, 0.0, 0.0, "sourced", "high"),
+            porosity_leak=AcousticParameter(0.0, 0.0, 0.0, "sourced", "high"),
+            manufacturability="test_only",
+            cost_level="test_only",
+            mass_level="test_only",
+            recommended_for_mouthpiece=True,
+            recommended_for_body=True,
+            recommended_for_bell=True,
+            notes="Test-only controlled-loss fixture; not a calibration or validation claim.",
+        )
+        return {"lossless_test": material}
+
     def _config(self) -> dict[str, object]:
         return {
             "environment": {
@@ -108,6 +128,24 @@ class TimeDomainResonatorScalingTests(unittest.TestCase):
         self.assertTrue(result["valid"])
         return result
 
+    def _controlled_loss_linear_result(self) -> dict[str, object]:
+        result = LinearEvaluationPipeline().evaluate(
+            self._cylinder_design(),
+            self._config(),
+            self._controlled_loss_materials(),
+        )
+        self.assertEqual(result["errors"], [])
+        self.assertTrue(result["valid"])
+        return result
+
+    def _experimental_config(self) -> dict[str, object]:
+        config = self._config()
+        nonlinear_cfg = dict(config["nonlinear_simulation"])
+        nonlinear_cfg["resonator_model_type"] = "fir_long_logfit"
+        nonlinear_cfg["resonator_kernel_duration_s"] = 1.0
+        config["nonlinear_simulation"] = nonlinear_cfg
+        return config
+
     def _interpolated_zin_magnitude(self, result: dict[str, object], frequency_hz: float) -> float:
         freq_hz = np.asarray(result["freq_hz"], dtype=float)
         zin = np.asarray(result["zin"], dtype=complex)
@@ -147,6 +185,9 @@ class TimeDomainResonatorScalingTests(unittest.TestCase):
 
         self.assertAlmostEqual(kernel_duration_s, 0.01)
         self.assertLess(kernel_duration_s, f0_period_s)
+        self.assertEqual(resonator.metadata["resonator_model_type"], "legacy")
+        self.assertEqual(resonator.metadata["resonator_scaling_mode"], "legacy_normalized")
+        self.assertFalse(resonator.metadata["experimental"])
 
     def test_direct_nonlinear_simulation_exposes_surrogate_excitation_flag(self) -> None:
         result = self._linear_result()
@@ -164,6 +205,63 @@ class TimeDomainResonatorScalingTests(unittest.TestCase):
 
         self.assertIn("surrogate_excitation_used", simulation)
         self.assertIsInstance(simulation["surrogate_excitation_used"], bool)
+
+    def test_experimental_long_fir_improves_impedance_scale_at_first_peaks(self) -> None:
+        result = self._controlled_loss_linear_result()
+        legacy = TimeDomainResonator.from_linear_result(result, self._config())
+        experimental = TimeDomainResonator.from_linear_result(result, self._experimental_config())
+        frequencies = [
+            float(result["features"]["f0_hz"]),
+            float(result["peaks"][1]["frequency_hz"]),
+        ]
+
+        for frequency_hz in frequencies:
+            with self.subTest(frequency_hz=frequency_hz):
+                zin_magnitude = self._interpolated_zin_magnitude(result, frequency_hz)
+                legacy_ratio = self._sinusoidal_gain(legacy, frequency_hz) / zin_magnitude
+                experimental_ratio = self._sinusoidal_gain(experimental, frequency_hz) / zin_magnitude
+
+                self.assertLess(legacy_ratio, 1.0e-4)
+                self.assertGreater(experimental_ratio, 0.3)
+                self.assertLess(experimental_ratio, 3.0)
+
+    def test_experimental_long_fir_metadata_describes_fit(self) -> None:
+        result = self._controlled_loss_linear_result()
+        resonator = TimeDomainResonator.from_linear_result(result, self._experimental_config())
+        metadata = resonator.metadata
+
+        self.assertEqual(metadata["resonator_model_type"], "fir_long_logfit")
+        self.assertEqual(metadata["resonator_scaling_mode"], "log_magnitude_multipoint")
+        self.assertTrue(metadata["experimental"])
+        self.assertAlmostEqual(metadata["kernel_duration_s"], 1.0)
+        self.assertEqual(metadata["kernel_length"], resonator.sample_rate_hz)
+        self.assertGreaterEqual(len(metadata["scaling_reference_points_hz"]), 4)
+        for key in [
+            "frequency_response_fit_error_40_1000",
+            "frequency_response_fit_error_40_3000",
+            "max_over_response",
+            "max_under_response",
+            "scaling_gain",
+        ]:
+            self.assertIn(key, metadata)
+            self.assertGreater(float(metadata[key]), 0.0)
+
+    def test_experimental_long_fir_nonlinear_pipeline_smoke_does_not_claim_onset(self) -> None:
+        result = self._controlled_loss_linear_result()
+        config = self._experimental_config()
+        nonlinear_cfg = dict(config["nonlinear_simulation"])
+        nonlinear_cfg["sample_rate_hz"] = 4000
+        nonlinear_cfg["simulation_duration_s"] = 0.05
+        nonlinear_cfg["warmup_duration_s"] = 0.01
+        nonlinear_cfg["pressure_scan_points"] = 2
+        config["nonlinear_simulation"] = nonlinear_cfg
+
+        evaluated = NonlinearPipeline().evaluate(result, config)
+
+        self.assertTrue(evaluated["nonlinear"]["enabled"])
+        self.assertEqual(evaluated["nonlinear"]["impulse_kernel_length"], 4000)
+        self.assertIn("threshold", evaluated["nonlinear"])
+        self.assertIn("regime", evaluated["nonlinear"])
 
 
 if __name__ == "__main__":
