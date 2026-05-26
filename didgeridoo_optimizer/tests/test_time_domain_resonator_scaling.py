@@ -206,6 +206,21 @@ class TimeDomainResonatorScalingTests(unittest.TestCase):
         self.assertIn("surrogate_excitation_used", simulation)
         self.assertIsInstance(simulation["surrogate_excitation_used"], bool)
 
+    def test_nonlinear_pipeline_default_remains_legacy_and_metadata_safe(self) -> None:
+        result = self._linear_result()
+        config = self._config()
+
+        evaluated = NonlinearPipeline().evaluate(result, config)
+        nonlinear = evaluated["nonlinear"]
+
+        self.assertTrue(nonlinear["enabled"])
+        self.assertEqual(NonlinearPipeline()._lip_model_type(config["nonlinear_simulation"]), "legacy")
+        self.assertIn("surrogate_excitation_used", nonlinear)
+        self.assertIsInstance(nonlinear["surrogate_excitation_used"], bool)
+        self.assertEqual(nonlinear["resonator_model_type"], "legacy")
+        self.assertFalse(nonlinear["experimental_resonator"])
+        self.assertNotIn("experimental_lip_model", nonlinear)
+
     def test_experimental_long_fir_improves_impedance_scale_at_first_peaks(self) -> None:
         result = self._controlled_loss_linear_result()
         legacy = TimeDomainResonator.from_linear_result(result, self._config())
@@ -272,6 +287,7 @@ class TimeDomainResonatorScalingTests(unittest.TestCase):
         nonlinear_cfg["warmup_duration_s"] = 0.01
         nonlinear_cfg["pressure_scan_points"] = 2
         nonlinear_cfg["lip_model_type"] = "dimensioned_v2"
+        nonlinear_cfg["resonator_max_kernel_duration_s"] = 1.0
         config["nonlinear_simulation"] = nonlinear_cfg
 
         evaluated = NonlinearPipeline().evaluate(result, config)
@@ -281,6 +297,13 @@ class TimeDomainResonatorScalingTests(unittest.TestCase):
         self.assertEqual(nonlinear["impulse_kernel_length"], 4000)
         self.assertEqual(nonlinear["lip_model_type"], "dimensioned_v2")
         self.assertTrue(nonlinear["experimental_lip_model"])
+        self.assertFalse(nonlinear["surrogate_excitation_used"])
+        self.assertEqual(nonlinear["resonator_model_type"], "fir_long_logfit")
+        self.assertEqual(nonlinear["resonator_scaling_mode"], "log_magnitude_multipoint")
+        self.assertAlmostEqual(nonlinear["kernel_duration_s"], 1.0)
+        self.assertEqual(nonlinear["kernel_length"], 4000)
+        self.assertTrue(nonlinear["experimental_resonator"])
+        self.assertGreaterEqual(len(nonlinear["scaling_reference_points_hz"]), 4)
         for key in [
             "lip_effective_area_m2",
             "lip_mass_kg",
@@ -293,6 +316,15 @@ class TimeDomainResonatorScalingTests(unittest.TestCase):
         ]:
             self.assertIn(key, nonlinear)
             self.assertTrue(np.isfinite(float(nonlinear[key])))
+        for key in [
+            "frequency_response_fit_error_40_1000",
+            "frequency_response_fit_error_40_3000",
+            "max_over_response",
+            "max_under_response",
+        ]:
+            self.assertIn(key, nonlinear)
+            self.assertTrue(np.isfinite(float(nonlinear[key])))
+            self.assertGreater(float(nonlinear[key]), 0.0)
 
 
 if __name__ == "__main__":
