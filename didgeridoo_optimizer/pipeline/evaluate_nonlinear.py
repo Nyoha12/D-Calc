@@ -23,6 +23,25 @@ DIMENSIONED_LIP_METADATA_KEYS = (
     "contact_fraction",
     "experimental_lip_model",
 )
+SIMULATION_METADATA_KEYS = (
+    "surrogate_excitation_used",
+    *DIMENSIONED_LIP_METADATA_KEYS,
+)
+RESONATOR_METADATA_KEYS = (
+    "resonator_model_type",
+    "resonator_scaling_mode",
+    "kernel_duration_s",
+    "kernel_length",
+    "frequency_response_fit_error_40_1000",
+    "frequency_response_fit_error_40_3000",
+    "max_over_response",
+    "max_under_response",
+    "scaling_reference_points_hz",
+    "experimental",
+)
+RESONATOR_METADATA_RENAMES = {
+    "experimental": "experimental_resonator",
+}
 
 
 class NonlinearPipeline:
@@ -96,9 +115,13 @@ class NonlinearPipeline:
             "impulse_kernel_length": int(resonator.impulse_kernel.size),
             "reference_f0_hz": float(features.get("f0_hz") or 0.0),
         }
-        for key in DIMENSIONED_LIP_METADATA_KEYS:
-            if key in sim_result:
-                nonlinear[key] = sim_result[key]
+        self._copy_available_metadata(nonlinear, sim_result, SIMULATION_METADATA_KEYS)
+        self._copy_available_metadata(
+            nonlinear,
+            resonator.metadata,
+            RESONATOR_METADATA_KEYS,
+            renames=RESONATOR_METADATA_RENAMES,
+        )
 
         out = dict(design_result)
         out["nonlinear"] = nonlinear
@@ -160,6 +183,22 @@ class NonlinearPipeline:
         if lip_model_type not in {LIP_MODEL_LEGACY, LIP_MODEL_DIMENSIONED_V2}:
             raise ValueError(f"Unknown nonlinear_simulation.lip_model_type={lip_model_type!r}.")
         return lip_model_type
+
+    @staticmethod
+    def _copy_available_metadata(
+        target: dict[str, Any],
+        source: Mapping[str, Any],
+        keys: Sequence[str],
+        *,
+        renames: Mapping[str, str] | None = None,
+    ) -> None:
+        renames = renames or {}
+        for key in keys:
+            if key not in source:
+                continue
+            output_key = renames.get(key, key)
+            if output_key not in target:
+                target[output_key] = source[key]
 
     def _score_threshold(self, nonlinear: Mapping[str, Any]) -> float:
         thr = nonlinear.get("threshold", {}) or {}
