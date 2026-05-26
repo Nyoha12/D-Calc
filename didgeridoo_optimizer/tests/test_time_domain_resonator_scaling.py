@@ -263,6 +263,37 @@ class TimeDomainResonatorScalingTests(unittest.TestCase):
         self.assertIn("threshold", evaluated["nonlinear"])
         self.assertIn("regime", evaluated["nonlinear"])
 
+    def test_dimensioned_lip_model_opt_in_smoke_with_experimental_long_fir(self) -> None:
+        result = self._controlled_loss_linear_result()
+        config = self._experimental_config()
+        nonlinear_cfg = dict(config["nonlinear_simulation"])
+        nonlinear_cfg["sample_rate_hz"] = 4000
+        nonlinear_cfg["simulation_duration_s"] = 0.05
+        nonlinear_cfg["warmup_duration_s"] = 0.01
+        nonlinear_cfg["pressure_scan_points"] = 2
+        nonlinear_cfg["lip_model_type"] = "dimensioned_v2"
+        config["nonlinear_simulation"] = nonlinear_cfg
+
+        evaluated = NonlinearPipeline().evaluate(result, config)
+        nonlinear = evaluated["nonlinear"]
+
+        self.assertTrue(nonlinear["enabled"])
+        self.assertEqual(nonlinear["impulse_kernel_length"], 4000)
+        self.assertEqual(nonlinear["lip_model_type"], "dimensioned_v2")
+        self.assertTrue(nonlinear["experimental_lip_model"])
+        for key in [
+            "lip_effective_area_m2",
+            "lip_mass_kg",
+            "lip_damping_ratio",
+            "lip_rest_opening_m",
+            "lip_pressure_force_sign",
+            "opening_min_m",
+            "opening_max_m",
+            "contact_fraction",
+        ]:
+            self.assertIn(key, nonlinear)
+            self.assertTrue(np.isfinite(float(nonlinear[key])))
+
 
 if __name__ == "__main__":
     unittest.main()

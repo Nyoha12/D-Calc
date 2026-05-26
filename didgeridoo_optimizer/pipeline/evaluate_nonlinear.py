@@ -4,8 +4,25 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from ..acoustics.air import AirProperties
-from ..nonlinear import LipParameters, OscillationThresholdEstimator, TimeDomainResonator
+from ..nonlinear.lips import DimensionedLipParameters, LipParameters
+from ..nonlinear.resonator_td import TimeDomainResonator
+from ..nonlinear.thresholds import OscillationThresholdEstimator
 from ..player import PlayerProfileSampler
+
+LIP_MODEL_LEGACY = "legacy"
+LIP_MODEL_DIMENSIONED_V2 = "dimensioned_v2"
+DIMENSIONED_LIP_METADATA_KEYS = (
+    "lip_model_type",
+    "lip_effective_area_m2",
+    "lip_mass_kg",
+    "lip_damping_ratio",
+    "lip_rest_opening_m",
+    "lip_pressure_force_sign",
+    "opening_min_m",
+    "opening_max_m",
+    "contact_fraction",
+    "experimental_lip_model",
+)
 
 
 class NonlinearPipeline:
@@ -28,7 +45,11 @@ class NonlinearPipeline:
         features = dict(design_result.get("features", {}) or {})
         resonator = TimeDomainResonator.from_linear_model(design_result, config, linear_pipeline=None, materials=materials)
         air = AirProperties.from_config(config)
-        lip_params = self._default_lip_params(features)
+        lip_model_type = self._lip_model_type(nonlinear_cfg)
+        if lip_model_type == LIP_MODEL_DIMENSIONED_V2:
+            lip_params = self._default_dimensioned_lip_params(features, nonlinear_cfg)
+        else:
+            lip_params = self._default_lip_params(features)
         threshold = self._thresholds.estimate_threshold(
             resonator,
             lip_params,
@@ -75,6 +96,9 @@ class NonlinearPipeline:
             "impulse_kernel_length": int(resonator.impulse_kernel.size),
             "reference_f0_hz": float(features.get("f0_hz") or 0.0),
         }
+        for key in DIMENSIONED_LIP_METADATA_KEYS:
+            if key in sim_result:
+                nonlinear[key] = sim_result[key]
 
         out = dict(design_result)
         out["nonlinear"] = nonlinear
@@ -113,6 +137,29 @@ class NonlinearPipeline:
             coupling_pa_per_m=9.0e5,
             flow_coefficient=0.72,
         )
+
+    def _default_dimensioned_lip_params(
+        self,
+        features: Mapping[str, Any],
+        nonlinear_cfg: Mapping[str, Any],
+    ) -> DimensionedLipParameters:
+        f0 = float(features.get("f0_hz") or 70.0)
+        q = float(features.get("fundamental_q") or 8.0)
+        profile = self._profiles.expert_preset() if q >= 10.0 else self._profiles.beginner_preset()
+        defaults = DimensionedLipParameters(
+            mouth_pressure_kpa=max(profile.mouth_pressure_kpa, 0.5),
+            resonance_hz=max(1.1 * f0, 40.0),
+        )
+        # These opt-in physical parameters are provisional to_calibrate values.
+        allowed = set(DimensionedLipParameters.__dataclass_fields__)
+        overrides = {key: value for key, value in dict(nonlinear_cfg).items() if key in allowed}
+        return DimensionedLipParameters(**{**defaults.as_dict(), **overrides})
+
+    def _lip_model_type(self, nonlinear_cfg: Mapping[str, Any]) -> str:
+        lip_model_type = str(dict(nonlinear_cfg or {}).get("lip_model_type", LIP_MODEL_LEGACY))
+        if lip_model_type not in {LIP_MODEL_LEGACY, LIP_MODEL_DIMENSIONED_V2}:
+            raise ValueError(f"Unknown nonlinear_simulation.lip_model_type={lip_model_type!r}.")
+        return lip_model_type
 
     def _score_threshold(self, nonlinear: Mapping[str, Any]) -> float:
         thr = nonlinear.get("threshold", {}) or {}
