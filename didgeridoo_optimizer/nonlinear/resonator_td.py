@@ -6,8 +6,6 @@ from typing import Any, Mapping, Sequence
 
 import numpy as np
 
-from ..pipeline.evaluate_linear import evaluate as evaluate_linear
-
 
 @dataclass(slots=True)
 class TimeDomainResonator:

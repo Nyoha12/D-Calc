@@ -1,11 +1,13 @@
-from .lips import LipModel, LipParameters, derivatives, energy_features, flow, opening
+from .lips import DimensionedLipParameters, LipModel, LipModelV2, LipParameters, derivatives, energy_features, flow, opening
 from .regimes import analyze, detect_extinction, detect_regime_switch, detect_stability, detect_subharmonics
 from .resonator_td import TimeDomainResonator
 from .thresholds import OscillationThresholdEstimator, estimate_threshold, onset_detected, simulate_at_pressure
 
 __all__ = [
     "LipModel",
+    "LipModelV2",
     "LipParameters",
+    "DimensionedLipParameters",
     "opening",
     "flow",
     "derivatives",
