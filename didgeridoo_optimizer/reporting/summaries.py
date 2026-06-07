@@ -131,6 +131,14 @@ def summarize_post_run_interpretation(
     warnings = list(dict.fromkeys([*summary_warnings, *result_warnings]))
     top_20 = summary_map.get('top_20', [])
     top_20_count = len(top_20) if isinstance(top_20, Sequence) and not isinstance(top_20, (str, bytes)) else 0
+    runtime_lines = [
+        f"- Runtime actual seconds : {_format_number(summary_map.get('runtime_actual_seconds'))} (temps phases calculees)",
+    ]
+    if 'runtime_wall_seconds' in summary_map:
+        runtime_lines.append(
+            f"- Runtime wall seconds : {_format_number(summary_map.get('runtime_wall_seconds'))} "
+            "(temps global observe cote runner, hors startup CLI)"
+        )
 
     sections: list[str] = [
         "\n".join(
@@ -149,7 +157,7 @@ def summarize_post_run_interpretation(
                     f"{_display(summary_map.get('config_schema_version'))} "
                     f"({_display(summary_map.get('config_schema_status'))})"
                 ),
-                f"- Runtime actual seconds : {_format_number(summary_map.get('runtime_actual_seconds'))}",
+                *runtime_lines,
                 f"- Linear phase : {_phase_line(summary_map.get('linear_results'))}",
                 f"- Robustness phase : {_phase_line(summary_map.get('robust_results'))}",
                 f"- Nonlinear phase : {_phase_line(summary_map.get('nonlinear_results'))}",
