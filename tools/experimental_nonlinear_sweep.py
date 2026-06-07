@@ -54,6 +54,36 @@ FIT_METADATA_KEYS = (
     "experimental",
 )
 
+SUMMARY_PARAMETER_KEYS = (
+    "effective_area_m2",
+    "damping_ratio",
+    "rest_opening_m",
+    "mass_kg",
+    "pressure_kpa",
+    "pressure_force_sign",
+)
+
+SECOND_PEAK_PROBE_CAUTION = "No toot validation; second-peak probe is diagnostic only."
+
+TOP_CONFIRMED_CANDIDATE_FIELDS = (
+    "rank",
+    "design",
+    "effective_area_m2",
+    "damping_ratio",
+    "rest_opening_m",
+    "mass_kg",
+    "pressure_kpa",
+    "quality_score",
+    "source_quality_score",
+    "stability_score",
+    "dominant_f0_ratio",
+    "dominant_second_peak_ratio",
+    "rms_pressure",
+    "contact_fraction",
+    "primary_classification",
+    "confirmed_long_run",
+)
+
 
 @dataclass(frozen=True)
 class SweepOptions:
@@ -567,9 +597,9 @@ def run_experiment(options: SweepOptions) -> dict[str, Any]:
             "mass_kg": list(DEFAULT_MASSES_KG if not options.quick else [1.0e-4]),
             "pressure_force_sign": [-1.0] + ([1.0] if options.include_positive_sign_sanity and not options.quick else []),
         },
-        "sweep_summary": summarize_results(results),
+        "sweep_summary": summarize_run_rows(results),
         "sweep_results": results,
-        "confirmation_summary": summarize_results(confirmations),
+        "confirmation_summary": summarize_run_rows(confirmations),
         "confirmation_results": confirmations,
         "second_peak_probe_summary": summarize_second_probe(second_probe_results),
         "second_peak_probe_results": second_probe_results,
@@ -680,7 +710,7 @@ def run_second_peak_probe(
     return rows
 
 
-def summarize_results(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+def summarize_run_rows(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     classifications = Counter(str(row.get("primary_classification", "unknown")) for row in rows)
     labels = Counter(label for row in rows for label in row.get("classification", []) or [])
     by_design: dict[str, dict[str, Any]] = {}
@@ -717,6 +747,198 @@ def summarize_second_probe(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
         "quasi_dc": sum(float(row.get("dominant_freq_hz") or 0.0) < 20.0 for row in rows),
         "max_dominant_second_peak_ratio": max((float(row.get("dominant_second_peak_ratio") or 0.0) for row in rows), default=0.0),
     }
+
+
+def load_results(path: Path | str) -> dict[str, Any]:
+    source = Path(path)
+    try:
+        loaded = json.loads(source.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Invalid JSON in {source}: {exc.msg} at line {exc.lineno}, column {exc.colno}") from exc
+    if not isinstance(loaded, Mapping):
+        raise ValueError(f"Expected top-level JSON object in {source}")
+    return dict(loaded)
+
+
+def summarize_results(results: Mapping[str, Any]) -> dict[str, Any]:
+    sweep_rows = _result_rows(results, "sweep_results")
+    confirmation_rows = _result_rows(results, "confirmation_results")
+    second_probe_rows = _result_rows(results, "second_peak_probe_results")
+    all_rows = sweep_rows + confirmation_rows + second_probe_rows
+
+    sweep_summary = dict(results.get("sweep_summary", {}) or {})
+    confirmation_summary = dict(results.get("confirmation_summary", {}) or {})
+    second_probe_summary = dict(results.get("second_peak_probe_summary", {}) or {})
+
+    sweep_group = _row_group_summary(sweep_rows)
+    confirmation_group = _row_group_summary(confirmation_rows)
+    second_probe_group = _row_group_summary(second_probe_rows)
+
+    global_totals = {
+        "sweep_runs": _rows_or_summary_count(sweep_group, "total", sweep_summary, "total"),
+        "sweep_acceptable": _rows_or_summary_count(sweep_group, "acceptable", sweep_summary, "acceptable"),
+        "sweep_onset": _rows_or_summary_count(sweep_group, "onset", sweep_summary, "onset"),
+        "confirmation_runs": _rows_or_summary_count(confirmation_group, "total", confirmation_summary, "total"),
+        "confirmed_long_run": _rows_or_summary_count(confirmation_group, "confirmed_long_run", confirmation_summary, "confirmed_long_run"),
+        "second_peak_probe_runs": _rows_or_summary_count(second_probe_group, "total", second_probe_summary, "total"),
+        "near_second_probe": _rows_or_summary_count(second_probe_group, "near_second_probe", second_probe_summary, "near_second_probe"),
+        "design_count": len(_summary_design_names(results, all_rows)),
+    }
+
+    return _json_safe(
+        {
+            "global_totals": global_totals,
+            "by_design": _summarize_by_design(results, sweep_rows, confirmation_rows, second_probe_rows),
+            "by_parameter": _summarize_by_parameter(all_rows),
+            "top_confirmed_candidates": _top_confirmed_candidates(confirmation_rows),
+            "second_peak_probe": _summarize_existing_second_probe(second_probe_rows, second_probe_summary),
+            "caution_notes": [
+                "Experimental offline diagnostic only; this is not a product validation contract.",
+                "Coefficients in this sweep remain to_calibrate unless validated elsewhere.",
+                "Confirmed candidates are nonlinear diagnostics, not player validation.",
+                SECOND_PEAK_PROBE_CAUTION,
+            ],
+        }
+    )
+
+
+def render_markdown_summary(summary: Mapping[str, Any]) -> str:
+    lines = [
+        "# Experimental Nonlinear Sweep Summary",
+        "",
+        "## Global Totals",
+        "",
+        "| metric | value |",
+        "|---|---:|",
+    ]
+    for key, value in dict(summary.get("global_totals", {}) or {}).items():
+        lines.append(f"| {key} | {_fmt(value)} |")
+    lines.append("")
+
+    lines.extend(
+        [
+            "## By Design",
+            "",
+            "| design | sweep_total | sweep_acceptable | sweep_onset | confirmation_total | confirmed_long_run | second_peak_probe_total | near_second_probe |",
+            "|---|---:|---:|---:|---:|---:|---:|---:|",
+        ]
+    )
+    by_design = dict(summary.get("by_design", {}) or {})
+    if by_design:
+        for design_name, design_summary in by_design.items():
+            entry = dict(design_summary or {})
+            lines.append(
+                "| "
+                + " | ".join(
+                    [
+                        str(design_name),
+                        _fmt(entry.get("sweep_total")),
+                        _fmt(entry.get("sweep_acceptable")),
+                        _fmt(entry.get("sweep_onset")),
+                        _fmt(entry.get("confirmation_total")),
+                        _fmt(entry.get("confirmed_long_run")),
+                        _fmt(entry.get("second_peak_probe_total")),
+                        _fmt(entry.get("near_second_probe")),
+                    ]
+                )
+                + " |"
+            )
+    else:
+        lines.append("| none | 0 | 0 | 0 | 0 | 0 | 0 | 0 |")
+    lines.append("")
+
+    lines.extend(["## By Parameter", ""])
+    by_parameter = dict(summary.get("by_parameter", {}) or {})
+    if by_parameter:
+        for parameter, values in by_parameter.items():
+            lines.extend(
+                [
+                    f"### {parameter}",
+                    "",
+                    "| value | total | acceptable | onset | confirmed_long_run | near_second_probe |",
+                    "|---|---:|---:|---:|---:|---:|",
+                ]
+            )
+            for value, value_summary in dict(values or {}).items():
+                entry = dict(value_summary or {})
+                lines.append(
+                    "| "
+                    + " | ".join(
+                        [
+                            str(value),
+                            _fmt(entry.get("total")),
+                            _fmt(entry.get("acceptable")),
+                            _fmt(entry.get("onset")),
+                            _fmt(entry.get("confirmed_long_run")),
+                            _fmt(entry.get("near_second_probe")),
+                        ]
+                    )
+                    + " |"
+                )
+            lines.append("")
+    else:
+        lines.extend(["No parameter rows found in the existing JSON.", ""])
+
+    lines.extend(
+        [
+            "## Top Confirmed Candidates",
+            "",
+            "| rank | design | area | damping | opening | mass | pressure | quality | stability | dom/f0 | rms_pressure | contact |",
+            "|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        ]
+    )
+    candidates = list(summary.get("top_confirmed_candidates", []) or [])
+    if candidates:
+        for row in candidates:
+            lines.append(
+                "| "
+                + " | ".join(
+                    [
+                        _fmt(row.get("rank")),
+                        str(row.get("design", "")),
+                        _fmt(row.get("effective_area_m2")),
+                        _fmt(row.get("damping_ratio")),
+                        _fmt(row.get("rest_opening_m")),
+                        _fmt(row.get("mass_kg")),
+                        _fmt(row.get("pressure_kpa")),
+                        _fmt(row.get("quality_score", row.get("source_quality_score"))),
+                        _fmt(row.get("stability_score")),
+                        _fmt(row.get("dominant_f0_ratio")),
+                        _fmt(row.get("rms_pressure")),
+                        _fmt(row.get("contact_fraction")),
+                    ]
+                )
+                + " |"
+            )
+    else:
+        lines.append("|  | none |  |  |  |  |  |  |  |  |  |  |")
+    lines.append("")
+
+    second_peak = dict(summary.get("second_peak_probe", {}) or {})
+    lines.extend(
+        [
+            "## Second-Peak Probe",
+            "",
+            str(second_peak.get("note") or SECOND_PEAK_PROBE_CAUTION),
+            "",
+            f"- total: `{_fmt(second_peak.get('total', 0))}`",
+            f"- onset: `{_fmt(second_peak.get('onset', 0))}`",
+            f"- near_second_probe: `{_fmt(second_peak.get('near_second_probe', 0))}`",
+            f"- surrogate: `{_fmt(second_peak.get('surrogate', 0))}`",
+            f"- max dominant/second_peak: `{_fmt(second_peak.get('max_dominant_second_peak_ratio', 0.0))}`",
+            "",
+            "## Caution Notes",
+            "",
+        ]
+    )
+    for note in list(summary.get("caution_notes", []) or []):
+        lines.append(f"- {note}")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def write_summary_json(summary: Mapping[str, Any], path: Path | str) -> None:
+    Path(path).write_text(json.dumps(_json_safe(summary), indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def render_markdown(report: Mapping[str, Any]) -> str:
@@ -827,6 +1049,7 @@ def repo_metadata() -> dict[str, Any]:
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--summarize-existing", type=Path, help="Read an existing sweep JSON and write a summary without running simulations.")
     parser.add_argument("--design", action="append", choices=DEFAULT_DESIGNS, help="Built-in design to include; repeatable.")
     parser.add_argument("--quick", action="store_true", help="Run a tiny smoke grid instead of the default medium grid.")
     parser.add_argument("--include-positive-sign-sanity", action="store_true", help="Add the bounded pressure_force_sign=+1 sanity subset.")
@@ -842,12 +1065,34 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--second-probe-top", type=int, default=5)
     parser.add_argument("--json-output", type=Path)
     parser.add_argument("--markdown-output", type=Path)
+    parser.add_argument("--summary-json", type=Path, help="Optional JSON summary output for --summarize-existing.")
     parser.add_argument("--stdout-format", choices=("markdown", "json"), default="markdown")
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.summary_json is not None and args.summarize_existing is None:
+        parser.error("--summary-json requires --summarize-existing")
+    if args.summarize_existing is not None and args.json_output is not None:
+        parser.error("--json-output is for simulation reports; use --summary-json with --summarize-existing")
+    return args
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
+    if args.summarize_existing is not None:
+        try:
+            results = load_results(args.summarize_existing)
+            summary = summarize_results(results)
+            markdown_text = render_markdown_summary(summary)
+            if args.markdown_output is not None:
+                args.markdown_output.write_text(markdown_text + "\n", encoding="utf-8")
+            else:
+                print(markdown_text)
+            if args.summary_json is not None:
+                write_summary_json(summary, args.summary_json)
+        except (OSError, ValueError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        return 0
+
     options = SweepOptions(
         design_names=tuple(args.design or DEFAULT_DESIGNS),
         sample_rate_hz=args.sample_rate_hz,
@@ -915,6 +1160,163 @@ def _fmt(value: Any) -> str:
     if abs(numeric) < 1.0e-3 or abs(numeric) >= 1.0e4:
         return f"{numeric:.3g}"
     return f"{numeric:.3f}".rstrip("0").rstrip(".")
+
+
+def _result_rows(results: Mapping[str, Any], key: str) -> list[dict[str, Any]]:
+    rows = results.get(key, []) or []
+    if not isinstance(rows, (list, tuple)):
+        return []
+    return [dict(row) for row in rows if isinstance(row, Mapping)]
+
+
+def _row_group_summary(rows: Sequence[Mapping[str, Any]]) -> dict[str, int]:
+    return {
+        "total": len(rows),
+        "acceptable": sum(str(row.get("primary_classification")) == "acceptable" for row in rows),
+        "onset": sum(bool(row.get("onset_detected")) for row in rows),
+        "near_f0": sum(0.90 <= _as_float(row.get("dominant_f0_ratio")) <= 1.10 for row in rows),
+        "surrogate": sum(bool(row.get("surrogate_excitation_used")) for row in rows),
+        "confirmed_long_run": sum(bool(row.get("confirmed_long_run")) for row in rows),
+        "near_second_probe": sum(bool(row.get("near_second_probe")) for row in rows),
+    }
+
+
+def _rows_or_summary_count(
+    row_summary: Mapping[str, Any],
+    row_key: str,
+    fallback_summary: Mapping[str, Any],
+    fallback_key: str,
+) -> int:
+    if _as_int(row_summary.get("total")) > 0:
+        return _as_int(row_summary.get(row_key))
+    return _as_int(fallback_summary.get(fallback_key))
+
+
+def _summary_design_names(results: Mapping[str, Any], rows: Sequence[Mapping[str, Any]]) -> list[str]:
+    names = {str(row.get("design")) for row in rows if row.get("design") is not None}
+    for ref in results.get("linear_references", []) or []:
+        if isinstance(ref, Mapping) and ref.get("design") is not None:
+            names.add(str(ref["design"]))
+    for summary_key in ("sweep_summary", "confirmation_summary"):
+        summary = dict(results.get(summary_key, {}) or {})
+        by_design = dict(summary.get("by_design", {}) or {})
+        names.update(str(name) for name in by_design)
+    return sorted(names)
+
+
+def _design_reference_map(results: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
+    refs: dict[str, dict[str, Any]] = {}
+    for ref in results.get("linear_references", []) or []:
+        if isinstance(ref, Mapping) and ref.get("design") is not None:
+            refs[str(ref["design"])] = {
+                "f0_hz": ref.get("f0_hz"),
+                "second_peak_hz": ref.get("second_peak_hz"),
+            }
+    return refs
+
+
+def _summarize_by_design(
+    results: Mapping[str, Any],
+    sweep_rows: Sequence[Mapping[str, Any]],
+    confirmation_rows: Sequence[Mapping[str, Any]],
+    second_probe_rows: Sequence[Mapping[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    refs = _design_reference_map(results)
+    sweep_by_design = dict(dict(results.get("sweep_summary", {}) or {}).get("by_design", {}) or {})
+    output: dict[str, dict[str, Any]] = {}
+    all_rows = list(sweep_rows) + list(confirmation_rows) + list(second_probe_rows)
+    for design_name in _summary_design_names(results, all_rows):
+        sweep_group = _row_group_summary([row for row in sweep_rows if str(row.get("design")) == design_name])
+        confirmation_group = _row_group_summary([row for row in confirmation_rows if str(row.get("design")) == design_name])
+        second_group = _row_group_summary([row for row in second_probe_rows if str(row.get("design")) == design_name])
+        fallback = dict(sweep_by_design.get(design_name, {}) or {})
+        entry: dict[str, Any] = {
+            "sweep_total": _rows_or_summary_count(sweep_group, "total", fallback, "total"),
+            "sweep_acceptable": _rows_or_summary_count(sweep_group, "acceptable", fallback, "acceptable"),
+            "sweep_onset": _rows_or_summary_count(sweep_group, "onset", fallback, "onset"),
+            "confirmation_total": confirmation_group["total"],
+            "confirmed_long_run": confirmation_group["confirmed_long_run"],
+            "second_peak_probe_total": second_group["total"],
+            "near_second_probe": second_group["near_second_probe"],
+        }
+        if design_name in refs:
+            entry.update(refs[design_name])
+        output[design_name] = entry
+    return output
+
+
+def _summarize_by_parameter(rows: Sequence[Mapping[str, Any]]) -> dict[str, dict[str, dict[str, int]]]:
+    output: dict[str, dict[str, dict[str, int]]] = {}
+    for parameter in SUMMARY_PARAMETER_KEYS:
+        grouped: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
+        for row in rows:
+            if parameter in row:
+                grouped[_format_summary_key(row.get(parameter))].append(row)
+        output[parameter] = {value: _row_group_summary(grouped[value]) for value in sorted(grouped)}
+    return output
+
+
+def _top_confirmed_candidates(rows: Sequence[Mapping[str, Any]], *, limit: int = 10) -> list[dict[str, Any]]:
+    confirmed = [dict(row) for row in rows if bool(row.get("confirmed_long_run"))]
+    ordered = sorted(
+        confirmed,
+        key=lambda row: (
+            _as_float(row.get("quality_score"), _as_float(row.get("source_quality_score"))),
+            _as_float(row.get("source_quality_score")),
+            _as_float(row.get("stability_score")),
+            -_as_float(row.get("rank"), 1.0e9),
+        ),
+        reverse=True,
+    )
+    return [{field: row[field] for field in TOP_CONFIRMED_CANDIDATE_FIELDS if field in row} for row in ordered[:limit]]
+
+
+def _summarize_existing_second_probe(
+    rows: Sequence[Mapping[str, Any]],
+    fallback_summary: Mapping[str, Any],
+) -> dict[str, Any]:
+    row_summary = summarize_second_probe(rows) if rows else dict(fallback_summary)
+    by_design: dict[str, dict[str, int]] = {}
+    for design_name in sorted({str(row.get("design")) for row in rows if row.get("design") is not None}):
+        by_design[design_name] = _row_group_summary([row for row in rows if str(row.get("design")) == design_name])
+    return {
+        "total": _as_int(row_summary.get("total")),
+        "onset": _as_int(row_summary.get("onset")),
+        "near_second_probe": _as_int(row_summary.get("near_second_probe")),
+        "surrogate": _as_int(row_summary.get("surrogate")),
+        "quasi_dc": _as_int(row_summary.get("quasi_dc")),
+        "max_dominant_second_peak_ratio": _as_float(row_summary.get("max_dominant_second_peak_ratio")),
+        "by_design": by_design,
+        "note": SECOND_PEAK_PROBE_CAUTION,
+    }
+
+
+def _format_summary_key(value: Any) -> str:
+    if value is None:
+        return "none"
+    if isinstance(value, bool):
+        return str(value).lower()
+    if isinstance(value, (int, float, np.number)):
+        return _fmt(value)
+    return str(value)
+
+
+def _as_int(value: Any, default: int = 0) -> int:
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _as_float(value: Any, default: float = 0.0) -> float:
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
 
 
 if __name__ == "__main__":
