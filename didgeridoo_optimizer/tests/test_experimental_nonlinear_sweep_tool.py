@@ -1,9 +1,96 @@
 from __future__ import annotations
 
 import json
+import tempfile
 import unittest
+from pathlib import Path
+from unittest import mock
 
 import tools.experimental_nonlinear_sweep as sweep
+
+
+def _minimal_existing_report() -> dict:
+    return {
+        "repo": {"branch": "fixture", "head_short": "abc1234", "tracked_clean": True},
+        "linear_references": [
+            {"design": "cylinder_control", "f0_hz": 60.0, "second_peak_hz": 180.0, "warnings": []},
+            {"design": "conical_bell_9", "f0_hz": 62.0, "second_peak_hz": 190.0, "warnings": []},
+        ],
+        "sweep_results": [
+            {
+                "phase": "sweep",
+                "design": "cylinder_control",
+                "effective_area_m2": 3.0e-6,
+                "damping_ratio": 0.2,
+                "rest_opening_m": 8.0e-4,
+                "mass_kg": 1.0e-4,
+                "pressure_kpa": 2.0,
+                "pressure_force_sign": -1.0,
+                "onset_detected": True,
+                "dominant_f0_ratio": 1.0,
+                "surrogate_excitation_used": False,
+                "primary_classification": "acceptable",
+                "classification": ["acceptable"],
+            },
+            {
+                "phase": "sweep",
+                "design": "conical_bell_9",
+                "effective_area_m2": 1.0e-5,
+                "damping_ratio": 0.4,
+                "rest_opening_m": 1.2e-3,
+                "mass_kg": 3.0e-4,
+                "pressure_kpa": 4.0,
+                "pressure_force_sign": -1.0,
+                "onset_detected": False,
+                "dominant_f0_ratio": 0.2,
+                "surrogate_excitation_used": False,
+                "primary_classification": "quasi_dc",
+                "classification": ["quasi_dc", "failed_onset"],
+            },
+        ],
+        "confirmation_results": [
+            {
+                "phase": "confirmation",
+                "rank": 1,
+                "design": "cylinder_control",
+                "effective_area_m2": 3.0e-6,
+                "damping_ratio": 0.2,
+                "rest_opening_m": 8.0e-4,
+                "mass_kg": 1.0e-4,
+                "pressure_kpa": 2.0,
+                "pressure_force_sign": -1.0,
+                "onset_detected": True,
+                "dominant_f0_ratio": 1.01,
+                "rms_pressure": 150.0,
+                "contact_fraction": 0.01,
+                "surrogate_excitation_used": False,
+                "stability_score": 0.7,
+                "quality_score": 88.0,
+                "source_quality_score": 84.0,
+                "primary_classification": "acceptable",
+                "confirmed_long_run": True,
+            }
+        ],
+        "second_peak_probe_results": [
+            {
+                "phase": "second_peak_probe",
+                "design": "cylinder_control",
+                "effective_area_m2": 3.0e-6,
+                "damping_ratio": 0.2,
+                "rest_opening_m": 8.0e-4,
+                "mass_kg": 1.0e-4,
+                "pressure_kpa": 2.0,
+                "pressure_force_sign": -1.0,
+                "onset_detected": True,
+                "dominant_freq_hz": 181.0,
+                "dominant_f0_ratio": 3.02,
+                "dominant_second_peak_ratio": 1.01,
+                "surrogate_excitation_used": False,
+                "primary_classification": "acceptable",
+                "near_second_probe": True,
+            }
+        ],
+    }
 
 
 class ExperimentalNonlinearSweepToolTests(unittest.TestCase):
@@ -100,6 +187,66 @@ class ExperimentalNonlinearSweepToolTests(unittest.TestCase):
         self.assertIn("Experimental LipModelV2 Nonlinear Sweep", markdown)
         self.assertIn("not player validation", markdown)
         self.assertIn("confirmed", markdown)
+
+    def test_summarize_existing_cli_reads_fixture_without_simulation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            source = tmp_path / "sweep.json"
+            markdown_output = tmp_path / "sweep_summary.md"
+            summary_json = tmp_path / "sweep_summary.json"
+            source.write_text(json.dumps(_minimal_existing_report()), encoding="utf-8")
+
+            with mock.patch.object(sweep, "run_experiment", side_effect=AssertionError("simulation launched")):
+                exit_code = sweep.main(
+                    [
+                        "--summarize-existing",
+                        str(source),
+                        "--markdown-output",
+                        str(markdown_output),
+                        "--summary-json",
+                        str(summary_json),
+                    ]
+                )
+
+            self.assertEqual(exit_code, 0)
+            loaded = sweep.load_results(source)
+            summary = sweep.summarize_results(loaded)
+            for key in (
+                "global_totals",
+                "by_design",
+                "by_parameter",
+                "top_confirmed_candidates",
+                "second_peak_probe",
+                "caution_notes",
+            ):
+                self.assertIn(key, summary)
+
+            markdown = markdown_output.read_text(encoding="utf-8")
+            self.assertIn("## Global Totals", markdown)
+            self.assertIn("## By Design", markdown)
+            self.assertIn("## By Parameter", markdown)
+            self.assertIn("## Top Confirmed Candidates", markdown)
+            self.assertIn("## Second-Peak Probe", markdown)
+            self.assertIn("No toot validation; second-peak probe is diagnostic only.", markdown)
+
+            summary_data = json.loads(summary_json.read_text(encoding="utf-8"))
+            self.assertEqual(summary_data["global_totals"]["sweep_runs"], 2)
+            self.assertEqual(summary_data["global_totals"]["confirmed_long_run"], 1)
+            self.assertIn("cylinder_control", summary_data["by_design"])
+            self.assertIn("effective_area_m2", summary_data["by_parameter"])
+            self.assertEqual(summary_data["top_confirmed_candidates"][0]["design"], "cylinder_control")
+            self.assertEqual(
+                summary_data["second_peak_probe"]["note"],
+                "No toot validation; second-peak probe is diagnostic only.",
+            )
+
+    def test_load_results_rejects_invalid_json_clearly(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "invalid.json"
+            source.write_text("{not json", encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "Invalid JSON"):
+                sweep.load_results(source)
 
     def test_quick_smoke_sweep_runs_without_onset_assumption(self) -> None:
         options = sweep.SweepOptions(
