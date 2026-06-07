@@ -155,6 +155,7 @@ class OptimizerRunner:
         config: Mapping[str, Any],
         context: Mapping[str, Any],
         runtime_actual_seconds: float,
+        runtime_wall_started: float | None = None,
     ) -> dict[str, Any]:
         merged_candidates = self._merge_progressive_candidates(
             linear_results.get("ranked", []),
@@ -168,14 +169,22 @@ class OptimizerRunner:
         final_output_count = int(dict((config or {}).get("optimization", {}) or {}).get("final_output_count", 20))
         top_n = selector.rank_top_n(ranked_final, final_output_count, selector_method, config)
         ranked_top_n = rank(top_n, config)
-        exports = self._export_results(config, context, runtime_info, runtime_actual_seconds, linear_results, robust_results, nonlinear_results, best_candidate, ranked_top_n)
+        warnings = self._collect_warnings(runtime_info, best_candidate)
+        exports, runtime_wall_seconds = self._export_results(
+            config,
+            context,
+            runtime_info,
+            runtime_actual_seconds,
+            linear_results,
+            robust_results,
+            nonlinear_results,
+            best_candidate,
+            ranked_top_n,
+            warnings=warnings,
+            runtime_wall_started=runtime_wall_started,
+        )
 
-        warnings: list[str] = list(runtime_info.get("warnings", []))
-        if best_candidate:
-            warnings.extend(best_candidate.get("result", best_candidate).get("warnings", []))
-        warnings = list(dict.fromkeys(str(item) for item in warnings))
-
-        return {
+        payload = {
             "schema_version": REPORT_SCHEMA_VERSION,
             "config_schema_version": str(context.get("config_schema_version", CONFIG_SCHEMA_VERSION)),
             "config_schema_status": str(context.get("config_schema_status", CONFIG_SCHEMA_STATUS_MISSING_ASSUMED_V1)),
@@ -190,8 +199,12 @@ class OptimizerRunner:
             "warnings": warnings,
             "exports": exports,
         }
+        if runtime_wall_seconds is not None:
+            payload["runtime_wall_seconds"] = float(runtime_wall_seconds)
+        return payload
 
     def run(self, config_path: str | Path, *, output_dir_override: str | Path | None = None) -> dict[str, Any]:
+        runtime_wall_started = time.perf_counter()
         context = self.load_context(config_path, output_dir_override=output_dir_override)
         config = context["config"]
         started = time.perf_counter()
@@ -209,6 +222,7 @@ class OptimizerRunner:
             config=config,
             context=context,
             runtime_actual_seconds=runtime_actual_seconds,
+            runtime_wall_started=runtime_wall_started,
         )
 
     def dry_run(self, config_path: str | Path, *, output_dir_override: str | Path | None = None) -> dict[str, Any]:
@@ -384,27 +398,21 @@ class OptimizerRunner:
         nonlinear_results: Mapping[str, Any],
         best_candidate: Mapping[str, Any],
         ranked_top_n: Sequence[Mapping[str, Any]],
-    ) -> dict[str, Any]:
+        *,
+        warnings: Sequence[Any] | None = None,
+        runtime_wall_started: float | None = None,
+    ) -> tuple[dict[str, Any], float | None]:
         output_dir: Path = context["output_dir"]
         reporting_cfg = dict((config or {}).get("reporting", {}) or {})
         exports: dict[str, Any] = {"output_dir": str(output_dir)}
-
-        final_payload = self._build_summary_payload(
-            config=config,
-            context=context,
-            runtime_info=runtime_info,
-            runtime_actual_seconds=runtime_actual_seconds,
-            linear_results=linear_results,
-            robust_results=robust_results,
-            nonlinear_results=nonlinear_results,
-            best_candidate=best_candidate,
-            ranked_top_n=ranked_top_n,
-        )
+        summary_json_path = output_dir / "optimizer_summary.json"
+        summary_yaml_path = output_dir / "optimizer_summary.yaml"
+        interpretation_path = output_dir / "post_run_interpretation.txt"
 
         if bool(reporting_cfg.get("save_json_summary", True)):
-            exports["summary_json"] = str(export_json(final_payload, output_dir / "optimizer_summary.json"))
+            exports["summary_json"] = str(summary_json_path)
         if bool(reporting_cfg.get("save_yaml_summary", True)):
-            exports["summary_yaml"] = str(export_yaml(final_payload, output_dir / "optimizer_summary.yaml"))
+            exports["summary_yaml"] = str(summary_yaml_path)
         if bool(reporting_cfg.get("save_csv_scores", True)):
             exports["top20_csv"] = str(export_csv_scores(ranked_top_n, output_dir / "top20_scores.csv"))
         if bool(reporting_cfg.get("save_plots", True)):
@@ -416,10 +424,32 @@ class OptimizerRunner:
                 output_dir / "best_design",
                 save_plots=save_best_design_plots,
             )
-        exports["interpretation_txt"] = str(
-            export_post_run_interpretation(final_payload, exports, output_dir / "post_run_interpretation.txt")
+        exports["interpretation_txt"] = str(interpretation_path)
+        runtime_wall_seconds = (
+            max(0.0, time.perf_counter() - runtime_wall_started)
+            if runtime_wall_started is not None
+            else None
         )
-        return exports
+        final_payload = self._build_summary_payload(
+            config=config,
+            context=context,
+            runtime_info=runtime_info,
+            runtime_actual_seconds=runtime_actual_seconds,
+            linear_results=linear_results,
+            robust_results=robust_results,
+            nonlinear_results=nonlinear_results,
+            best_candidate=best_candidate,
+            ranked_top_n=ranked_top_n,
+            warnings=warnings,
+            exports=exports,
+            runtime_wall_seconds=runtime_wall_seconds,
+        )
+        export_post_run_interpretation(final_payload, exports, interpretation_path)
+        if bool(reporting_cfg.get("save_json_summary", True)):
+            export_json(final_payload, summary_json_path)
+        if bool(reporting_cfg.get("save_yaml_summary", True)):
+            export_yaml(final_payload, summary_yaml_path)
+        return exports, runtime_wall_seconds
 
     def _build_summary_payload(
         self,
@@ -432,9 +462,12 @@ class OptimizerRunner:
         nonlinear_results: Mapping[str, Any],
         best_candidate: Mapping[str, Any],
         ranked_top_n: Sequence[Mapping[str, Any]],
+        warnings: Sequence[Any] | None = None,
+        exports: Mapping[str, Any] | None = None,
+        runtime_wall_seconds: float | None = None,
     ) -> dict[str, Any]:
         config_schema = self._config_schema_metadata(config)
-        return {
+        payload = {
             "schema_version": REPORT_SCHEMA_VERSION,
             "config_schema_version": str(context.get("config_schema_version", config_schema["config_schema_version"])),
             "config_schema_status": str(context.get("config_schema_status", config_schema["config_schema_status"])),
@@ -446,7 +479,26 @@ class OptimizerRunner:
             "nonlinear_results": self._lighten_results(nonlinear_results),
             "best_design": self._lighten_results(best_candidate),
             "top_20": self._lighten_results(ranked_top_n),
+            "warnings": (
+                [str(item) for item in warnings]
+                if warnings is not None
+                else self._collect_warnings(runtime_info, best_candidate)
+            ),
+            "exports": dict(exports or {}),
         }
+        if runtime_wall_seconds is not None:
+            payload["runtime_wall_seconds"] = float(runtime_wall_seconds)
+        return payload
+
+    def _collect_warnings(
+        self,
+        runtime_info: Mapping[str, Any],
+        best_candidate: Mapping[str, Any],
+    ) -> list[str]:
+        warnings: list[Any] = list(runtime_info.get("warnings", []) or [])
+        if best_candidate:
+            warnings.extend(dict(best_candidate.get("result", best_candidate) or {}).get("warnings", []) or [])
+        return list(dict.fromkeys(str(item) for item in warnings))
 
     def _lighten_results(self, value: Any) -> Any:
         if isinstance(value, Mapping):
@@ -505,6 +557,7 @@ def finalize(
     config: Mapping[str, Any],
     context: Mapping[str, Any],
     runtime_actual_seconds: float,
+    runtime_wall_started: float | None = None,
 ) -> dict[str, Any]:
     return OptimizerRunner().finalize(
         linear_results=linear_results,
@@ -514,6 +567,7 @@ def finalize(
         config=config,
         context=context,
         runtime_actual_seconds=runtime_actual_seconds,
+        runtime_wall_started=runtime_wall_started,
     )
 
 

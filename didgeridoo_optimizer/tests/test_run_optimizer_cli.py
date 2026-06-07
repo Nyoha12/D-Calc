@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -337,10 +338,36 @@ class RunOptimizerCliTests(unittest.TestCase):
                 with self.subTest(fragment=fragment):
                     self.assertNotIn(fragment, interpretation_lower)
 
-            summary = json.loads((output_dir / "optimizer_summary.json").read_text(encoding="utf-8"))
+            summary_json_path = output_dir / "optimizer_summary.json"
+            summary_yaml_path = output_dir / "optimizer_summary.yaml"
+            top20_path = output_dir / "top20_scores.csv"
+            summary = json.loads(summary_json_path.read_text(encoding="utf-8"))
+            summary_yaml = yaml.safe_load(summary_yaml_path.read_text(encoding="utf-8"))
             self.assertEqual(summary["schema_version"], run_optimizer.REPORT_SCHEMA_VERSION)
             self.assertEqual(summary["config_schema_version"], run_optimizer.CONFIG_SCHEMA_VERSION)
             self.assertEqual(summary["nonlinear_results"]["selected_count"], 0)
+            self.assertEqual(summary["warnings"], payload["warnings"])
+            self.assertEqual(summary_yaml["warnings"], payload["warnings"])
+            self.assertEqual(summary["exports"], payload["exports"])
+            self.assertEqual(summary_yaml["exports"], payload["exports"])
+            expected_export_paths = {
+                "summary_json": summary_json_path,
+                "summary_yaml": summary_yaml_path,
+                "top20_csv": top20_path,
+                "interpretation_txt": interpretation_path,
+            }
+            for key, path in expected_export_paths.items():
+                with self.subTest(export_key=key):
+                    self.assertIn(key, summary["exports"])
+                    self.assertEqual(Path(summary["exports"][key]).resolve(), path.resolve())
+            self.assertIn("runtime_actual_seconds", summary)
+            self.assertIn("runtime_wall_seconds", summary)
+            self.assertGreaterEqual(summary["runtime_wall_seconds"], summary["runtime_actual_seconds"])
+            self.assertGreaterEqual(summary_yaml["runtime_wall_seconds"], summary_yaml["runtime_actual_seconds"])
+            self.assertIn("Runtime actual seconds", interpretation)
+            self.assertIn("temps phases calculees", interpretation)
+            self.assertIn("Runtime wall seconds", interpretation)
+            self.assertIn("hors startup CLI", interpretation)
             self.assertFalse((output_dir / "pareto_overview.png").exists())
 
     def test_full_cli_can_skip_best_design_pngs_without_disabling_bundle(self) -> None:
@@ -598,6 +625,93 @@ class RunOptimizerCliTests(unittest.TestCase):
         self.assertEqual(payload["config_schema_version"], run_optimizer.CONFIG_SCHEMA_VERSION)
         self.assertEqual(payload["config_schema_status"], run_optimizer.CONFIG_SCHEMA_STATUS_MISSING_ASSUMED_V1)
 
+    def test_finalize_exports_summary_payload_matches_returned_payload(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            output_dir = Path(tmp_dir) / "output"
+            runner = run_optimizer.OptimizerRunner()
+            candidate = {
+                "genome": {"id": "candidate-1", "topology": "straight"},
+                "result": {
+                    "design_id": "candidate-1",
+                    "aggregate_score": 0.75,
+                    "valid": True,
+                    "objective_scores": {"pitch": 0.75},
+                    "features": {
+                        "f0_hz": 62.5,
+                        "peak_count": 6,
+                        "model_confidence": 0.8,
+                    },
+                    "warnings": ["best warning"],
+                    "design": {
+                        "metadata": {"topology": "straight", "total_length_cm": 140.0},
+                        "segments": [
+                            {
+                                "length_cm": 140.0,
+                                "d_in_cm": 3.0,
+                                "d_out_cm": 5.0,
+                                "material_id": "pvc_pressure",
+                                "kind": "tube",
+                            }
+                        ],
+                    },
+                },
+            }
+            selector = mock.Mock()
+            selector.select_best.return_value = candidate
+            selector.rank_top_n.return_value = [candidate]
+            config = {
+                "schema_version": run_optimizer.CONFIG_SCHEMA_VERSION,
+                "optimization": {
+                    "final_output_count": 1,
+                    "final_selector": "weighted_sum",
+                },
+                "objectives": {"pitch": {"enabled": True}},
+                "reporting": {
+                    "save_json_summary": True,
+                    "save_yaml_summary": True,
+                    "save_csv_scores": True,
+                    "save_plots": False,
+                    "save_best_design_plots": False,
+                },
+            }
+            context = {
+                "selector": selector,
+                "output_dir": output_dir,
+                "config_schema_version": run_optimizer.CONFIG_SCHEMA_VERSION,
+                "config_schema_status": run_optimizer.CONFIG_SCHEMA_STATUS_EXPLICIT,
+            }
+            runtime_info = {"warnings": ["runtime warning"], "estimated_seconds": 0.0}
+            linear_results = {"ranked": [candidate], "evaluation_count": 1}
+            robust_results = {"ranked": [], "selected_count": 0}
+            nonlinear_results = {"ranked": [], "selected_count": 0}
+
+            payload = runner.finalize(
+                linear_results=linear_results,
+                robust_results=robust_results,
+                nonlinear_results=nonlinear_results,
+                runtime_info=runtime_info,
+                config=config,
+                context=context,
+                runtime_actual_seconds=0.0,
+                runtime_wall_started=time.perf_counter(),
+            )
+
+            summary_json = json.loads((output_dir / "optimizer_summary.json").read_text(encoding="utf-8"))
+            summary_yaml = yaml.safe_load((output_dir / "optimizer_summary.yaml").read_text(encoding="utf-8"))
+            self.assertEqual(summary_json["warnings"], payload["warnings"])
+            self.assertEqual(summary_yaml["warnings"], payload["warnings"])
+            self.assertEqual(summary_json["exports"], payload["exports"])
+            self.assertEqual(summary_yaml["exports"], payload["exports"])
+            self.assertEqual(payload["warnings"], ["runtime warning", "best warning"])
+            for key in ("summary_json", "summary_yaml", "top20_csv", "interpretation_txt"):
+                with self.subTest(export_key=key):
+                    self.assertIn(key, payload["exports"])
+                    self.assertTrue(Path(payload["exports"][key]).exists())
+            self.assertIn("runtime_actual_seconds", summary_json)
+            self.assertIn("runtime_wall_seconds", summary_json)
+            self.assertGreaterEqual(summary_json["runtime_wall_seconds"], 0.0)
+            self.assertTrue((output_dir / "post_run_interpretation.txt").exists())
+
     def test_finalize_payload_covers_minimal_report_v1_contract(self) -> None:
         runner = run_optimizer.OptimizerRunner()
         selector = mock.Mock()
@@ -619,7 +733,7 @@ class RunOptimizerCliTests(unittest.TestCase):
         robust_results = {"ranked": [], "selected_count": 0}
         nonlinear_results = {"ranked": [], "selected_count": 0}
 
-        with mock.patch.object(runner, "_export_results", return_value={"output_dir": "results"}) as export_mock:
+        with mock.patch.object(runner, "_export_results", return_value=({"output_dir": "results"}, None)) as export_mock:
             payload = runner.finalize(
                 linear_results=linear_results,
                 robust_results=robust_results,
