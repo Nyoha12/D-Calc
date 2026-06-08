@@ -6,7 +6,8 @@ from pathlib import Path
 import numpy as np
 
 from didgeridoo_optimizer.acoustics.air import AirProperties
-from didgeridoo_optimizer.acoustics.losses import attenuation_alpha, complex_wavenumber
+from didgeridoo_optimizer.acoustics.losses import LegacyBetaLossModel, attenuation_alpha, complex_wavenumber
+from didgeridoo_optimizer.acoustics.transfer_matrix import lossy_characteristic_impedance
 from didgeridoo_optimizer.geometry.builders import DesignBuilder
 from didgeridoo_optimizer.materials.models import AcousticParameter, Material
 from didgeridoo_optimizer.materials.variants import MaterialVariantGenerator
@@ -76,6 +77,40 @@ class MaterialLossesInvariantTests(unittest.TestCase):
 
     def _omega(self) -> np.ndarray:
         return 2.0 * np.pi * np.asarray([80.0, 160.0, 320.0, 640.0], dtype=float)
+
+    def _legacy_loss_model_materials(self) -> list[Material]:
+        return [
+            self._material(
+                "legacy_sourced_losses",
+                beta=1.4,
+                wall_loss=0.0,
+                porosity_leak=0.0,
+                beta_status="sourced",
+                wall_loss_status="sourced",
+                porosity_status="sourced",
+                beta_confidence="high",
+                wall_loss_confidence="high",
+                porosity_confidence="high",
+            ),
+            self._material(
+                "legacy_inferred_losses",
+                beta=3.2,
+                wall_loss=0.02,
+                porosity_leak=0.01,
+                beta_status="sourced",
+                wall_loss_status="inferred",
+                porosity_status="sourced",
+            ),
+            self._material(
+                "legacy_to_calibrate_losses",
+                beta=4.8,
+                wall_loss=0.03,
+                porosity_leak=0.02,
+                beta_status="to_calibrate",
+                wall_loss_status="sourced",
+                porosity_status="inferred",
+            ),
+        ]
 
     def _design_for_material(self, material_id: str):
         return DesignBuilder().build(
@@ -167,6 +202,79 @@ class MaterialLossesInvariantTests(unittest.TestCase):
         np.testing.assert_allclose(np.real(k_high), omega / air.c)
         self.assertTrue(np.all(np.imag(k_high) <= 0.0))
         self.assertTrue(np.all(np.abs(np.imag(k_high)) > np.abs(np.imag(k_low))))
+
+    def test_legacy_beta_loss_model_matches_attenuation_alpha(self) -> None:
+        model = LegacyBetaLossModel()
+        omega = self._omega()
+
+        for material in self._legacy_loss_model_materials():
+            for diameter_m in (0.02, 0.035, 0.06):
+                with self.subTest(material=material.id, diameter_m=diameter_m):
+                    np.testing.assert_array_equal(
+                        model.alpha_total(omega, diameter_m, material),
+                        attenuation_alpha(omega, diameter_m, material),
+                    )
+
+    def test_legacy_beta_loss_model_matches_complex_wavenumber(self) -> None:
+        model = LegacyBetaLossModel()
+        omega = self._omega()
+        airs = [
+            None,
+            AirProperties(rho=1.18, c=331.0, temperature_c=5.0, humidity_percent=30.0),
+        ]
+
+        for material in self._legacy_loss_model_materials():
+            for diameter_m in (0.02, 0.035, 0.06):
+                for air in airs:
+                    with self.subTest(material=material.id, diameter_m=diameter_m, air=air):
+                        np.testing.assert_array_equal(
+                            model.k_complex(omega, diameter_m, material, air),
+                            complex_wavenumber(omega, diameter_m, material, air),
+                        )
+
+    def test_legacy_beta_loss_model_matches_lossy_characteristic_impedance(self) -> None:
+        model = LegacyBetaLossModel()
+        omega = self._omega()
+        zc_nominal = np.asarray([1.0e6, 1.2e6, 1.4e6, 1.6e6], dtype=float)
+        air = AirProperties(rho=1.18, c=331.0, temperature_c=5.0, humidity_percent=30.0)
+
+        for material in self._legacy_loss_model_materials():
+            for diameter_m in (0.02, 0.035, 0.06):
+                with self.subTest(material=material.id, diameter_m=diameter_m):
+                    alpha = attenuation_alpha(omega, diameter_m, material)
+                    np.testing.assert_array_equal(
+                        model.zc_complex(zc_nominal, omega, diameter_m, material, air),
+                        lossy_characteristic_impedance(zc_nominal, omega, alpha, air),
+                    )
+
+    def test_legacy_beta_loss_model_result_components_and_provenance_do_not_promote(self) -> None:
+        model = LegacyBetaLossModel()
+        omega = self._omega()
+        material = self._material(
+            "legacy_unpromoted_losses",
+            beta=3.0,
+            wall_loss=0.02,
+            porosity_leak=0.01,
+            beta_status="to_calibrate",
+            wall_loss_status="sourced",
+            porosity_status="inferred",
+        )
+
+        result = model.evaluate(omega, 0.03, material, 1.0e6)
+
+        self.assertEqual(result.provenance_status, "to_calibrate")
+        self.assertEqual(result.warnings, ())
+        self.assertEqual(len(result.components), 1)
+        component = result.components[0]
+        self.assertEqual(component.name, "legacy_beta")
+        self.assertEqual(component.provenance_status, "to_calibrate")
+        self.assertEqual(component.warnings, ())
+        np.testing.assert_array_equal(component.alpha, result.alpha_total)
+
+        non_promotion_text = " ".join(result.warnings + component.warnings + component.notes).lower()
+        self.assertNotIn("accepted", non_promotion_text)
+        self.assertNotIn("promoted", non_promotion_text)
+        self.assertNotIn("patch_accepted", non_promotion_text)
 
     def test_high_losses_warning_follows_current_thresholds(self) -> None:
         below_threshold = self._material(
