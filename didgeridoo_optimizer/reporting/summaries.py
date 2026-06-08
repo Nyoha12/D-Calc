@@ -184,6 +184,7 @@ def summarize_post_run_interpretation(
         "\n".join(
             [
                 "Metric status",
+                "- Le score agrege utilise uniquement les objectifs actives dans la configuration ; certains scores additionnels peuvent etre fournis a titre diagnostique.",
                 "- f0, peaks et Q sont des métriques calculées par le modèle.",
                 "- brightness, backpressure, toot, harmonicity et odd/even sont des proxy, pas des garanties de qualité ou de jouabilité.",
                 "- odd_only_score dépend du nombre de pics conservés par la détection ; il doit être lu prudemment si peu de pics sont disponibles.",
