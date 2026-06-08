@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 from typing import Any, Mapping, Sequence
 
+from .objectives import active_objective_weights
 from .pareto import ParetoOptimizer
 
 
@@ -45,8 +46,13 @@ class FinalSelector:
 
     def _coerce_candidate(self, candidate: Mapping[str, Any], config: Mapping[str, Any]) -> dict[str, Any]:
         objectives_cfg = dict(config.get("objectives", {}) or {})
+        active_weights = active_objective_weights(config)
         if "normalized_objectives" in candidate:
-            normalized = {str(k): self._clip01(float(v)) for k, v in dict(candidate.get("normalized_objectives", {}) or {}).items()}
+            normalized = {
+                str(k): self._clip01(float(v))
+                for k, v in dict(candidate.get("normalized_objectives", {}) or {}).items()
+                if str(k) in active_weights
+            }
             result = dict(candidate)
             result["normalized_objectives"] = normalized
             result["aggregate_score"] = float(candidate.get("aggregate_score", float(dict(candidate.get("result", {}) or {}).get("aggregate_score", 0.0))))
@@ -57,9 +63,9 @@ class FinalSelector:
         result_map = dict(candidate.get("result", candidate) or {})
         objective_scores = dict(result_map.get("objective_scores", {}) or {})
         normalized = {
-            name: self._clip01(float(score))
+            str(name): self._clip01(float(score))
             for name, score in objective_scores.items()
-            if bool(dict(objectives_cfg.get(name, {}) or {}).get("enabled", True))
+            if str(name) in active_weights
         }
         return {
             **dict(candidate),
@@ -80,10 +86,15 @@ class FinalSelector:
             return sum(objectives.values()) / max(len(objectives), 1) + 0.1 * float(candidate.get("aggregate_score", 0.0))
         total_weight = 0.0
         weighted = 0.0
+        active_weights = active_objective_weights({"objectives": objectives_cfg})
         for name, value in objectives.items():
-            weight = float(dict(objectives_cfg.get(name, {}) or {}).get("weight", 1.0))
+            weight = float(active_weights.get(name, 0.0))
+            if weight <= 0.0:
+                continue
             weighted += weight * value
             total_weight += weight
+        if total_weight <= 0.0:
+            return float(candidate.get("aggregate_score", float("-inf")))
         return weighted / max(total_weight, 1e-9)
 
     def _minimax_score(self, candidate: Mapping[str, Any]) -> float:

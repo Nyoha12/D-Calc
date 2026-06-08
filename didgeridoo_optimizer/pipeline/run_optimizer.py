@@ -12,7 +12,15 @@ from typing import Any, Mapping, Sequence, TextIO
 import yaml
 
 from ..materials import MaterialDatabase
-from ..optimization import FinalSelector, ParetoOptimizer, RuntimeEstimator, SearchSpace, aggregate_score
+from ..optimization import (
+    FinalSelector,
+    ParetoOptimizer,
+    RuntimeEstimator,
+    SearchSpace,
+    active_objective_weights,
+    aggregate_score,
+    objective_config_warnings,
+)
 from ..reporting.export import (
     export_best_design_bundle,
     export_csv_scores,
@@ -112,7 +120,7 @@ class OptimizerRunner:
         for candidate in selected:
             robust_result = robustness_pipeline.evaluate(candidate["result"], config, materials)
             robust_result = self._refresh_aggregate_score(robust_result, config)
-            updated_candidates.append(self._candidate_with_updated_result(candidate, robust_result))
+            updated_candidates.append(self._candidate_with_updated_result(candidate, robust_result, config))
         ranked = rank(updated_candidates, config)
         return {
             "selected_count": len(selected),
@@ -138,7 +146,7 @@ class OptimizerRunner:
         for candidate in selected:
             nonlinear_result = nonlinear_pipeline.evaluate(candidate["result"], config, materials_path)
             nonlinear_result = self._refresh_aggregate_score(nonlinear_result, config)
-            updated_candidates.append(self._candidate_with_updated_result(candidate, nonlinear_result))
+            updated_candidates.append(self._candidate_with_updated_result(candidate, nonlinear_result, config))
         ranked = rank(updated_candidates, config)
         return {
             "selected_count": len(selected),
@@ -169,7 +177,7 @@ class OptimizerRunner:
         final_output_count = int(dict((config or {}).get("optimization", {}) or {}).get("final_output_count", 20))
         top_n = selector.rank_top_n(ranked_final, final_output_count, selector_method, config)
         ranked_top_n = rank(top_n, config)
-        warnings = self._collect_warnings(runtime_info, best_candidate)
+        warnings = self._collect_warnings(runtime_info, best_candidate, config)
         exports, runtime_wall_seconds = self._export_results(
             config,
             context,
@@ -243,7 +251,7 @@ class OptimizerRunner:
         output_dir = self._resolve_output_dir(config_file, config, create=False)
 
         errors: list[str] = []
-        warnings: list[str] = []
+        warnings: list[str] = objective_config_warnings(config)
         if not materials_exists:
             errors.append(f"Material database not found: {materials_path}")
         if not variant_rules_exists:
@@ -350,13 +358,23 @@ class OptimizerRunner:
                 return item.resolve()
         return (config_file.parent / candidate).resolve() if not candidate.is_absolute() else candidate
 
-    def _candidate_with_updated_result(self, candidate: Mapping[str, Any], result: Mapping[str, Any]) -> dict[str, Any]:
+    def _candidate_with_updated_result(
+        self,
+        candidate: Mapping[str, Any],
+        result: Mapping[str, Any],
+        config: Mapping[str, Any],
+    ) -> dict[str, Any]:
         out = dict(candidate)
         out["result"] = dict(result)
         out["aggregate_score"] = float(result.get("aggregate_score", out.get("aggregate_score", float("-inf"))))
         out["valid"] = bool(result.get("valid", out.get("valid", False)))
         objective_scores = dict(result.get("objective_scores", {}) or {})
-        out["normalized_objectives"] = {name: self._clip01(float(score)) for name, score in objective_scores.items()}
+        active_weights = active_objective_weights(config)
+        out["normalized_objectives"] = {
+            str(name): self._clip01(float(score))
+            for name, score in objective_scores.items()
+            if str(name) in active_weights
+        }
         return out
 
     def _refresh_aggregate_score(self, result: Mapping[str, Any], config: Mapping[str, Any]) -> dict[str, Any]:
@@ -482,7 +500,7 @@ class OptimizerRunner:
             "warnings": (
                 [str(item) for item in warnings]
                 if warnings is not None
-                else self._collect_warnings(runtime_info, best_candidate)
+                else self._collect_warnings(runtime_info, best_candidate, config)
             ),
             "exports": dict(exports or {}),
         }
@@ -494,8 +512,10 @@ class OptimizerRunner:
         self,
         runtime_info: Mapping[str, Any],
         best_candidate: Mapping[str, Any],
+        config: Mapping[str, Any] | None = None,
     ) -> list[str]:
-        warnings: list[Any] = list(runtime_info.get("warnings", []) or [])
+        warnings: list[Any] = list(objective_config_warnings(config))
+        warnings.extend(runtime_info.get("warnings", []) or [])
         if best_candidate:
             warnings.extend(dict(best_candidate.get("result", best_candidate) or {}).get("warnings", []) or [])
         return list(dict.fromkeys(str(item) for item in warnings))

@@ -3,6 +3,8 @@ from __future__ import annotations
 import math
 from typing import Any, Callable, Mapping, Sequence
 
+from .objectives import active_objective_weights
+
 
 class ParetoOptimizer:
     """Simple MVP multi-objective optimizer with Pareto-front survival."""
@@ -143,13 +145,12 @@ class ParetoOptimizer:
 
     def _normalized_objectives(self, result: Mapping[str, Any], config: Mapping[str, Any]) -> dict[str, float]:
         objective_scores = dict(result.get("objective_scores", {}) or {})
-        objectives_cfg = dict(config.get("objectives", {}) or {})
+        weights = active_objective_weights(config)
         normalized: dict[str, float] = {}
         for name, score in objective_scores.items():
-            cfg = dict(objectives_cfg.get(name, {}) or {})
-            if not bool(cfg.get("enabled", True)):
+            if str(name) not in weights:
                 continue
-            normalized[name] = self._clip01(float(score))
+            normalized[str(name)] = self._clip01(float(score))
         return normalized
 
     def _rank_candidates(self, evaluated: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:

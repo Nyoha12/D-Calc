@@ -12,6 +12,7 @@ from unittest import mock
 
 import yaml
 
+from didgeridoo_optimizer.optimization.objectives import aggregate_score
 from didgeridoo_optimizer.pipeline import run_optimizer
 from didgeridoo_optimizer.reporting.summaries import summarize_design, summarize_post_run_interpretation
 
@@ -320,6 +321,7 @@ class RunOptimizerCliTests(unittest.TestCase):
                 "garantie de jouabilité",
                 "promotion matériau",
                 "proxy",
+                "score agrege utilise uniquement les objectifs actives",
                 "advisory",
             ]
             for fragment in expected_fragments:
@@ -369,6 +371,51 @@ class RunOptimizerCliTests(unittest.TestCase):
             self.assertIn("Runtime wall seconds", interpretation)
             self.assertIn("hors startup CLI", interpretation)
             self.assertFalse((output_dir / "pareto_overview.png").exists())
+
+    def test_starter_run_keeps_robustness_scores_diagnostic_when_not_configured(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            output_dir = tmp_path / "starter_output"
+            env = dict(os.environ)
+            env["MPLCONFIGDIR"] = str(tmp_path / "mplconfig")
+
+            result = self._run_cli(
+                "--config",
+                str(REPO_ROOT / "project_specs" / "CONFIG_STARTER_EXAMPLE.yaml"),
+                "--output-dir",
+                str(output_dir),
+                env=env,
+                timeout=60,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            payload = json.loads(result.stdout)
+            summary_path = output_dir / "optimizer_summary.json"
+            summary = json.loads(summary_path.read_text(encoding="utf-8"))
+            best_result = summary["best_design"]["result"]
+            best_id = best_result["design_id"]
+            matching_linear = [
+                item["result"]
+                for item in summary["linear_results"]["ranked"]
+                if item["result"]["design_id"] == best_id
+            ]
+
+            self.assertTrue(matching_linear)
+            self.assertNotIn("beginner_robustness", summary["config"]["objectives"])
+            self.assertNotIn("expert_robustness", summary["config"]["objectives"])
+            self.assertIn("beginner_robustness", best_result["objective_scores"])
+            self.assertIn("expert_robustness", best_result["objective_scores"])
+            self.assertAlmostEqual(best_result["aggregate_score"], matching_linear[0]["aggregate_score"])
+            self.assertAlmostEqual(
+                best_result["aggregate_score"],
+                aggregate_score(best_result["objective_scores"], best_result["penalties"], summary["config"]),
+            )
+            self.assertEqual(summary["warnings"], payload["warnings"])
+            self.assertIn("runtime_wall_seconds", summary)
+            for key in ("summary_json", "summary_yaml", "top20_csv", "interpretation_txt"):
+                with self.subTest(export_key=key):
+                    self.assertIn(key, summary["exports"])
+            self.assertTrue((output_dir / "post_run_interpretation.txt").exists())
 
     def test_full_cli_can_skip_best_design_pngs_without_disabling_bundle(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -635,7 +682,7 @@ class RunOptimizerCliTests(unittest.TestCase):
                     "design_id": "candidate-1",
                     "aggregate_score": 0.75,
                     "valid": True,
-                    "objective_scores": {"pitch": 0.75},
+                    "objective_scores": {"drone_f0": 0.75},
                     "features": {
                         "f0_hz": 62.5,
                         "peak_count": 6,
@@ -665,7 +712,7 @@ class RunOptimizerCliTests(unittest.TestCase):
                     "final_output_count": 1,
                     "final_selector": "weighted_sum",
                 },
-                "objectives": {"pitch": {"enabled": True}},
+                "objectives": {"drone_f0": {"enabled": True}},
                 "reporting": {
                     "save_json_summary": True,
                     "save_yaml_summary": True,

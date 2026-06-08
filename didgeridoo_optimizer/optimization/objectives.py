@@ -5,11 +5,68 @@ from typing import Any, Mapping
 from ..geometry.models import Design
 
 
+LINEAR_OBJECTIVE_NAMES = frozenset(
+    {
+        "drone_f0",
+        "impedance_peaks",
+        "peak_quality_Q",
+        "harmonicity",
+        "backpressure",
+        "radiation_brightness",
+        "exit_hf_radiation",
+        "toot",
+        "fabrication_simplicity",
+        "material_simplicity",
+        "beginner_robustness",
+        "expert_robustness",
+    }
+)
+INJECTED_OBJECTIVE_NAMES = frozenset({"nonlinear_threshold", "nonlinear_stability"})
+SUPPORTED_OBJECTIVE_NAMES = LINEAR_OBJECTIVE_NAMES | INJECTED_OBJECTIVE_NAMES
+UNKNOWN_ENABLED_OBJECTIVE_WARNING_PREFIX = "unknown_enabled_objective"
+
+
+def active_objective_weights(config: Mapping[str, Any] | None) -> dict[str, float]:
+    objectives = dict((config or {}).get("objectives", {}) or {})
+    active: dict[str, float] = {}
+    for raw_name, objective_cfg in objectives.items():
+        name = str(raw_name)
+        cfg = dict(objective_cfg or {})
+        if not bool(cfg.get("enabled", False)):
+            continue
+        weight = float(cfg.get("weight", 1.0))
+        if weight <= 0.0 or name not in SUPPORTED_OBJECTIVE_NAMES:
+            continue
+        active[name] = weight
+    return active
+
+
+def unknown_enabled_objectives(config: Mapping[str, Any] | None) -> list[str]:
+    objectives = dict((config or {}).get("objectives", {}) or {})
+    unknown: list[str] = []
+    for raw_name, objective_cfg in objectives.items():
+        name = str(raw_name)
+        cfg = dict(objective_cfg or {})
+        if bool(cfg.get("enabled", False)) and name not in SUPPORTED_OBJECTIVE_NAMES:
+            unknown.append(name)
+    return sorted(unknown)
+
+
+def objective_config_warnings(config: Mapping[str, Any] | None) -> list[str]:
+    return [
+        f"{UNKNOWN_ENABLED_OBJECTIVE_WARNING_PREFIX}:{name}"
+        for name in unknown_enabled_objectives(config)
+    ]
+
+
 def score_objectives(features: Mapping[str, Any], design: Design, config: Mapping[str, Any] | None) -> dict[str, float]:
     objectives = dict((config or {}).get("objectives", {}) or {})
     scores: dict[str, float] = {}
-    for name, objective_cfg in objectives.items():
+    for raw_name, objective_cfg in objectives.items():
+        name = str(raw_name)
         if not bool(dict(objective_cfg or {}).get("enabled", False)):
+            continue
+        if name not in LINEAR_OBJECTIVE_NAMES:
             continue
         cfg = dict(objective_cfg or {})
         if name == "drone_f0":
@@ -73,7 +130,7 @@ def score_objectives(features: Mapping[str, Any], design: Design, config: Mappin
             q = float(features.get("fundamental_q") or 0.0)
             value = max(0.0, min(1.0, 0.5 * confidence + 0.5 * min(q / 20.0, 1.0)))
         else:
-            value = 0.0
+            continue
         scores[name] = float(value)
     return scores
 
@@ -115,11 +172,14 @@ def penalties(design: Design, features: Mapping[str, Any], config: Mapping[str, 
 
 
 def aggregate_score(objective_scores: Mapping[str, float], penalties_map: Mapping[str, float], config: Mapping[str, Any] | None) -> float:
-    objectives = dict((config or {}).get("objectives", {}) or {})
+    active_weights = active_objective_weights(config)
     weighted_sum = 0.0
     total_weight = 0.0
-    for name, score in objective_scores.items():
-        weight = float(dict(objectives.get(name, {}) or {}).get("weight", 1.0))
+    for raw_name, score in objective_scores.items():
+        name = str(raw_name)
+        if name not in active_weights:
+            continue
+        weight = active_weights[name]
         weighted_sum += weight * float(score)
         total_weight += weight
     normalized = weighted_sum / total_weight if total_weight > 0.0 else 0.0
