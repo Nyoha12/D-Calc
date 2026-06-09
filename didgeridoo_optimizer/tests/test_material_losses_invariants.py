@@ -7,8 +7,17 @@ import numpy as np
 
 from didgeridoo_optimizer.acoustics.air import AirProperties
 from didgeridoo_optimizer.acoustics.losses import LegacyBetaLossModel, attenuation_alpha, complex_wavenumber
-from didgeridoo_optimizer.acoustics.transfer_matrix import lossy_characteristic_impedance
+from didgeridoo_optimizer.acoustics.radiation import radiation_impedance
+from didgeridoo_optimizer.acoustics.transfer_matrix import (
+    area_from_diameter,
+    characteristic_impedance,
+    input_impedance,
+    lossy_characteristic_impedance,
+    propagate_impedance_uniform_segment,
+)
 from didgeridoo_optimizer.geometry.builders import DesignBuilder
+from didgeridoo_optimizer.geometry.models import Design
+from didgeridoo_optimizer.materials.database import MaterialDatabase
 from didgeridoo_optimizer.materials.models import AcousticParameter, Material
 from didgeridoo_optimizer.materials.variants import MaterialVariantGenerator
 from didgeridoo_optimizer.pipeline.evaluate_linear import LinearEvaluationPipeline
@@ -128,6 +137,95 @@ class MaterialLossesInvariantTests(unittest.TestCase):
             }
         )
 
+    def _strict_equivalence_designs(self, material_id: str) -> list[Design]:
+        builder = DesignBuilder()
+        return [
+            builder.build(
+                {
+                    "id": f"loss_model_cylinder_{material_id}",
+                    "segments": [
+                        {
+                            "kind": "cylinder",
+                            "length_cm": 110.0,
+                            "d_in_cm": 3.2,
+                            "d_out_cm": 3.2,
+                            "material_id": material_id,
+                        }
+                    ],
+                }
+            ),
+            builder.build(
+                {
+                    "id": f"loss_model_cone_{material_id}",
+                    "segments": [
+                        {
+                            "kind": "cone",
+                            "length_cm": 125.0,
+                            "d_in_cm": 2.8,
+                            "d_out_cm": 7.0,
+                            "material_id": material_id,
+                        }
+                    ],
+                }
+            ),
+            builder.build(
+                {
+                    "id": f"loss_model_conical_bell_12_{material_id}",
+                    "segments": [
+                        {
+                            "kind": "cylinder",
+                            "length_cm": 120.0,
+                            "d_in_cm": 3.8,
+                            "d_out_cm": 3.8,
+                            "material_id": material_id,
+                        },
+                        {
+                            "kind": "flare_conical",
+                            "length_cm": 20.0,
+                            "d_in_cm": 3.8,
+                            "d_out_cm": 12.0,
+                            "material_id": material_id,
+                        },
+                    ],
+                }
+            ),
+        ]
+
+    def _old_input_impedance_reference(
+        self,
+        freq_hz: np.ndarray,
+        design: Design,
+        materials: MaterialDatabase | dict[str, Material],
+        air: AirProperties,
+    ) -> np.ndarray:
+        freq = np.asarray(freq_hz, dtype=float)
+        omega = 2.0 * np.pi * freq
+        if freq.ndim != 1:
+            raise ValueError("freq_hz must be a 1D sequence.")
+        if not design.segments:
+            return np.zeros_like(freq, dtype=complex)
+
+        material_lookup = materials.materials if isinstance(materials, MaterialDatabase) else materials
+        exit_radius_m = max(float(design.segments[-1].d_out_cm) / 200.0, 1e-9)
+        z_load = radiation_impedance(omega, exit_radius_m, air)
+
+        for segment in reversed(design.segments):
+            material = (
+                materials.get(segment.material_id)
+                if isinstance(materials, MaterialDatabase)
+                else material_lookup[segment.material_id]
+            )
+            diameter_m = max(float(segment.average_diameter_cm) / 100.0, 1e-9)
+            length_m = max(float(segment.length_cm) / 100.0, 1e-12)
+            area_m2 = area_from_diameter(diameter_m)
+            zc_nominal = characteristic_impedance(air.rho, air.c, area_m2)
+            alpha = attenuation_alpha(omega, diameter_m, material)
+            zc = lossy_characteristic_impedance(zc_nominal, omega, alpha, air)
+            k = complex_wavenumber(omega, diameter_m, material, air)
+            z_load = propagate_impedance_uniform_segment(z_load, zc, k, length_m)
+
+        return np.asarray(z_load, dtype=complex)
+
     def _warnings_for_material(self, material: Material) -> list[str]:
         return LinearEvaluationPipeline()._build_warnings(
             self._design_for_material(material.id),
@@ -246,6 +344,58 @@ class MaterialLossesInvariantTests(unittest.TestCase):
                         model.zc_complex(zc_nominal, omega, diameter_m, material, air),
                         lossy_characteristic_impedance(zc_nominal, omega, alpha, air),
                     )
+
+    def test_legacy_beta_loss_model_evaluate_matches_legacy_helpers(self) -> None:
+        model = LegacyBetaLossModel()
+        omega = self._omega()
+        zc_nominal = np.asarray([1.0e6, 1.2e6, 1.4e6, 1.6e6], dtype=float)
+        air = AirProperties(rho=1.18, c=331.0, temperature_c=5.0, humidity_percent=30.0)
+
+        for material in self._legacy_loss_model_materials():
+            for diameter_m in (0.02, 0.035, 0.06):
+                with self.subTest(material=material.id, diameter_m=diameter_m):
+                    alpha = attenuation_alpha(omega, diameter_m, material)
+                    result = model.evaluate(omega, diameter_m, material, zc_nominal, air)
+
+                    np.testing.assert_array_equal(result.alpha_total, alpha)
+                    np.testing.assert_array_equal(
+                        result.k_complex,
+                        complex_wavenumber(omega, diameter_m, material, air),
+                    )
+                    np.testing.assert_array_equal(
+                        result.zc_complex,
+                        lossy_characteristic_impedance(zc_nominal, omega, alpha, air),
+                    )
+
+    def test_input_impedance_loss_model_route_matches_old_direct_helpers_for_material_dict(self) -> None:
+        air = AirProperties(rho=1.18, c=331.0, temperature_c=5.0, humidity_percent=30.0)
+        freq_hz = np.asarray([55.0, 80.0, 110.0, 220.5, 440.0, 880.0, 1760.0], dtype=float)
+        material = self._material(
+            "strict_dict_loss_route",
+            beta=3.7,
+            wall_loss=0.025,
+            porosity_leak=0.015,
+        )
+        materials = {material.id: material}
+
+        for design in self._strict_equivalence_designs(material.id):
+            with self.subTest(design=design.id):
+                actual = input_impedance(freq_hz, design, materials, air)
+                expected = self._old_input_impedance_reference(freq_hz, design, materials, air)
+
+                np.testing.assert_allclose(actual, expected, rtol=0.0, atol=0.0)
+
+    def test_input_impedance_loss_model_route_matches_old_direct_helpers_for_material_database(self) -> None:
+        air = AirProperties(rho=1.204, c=343.0, temperature_c=20.0, humidity_percent=50.0)
+        freq_hz = np.asarray([45.0, 90.0, 135.0, 270.0, 540.0, 1080.0, 2160.0], dtype=float)
+        materials = MaterialDatabase.from_yaml(REPO_ROOT / "project_specs" / "materials_base_v1.yaml")
+
+        for design in self._strict_equivalence_designs("pvc_pressure"):
+            with self.subTest(design=design.id):
+                actual = input_impedance(freq_hz, design, materials, air)
+                expected = self._old_input_impedance_reference(freq_hz, design, materials, air)
+
+                np.testing.assert_allclose(actual, expected, rtol=0.0, atol=0.0)
 
     def test_legacy_beta_loss_model_result_components_and_provenance_do_not_promote(self) -> None:
         model = LegacyBetaLossModel()
