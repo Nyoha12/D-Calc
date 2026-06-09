@@ -10,6 +10,17 @@ from .air import AirProperties
 
 
 DEFAULT_AIR = AirProperties(rho=1.204, c=343.0, temperature_c=20.0, humidity_percent=50.0)
+COMPONENT_V2_EXPERIMENTAL_COMPONENT_NAMES = (
+    "air_thermoviscous",
+    "wall_damping",
+    "surface_roughness",
+    "porosity_leak",
+    "wall_compliance_reactive",
+)
+COMPONENT_V2_EXPERIMENTAL_WARNING = (
+    "component_v2_experimental is an internal experimental skeleton; "
+    "components are inferred/to_calibrate placeholders and are not validation evidence."
+)
 
 
 @dataclass(frozen=True)
@@ -118,6 +129,83 @@ class LegacyBetaLossModel:
             zc_complex=_lossy_characteristic_impedance(zc_nominal, omega, alpha, air),
             components=(component,),
             provenance_status=provenance_status,
+        )
+
+
+class ComponentV2ExperimentalLossModel:
+    """Internal skeleton for a future componentized loss model.
+
+    The model deliberately preserves legacy propagation values while exposing
+    placeholder components for calibration work. It is not a public config
+    option and must not be treated as a validated physical model.
+    """
+
+    name = "component_v2_experimental"
+    component_names = COMPONENT_V2_EXPERIMENTAL_COMPONENT_NAMES
+
+    def __init__(self, legacy_model: LegacyBetaLossModel | None = None) -> None:
+        self._legacy_model = legacy_model or LegacyBetaLossModel()
+
+    def evaluate(
+        self,
+        omega: float | np.ndarray,
+        diameter_m: float,
+        material: Material,
+        zc_nominal: float | np.ndarray,
+        air: AirProperties | None = None,
+    ) -> LossResult:
+        alpha = self._legacy_model.alpha_total(omega, diameter_m, material)
+        zero_alpha = np.zeros_like(alpha, dtype=float)
+        component_warning = (
+            "Experimental component placeholder; status is to_calibrate/inferred and no calibration is claimed.",
+        )
+        components = (
+            LossComponent(
+                name="air_thermoviscous",
+                alpha=zero_alpha.copy(),
+                provenance_status="to_calibrate",
+                notes=("Stub only; no air thermoviscous formula is implemented.",),
+                warnings=component_warning,
+            ),
+            LossComponent(
+                name="wall_damping",
+                alpha=alpha,
+                provenance_status="inferred",
+                notes=(
+                    "Legacy beta aggregate passthrough for numerical compatibility; "
+                    "not a physical wall damping component split.",
+                ),
+                warnings=component_warning,
+            ),
+            LossComponent(
+                name="surface_roughness",
+                alpha=zero_alpha.copy(),
+                provenance_status="to_calibrate",
+                notes=("Stub only; no surface roughness formula is implemented.",),
+                warnings=component_warning,
+            ),
+            LossComponent(
+                name="porosity_leak",
+                alpha=zero_alpha.copy(),
+                provenance_status="to_calibrate",
+                notes=("Stub only; no component-v2 porosity leak formula is implemented.",),
+                warnings=component_warning,
+            ),
+            LossComponent(
+                name="wall_compliance_reactive",
+                alpha=zero_alpha.copy(),
+                provenance_status="to_calibrate",
+                notes=("Reactive placeholder only; not injected into alpha_total.",),
+                warnings=component_warning,
+            ),
+        )
+        return LossResult(
+            alpha_total=alpha,
+            k_complex=self._legacy_model.k_complex(omega, diameter_m, material, air),
+            zc_complex=self._legacy_model.zc_complex(zc_nominal, omega, diameter_m, material, air),
+            components=components,
+            provenance_status="to_calibrate",
+            warnings=(COMPONENT_V2_EXPERIMENTAL_WARNING,),
         )
 
 
