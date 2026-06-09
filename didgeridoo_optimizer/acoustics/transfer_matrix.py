@@ -9,11 +9,12 @@ from ..geometry.models import Design, Segment
 from ..materials.database import MaterialDatabase
 from ..materials.models import Material
 from .air import AirProperties
-from .losses import attenuation_alpha, complex_wavenumber
+from .losses import LegacyBetaLossModel
 from .radiation import radiation_impedance
 
 
 DEFAULT_AIR = AirProperties(rho=1.204, c=343.0, temperature_c=20.0, humidity_percent=50.0)
+DEFAULT_LOSS_MODEL = LegacyBetaLossModel()
 
 
 def area_from_diameter(diameter_m: float) -> float:
@@ -88,10 +89,13 @@ def input_impedance(
         length_m = max(float(segment.length_cm) / 100.0, 1e-12)
         area_m2 = area_from_diameter(diameter_m)
         zc_nominal = characteristic_impedance(air.rho, air.c, area_m2)
-        alpha = attenuation_alpha(omega, diameter_m, material)
-        zc = lossy_characteristic_impedance(zc_nominal, omega, alpha, air)
-        k = complex_wavenumber(omega, diameter_m, material, air)
-        z_load = propagate_impedance_uniform_segment(z_load, zc, k, length_m)
+        loss_result = DEFAULT_LOSS_MODEL.evaluate(omega, diameter_m, material, zc_nominal, air)
+        z_load = propagate_impedance_uniform_segment(
+            z_load,
+            loss_result.zc_complex,
+            loss_result.k_complex,
+            length_m,
+        )
 
     return np.asarray(z_load, dtype=complex)
 
