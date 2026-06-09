@@ -5,8 +5,16 @@ from pathlib import Path
 
 import numpy as np
 
+import didgeridoo_optimizer.acoustics.transfer_matrix as transfer_matrix_module
 from didgeridoo_optimizer.acoustics.air import AirProperties
-from didgeridoo_optimizer.acoustics.losses import LegacyBetaLossModel, attenuation_alpha, complex_wavenumber
+from didgeridoo_optimizer.acoustics.losses import (
+    COMPONENT_V2_EXPERIMENTAL_COMPONENT_NAMES,
+    ComponentV2ExperimentalLossModel,
+    LegacyBetaLossModel,
+    LossResult,
+    attenuation_alpha,
+    complex_wavenumber,
+)
 from didgeridoo_optimizer.acoustics.radiation import radiation_impedance
 from didgeridoo_optimizer.acoustics.transfer_matrix import (
     area_from_diameter,
@@ -425,6 +433,83 @@ class MaterialLossesInvariantTests(unittest.TestCase):
         self.assertNotIn("accepted", non_promotion_text)
         self.assertNotIn("promoted", non_promotion_text)
         self.assertNotIn("patch_accepted", non_promotion_text)
+
+    def test_component_v2_experimental_loss_model_skeleton_is_legacy_compatible(self) -> None:
+        model = ComponentV2ExperimentalLossModel()
+        omega = self._omega()
+        zc_nominal = np.asarray([1.0e6, 1.2e6, 1.4e6, 1.6e6], dtype=float)
+        air = AirProperties(rho=1.18, c=331.0, temperature_c=5.0, humidity_percent=30.0)
+        material = self._material(
+            "component_v2_experimental_fixture",
+            beta=3.0,
+            wall_loss=0.02,
+            porosity_leak=0.01,
+            beta_status="sourced",
+            wall_loss_status="sourced",
+            porosity_status="sourced",
+        )
+
+        result = model.evaluate(omega, 0.03, material, zc_nominal, air)
+
+        self.assertIsInstance(result, LossResult)
+        self.assertEqual(model.name, "component_v2_experimental")
+        self.assertEqual(
+            tuple(component.name for component in result.components),
+            COMPONENT_V2_EXPERIMENTAL_COMPONENT_NAMES,
+        )
+        self.assertEqual(result.provenance_status, "to_calibrate")
+        self.assertTrue(any("experimental" in warning.lower() for warning in result.warnings))
+        self.assertTrue(any("to_calibrate" in warning.lower() for warning in result.warnings))
+        self.assertTrue(np.all(np.isfinite(result.alpha_total)))
+        self.assertTrue(np.all(np.isfinite(result.k_complex)))
+        self.assertTrue(np.all(np.isfinite(result.zc_complex)))
+        np.testing.assert_array_equal(result.alpha_total, attenuation_alpha(omega, 0.03, material))
+        np.testing.assert_array_equal(result.k_complex, complex_wavenumber(omega, 0.03, material, air))
+        np.testing.assert_array_equal(
+            result.zc_complex,
+            lossy_characteristic_impedance(zc_nominal, omega, result.alpha_total, air),
+        )
+
+    def test_component_v2_experimental_components_are_not_promoted_or_sourced(self) -> None:
+        model = ComponentV2ExperimentalLossModel()
+        omega = self._omega()
+        material = self._material(
+            "component_v2_not_promoted",
+            beta=3.0,
+            wall_loss=0.02,
+            porosity_leak=0.01,
+            beta_status="sourced",
+            wall_loss_status="sourced",
+            porosity_status="sourced",
+        )
+
+        result = model.evaluate(omega, 0.03, material, 1.0e6)
+        components_by_name = {component.name: component for component in result.components}
+
+        self.assertEqual(set(components_by_name), set(COMPONENT_V2_EXPERIMENTAL_COMPONENT_NAMES))
+        for component in result.components:
+            with self.subTest(component=component.name):
+                self.assertIn(component.provenance_status, {"inferred", "to_calibrate"})
+                self.assertNotEqual(component.provenance_status, "sourced")
+                self.assertTrue(component.warnings)
+                self.assertTrue(np.all(np.isfinite(component.alpha)))
+                non_promotion_text = " ".join(component.warnings + component.notes).lower()
+                self.assertNotIn("calibrated", non_promotion_text)
+                self.assertNotIn("accepted", non_promotion_text)
+                self.assertNotIn("promoted", non_promotion_text)
+                self.assertNotIn("patch_accepted", non_promotion_text)
+        np.testing.assert_array_equal(
+            components_by_name["wall_compliance_reactive"].alpha,
+            np.zeros_like(result.alpha_total, dtype=float),
+        )
+        self.assertTrue(
+            any("not injected into alpha_total" in note for note in components_by_name["wall_compliance_reactive"].notes)
+        )
+
+    def test_transfer_matrix_default_loss_model_remains_legacy_beta(self) -> None:
+        self.assertIsInstance(transfer_matrix_module.DEFAULT_LOSS_MODEL, LegacyBetaLossModel)
+        self.assertNotIsInstance(transfer_matrix_module.DEFAULT_LOSS_MODEL, ComponentV2ExperimentalLossModel)
+        self.assertEqual(transfer_matrix_module.DEFAULT_LOSS_MODEL.name, "legacy_beta")
 
     def test_high_losses_warning_follows_current_thresholds(self) -> None:
         below_threshold = self._material(
