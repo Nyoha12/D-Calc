@@ -597,6 +597,7 @@ def _build_argument_parser() -> argparse.ArgumentParser:
         description="Run the D-Calc optimizer from an explicit YAML config path.",
     )
     parser.add_argument("--config", required=True, help="Path to the optimizer YAML config.")
+    parser.add_argument("--design", help="Physical design YAML/JSON path, resolved from caller cwd; evaluate once linearly.")
     parser.add_argument(
         "--output-dir",
         help="Optional output directory override. Relative paths are resolved like project.output_dir.",
@@ -645,6 +646,14 @@ def main(argv: Sequence[str] | None = None, *, stdout: TextIO | None = None, std
     runner = OptimizerRunner()
 
     try:
+        if args.design is not None:
+            from .fixed_design import run_fixed_design
+
+            payload = run_fixed_design(
+                args.config, args.design, dry_run=args.dry_run, output_dir_override=args.output_dir,
+            )
+            _print_json(payload, out)
+            return 0
         if args.dry_run:
             payload = runner.dry_run(args.config, output_dir_override=args.output_dir)
             _print_json(payload, out)
