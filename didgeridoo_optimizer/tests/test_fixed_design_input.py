@@ -158,3 +158,105 @@ def test_analysis_defaults_and_explicit_values():
     effective = validate_analysis(minimal_config())
     assert effective["frequency_analysis"]["n_points"] == 128
     assert effective["environment"]["air_density_kg_m3"] == 1.204
+
+
+def ambiguous_design_text(suffix, level="metadata"):
+    """Raw text keeps duplicate/nontext keys intact until the DESIGN reader."""
+    segment = '{"kind":"cylinder","length_cm":100,"d_in_cm":3,"d_out_cm":3,"material_id":"pvc_pressure"}'
+    if suffix == "json":
+        if level == "top":
+            return '{"segments":[' + segment + '],"id":"first","id":"second"}'
+        if level == "segment":
+            return '{"segments":[' + segment.replace('"length_cm":100', '"length_cm":100,"length_cm":140') + ']}'
+        if level == "profile_params":
+            segment = segment.replace('"cylinder"', '"flare_exponential"').replace('}', ',"profile_params":{"flare_parameter":2,"flare_parameter":3}}')
+            return '{"segments":[' + segment + ']}'
+        return '{"segments":[' + segment + '],"metadata":{"nested":[{"note":"first","note":"second"}]}}'
+    base = yaml.safe_dump(minimal_design(), sort_keys=False)
+    if level == "top":
+        return base + "id: second\n"
+    if level == "segment":
+        return base.replace("  length_cm: 100.0", "  length_cm: 100.0\n  length_cm: 140.0")
+    if level == "profile_params":
+        return base.replace("kind: cylinder", "kind: flare_exponential") + "  profile_params:\n    flare_parameter: 2\n    flare_parameter: 3\n"
+    return base + "metadata:\n  nested:\n    - note: first\n      note: second\n"
+
+
+@pytest.mark.parametrize("suffix", ["yaml", "json"])
+@pytest.mark.parametrize("level,key", [("top", "id"), ("segment", "length_cm"), ("profile_params", "flare_parameter"), ("metadata", "note")])
+def test_r7_explicit_duplicate_keys_rejected(tmp_path, materials, suffix, level, key):
+    path = tmp_path / f"duplicate.{suffix}"
+    text = ambiguous_design_text(suffix, level)
+    path.write_text(text, encoding="utf-8")
+    with pytest.raises(ValueError) as caught:
+        load_design(path, materials, minimal_config())
+    message = str(caught.value)
+    assert str(path) in message and key in message and "duplicate" in message.lower()
+    assert path.read_text(encoding="utf-8") == text
+
+
+@pytest.mark.parametrize("metadata,field", [
+    ({"observations": {1: "first", "1": "second"}}, "design.metadata.observations"),
+    ({"nested": [{"inside": {False: "boolean key"}}]}, "design.metadata.nested[0].inside"),
+    ({"nested": [None, float("nan")]}, "design.metadata.nested[1]"),
+    ({"nested": [{"value": float("inf")}]}, "design.metadata.nested[0].value"),
+    ({"nested": [set([1])]}, "design.metadata.nested[0]"),
+    ({"nested": [b"bytes"]}, "design.metadata.nested[0]"),
+    ({"nested": [(1, 2)]}, "design.metadata.nested[0]"),
+])
+def test_r7_recursive_annotation_errors(materials, metadata, field):
+    raw = minimal_design()
+    raw["metadata"] = metadata
+    with pytest.raises(ValueError) as caught:
+        validate_design(raw, materials, minimal_config())
+    assert field in str(caught.value)
+
+
+def test_r7_cycles_rejected_but_shared_aliases_preserved(tmp_path, materials):
+    base = yaml.safe_dump(minimal_design())
+    path = tmp_path / "aliases.yaml"
+    path.write_text(base + "metadata:\n  shared: &shared [null, {note: intact}]\n  again: *shared\n", encoding="utf-8")
+    _, design = load_design(path, materials, minimal_config())
+    assert design.metadata["shared"] == design.metadata["again"] == [None, {"note": "intact"}]
+    path.write_text(base + "metadata:\n  cycle: &cycle [*cycle]\n", encoding="utf-8")
+    with pytest.raises(ValueError) as caught:
+        load_design(path, materials, minimal_config())
+    assert "design.metadata.cycle[0]" in str(caught.value) and "cycl" in str(caught.value).lower()
+    recursive = {}
+    recursive["self"] = recursive
+    raw = minimal_design()
+    raw["metadata"] = {"mapping": recursive}
+    with pytest.raises(ValueError) as caught:
+        validate_design(raw, materials, minimal_config())
+    assert "design.metadata.mapping.self" in str(caught.value) and "cycl" in str(caught.value).lower()
+
+
+@pytest.mark.parametrize("annotation", [
+    "  observations:\n    1: first\n    true: second\n",
+    "  observations:\n    - {1: first, '1': second}\n",
+    "  base: &base {note: first}\n  observations: {<<: *base, note: second}\n",
+])
+def test_r7_yaml_rejects_nontext_keys_before_collapse_and_merge_keys(tmp_path, materials, annotation):
+    path = tmp_path / "ambiguous.yaml"
+    path.write_text(yaml.safe_dump(minimal_design()) + "metadata:\n" + annotation, encoding="utf-8")
+    with pytest.raises(ValueError) as caught:
+        load_design(path, materials, minimal_config())
+    assert str(path) in str(caught.value)
+    assert "key" in str(caught.value).lower() or "merge" in str(caught.value).lower()
+
+
+@pytest.mark.parametrize("key", ["!!str [a, b]", "!!str {a: b}"])
+def test_r7_yaml_nonscalar_string_tagged_key_reports_field(tmp_path, materials, key):
+    path = tmp_path / "invalid_key.yaml"
+    path.write_text(yaml.safe_dump(minimal_design()) + f"metadata:\n  ? {key}\n  : annotation\n", encoding="utf-8")
+    with pytest.raises(ValueError) as caught:
+        load_design(path, materials, minimal_config())
+    assert str(path) in str(caught.value)
+    assert "design.metadata" in str(caught.value) and "key" in str(caught.value).lower()
+
+
+def test_r7_quoted_yaml_merge_spelling_is_an_ordinary_annotation(tmp_path, materials):
+    path = tmp_path / "quoted_key.yaml"
+    path.write_text(yaml.safe_dump(minimal_design()) + "metadata: {'<<': literal text}\n", encoding="utf-8")
+    _, design = load_design(path, materials, minimal_config())
+    assert design.metadata["<<"] == "literal text"

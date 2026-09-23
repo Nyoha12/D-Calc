@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import shutil
 import subprocess
 import sys
 from contextlib import ExitStack
@@ -18,7 +19,7 @@ from didgeridoo_optimizer.pipeline.evaluate_linear import LinearEvaluationPipeli
 from didgeridoo_optimizer.pipeline.fixed_design import load_fixed_context, run_fixed_design
 from didgeridoo_optimizer.reporting.fixed_design import prepare_payload
 from didgeridoo_optimizer.reporting.export import _to_builtin
-from didgeridoo_optimizer.tests.test_fixed_design_input import REPO_ROOT, minimal_config, minimal_design
+from didgeridoo_optimizer.tests.test_fixed_design_input import REPO_ROOT, ambiguous_design_text, minimal_config, minimal_design
 
 
 @pytest.fixture
@@ -268,3 +269,155 @@ def test_real_module_cli_end_to_end(inputs, tmp_path, suffix):
     assert response["ok"] and response["workflow"] == "linear_fixed_design"
     assert Path(response["exports"]["result_json"]).is_file()
     assert "RuntimeWarning" not in proc.stderr
+
+
+def test_r7_f1_real_material_database_api_no_annotation_loss(inputs):
+    """Before the fix, exercise the real API and expose two keys becoming one."""
+    text = yaml.safe_dump(minimal_design()) + "metadata:\n  observations:\n    1: premiere observation\n    '1': seconde observation\n"
+    inputs[1].write_text(text, encoding="utf-8")
+    try:
+        context = load_fixed_context(*inputs)
+    except ValueError as exc:
+        assert "observations" in str(exc) and "key" in str(exc).lower()
+        return  # Corrected boundary rejects before any acoustic call.
+    from didgeridoo_optimizer.materials import MaterialDatabase
+    assert isinstance(context["material_db"], MaterialDatabase)
+    result = LinearEvaluationPipeline().evaluate(context["design"], context["config"], context["material_db"])
+    original = result["design"].metadata["observations"]
+    exported = prepare_payload(result, context)["result"]["design"]["metadata"]["observations"]
+    assert len(original) == 2
+    assert exported == original, f"real MaterialDatabase/API: accepted {original!r}, exported {exported!r}"
+
+
+@pytest.mark.parametrize("dry_run", [False, True])
+@pytest.mark.parametrize("suffix,case", [
+    ("yaml", "nontext"), ("yaml", "cycle"), ("yaml", "nonfinite"), ("yaml", "unsupported"),
+    ("yaml", "merge"),
+    *[(suffix, level) for suffix in ("yaml", "json") for level in ("top", "segment", "profile_params", "metadata")],
+])
+def test_r7_ambiguous_input_cli_fails_before_acoustics_or_output(inputs, tmp_path, suffix, case, dry_run):
+    base = yaml.safe_dump(minimal_design())
+    annotations = {
+        "nontext": "observations: {1: first, '1': second}",
+        "cycle": "cycle: &cycle [*cycle]",
+        "nonfinite": "values: [null, .inf]",
+        "unsupported": "date: 2026-09-23",
+        "merge": "base: &base {note: first}\n  copy: {<<: *base, note: second}",
+    }
+    text = base + "metadata:\n  " + annotations[case] + "\n" if case in annotations else ambiguous_design_text(suffix, case)
+    design_path = tmp_path / f"invalid.{suffix}"
+    design_path.write_text(text, encoding="utf-8")
+    before = {p: p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()}
+    with forbidden_phases(), patch.object(LinearEvaluationPipeline, "evaluate", side_effect=AssertionError("acoustics")) as evaluate:
+        code, out, err = call_cli((inputs[0], design_path), "--output-dir", tmp_path / "new/output", *(["--dry-run"] if dry_run else []))
+    assert code == 1 and not out and "error:" in err
+    if case in {"top", "segment", "profile_params", "metadata"}:
+        assert "duplicate" in err.lower()
+    evaluate.assert_not_called()
+    assert not (tmp_path / "new").exists()
+    assert {p: p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()} == before
+
+
+@pytest.mark.parametrize("suffix", ["yaml", "json"])
+def test_r7_valid_annotations_exactly_preserved_in_both_exports(inputs, tmp_path, suffix):
+    raw = minimal_design()
+    metadata = {"observations": {"1": "first", "01": "second"}, "nested": [None, [True, 3, 1.25, {"note": "intact"}]]}
+    raw["metadata"] = metadata
+    path = tmp_path / f"annotated.{suffix}"
+    text = yaml.safe_dump(raw) if suffix == "yaml" else json.dumps(raw)
+    path.write_text(text, encoding="utf-8")
+    result = run_fixed_design(inputs[0], path, output_dir_override=tmp_path / "annotations")
+    for key in ("result_json", "result_yaml"):
+        exported = yaml.safe_load(Path(result["exports"][key]).read_text(encoding="utf-8"))
+        for design_key in ("design", "analysis_design"):
+            annotations = exported["result"][design_key]["metadata"]
+            for name, value in metadata.items():
+                assert annotations[name] == value
+    assert path.read_text(encoding="utf-8") == text
+
+
+def _fixture_git(root, *args):
+    proc = subprocess.run(["git", "-c", "core.longpaths=true", "-C", str(root), *args], capture_output=True, text=True, check=True, timeout=15)
+    return proc.stdout.strip()
+
+
+def _copy_fixture_package(root):
+    for source in (REPO_ROOT / "didgeridoo_optimizer").rglob("*.py"):
+        if source.name.startswith("test_"):
+            continue  # Retain tests.validation_cases used by the runtime imports.
+        destination = root / source.relative_to(REPO_ROOT)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, destination)
+
+
+def _init_fixture_repository(root):
+    root.mkdir()
+    _fixture_git(root, "init")
+    (root / "README").write_text("Local test repository only\n", encoding="utf-8")
+    _fixture_git(root, "add", "README")
+
+
+def _fixture_commit(root):
+    _fixture_git(root, "-c", "user.name=R7 Test", "-c", "user.email=r7-test@example.invalid", "-c", "commit.gpgsign=false", "commit", "-m", "local provenance fixture")
+    return _fixture_git(root, "rev-parse", "HEAD")
+
+
+def _source_from_copied_package(root):
+    proc = subprocess.run(
+        [sys.executable, "-c", "import json; from didgeridoo_optimizer.pipeline.fixed_design import _software_source; print(json.dumps(_software_source()))"],
+        cwd=root, capture_output=True, text=True, check=True, timeout=30,
+    )
+    return json.loads(proc.stdout)
+
+
+def test_r7_software_clean_dirty_and_real_worktree(tmp_path):
+    root = tmp_path / "tracked_repo"
+    _init_fixture_repository(root)
+    _copy_fixture_package(root)
+    _fixture_git(root, "add", "didgeridoo_optimizer")
+    head = _fixture_commit(root)
+    clean = _source_from_copied_package(root)
+    assert clean["sha"] == head and clean["working_tree_dirty"] is False
+    source = root / "didgeridoo_optimizer/pipeline/design_input.py"
+    source.write_text(source.read_text(encoding="utf-8") + "\n# uncommitted fixture change\n", encoding="utf-8")
+    dirty = _source_from_copied_package(root)
+    assert dirty["sha"] == head and dirty["working_tree_dirty"] is True
+    worktree = tmp_path / "fixture_worktree"
+    _fixture_git(root, "worktree", "add", "--detach", str(worktree), head)
+    assert (worktree / ".git").is_file()
+    provenance = _source_from_copied_package(worktree)
+    assert provenance["sha"] == head and provenance["working_tree_dirty"] is False
+
+
+@pytest.mark.parametrize("placement", ["nested_ignored", "root_untracked", "root_ignored", "partly_tracked"])
+def test_r7_software_rejects_foreign_parent_or_untracked_source(tmp_path, placement):
+    root = tmp_path / "foreign_repo"
+    _init_fixture_repository(root)
+    package_root = root / "copied-package" if placement == "nested_ignored" else root
+    _copy_fixture_package(package_root)
+    if placement in {"nested_ignored", "root_ignored"}:
+        (root / ".gitignore").write_text("copied-package/\ndidgeridoo_optimizer/\n", encoding="utf-8")
+        _fixture_git(root, "add", ".gitignore")
+    if placement == "partly_tracked":
+        _fixture_git(root, "add", "didgeridoo_optimizer/pipeline/fixed_design.py")
+    head = _fixture_commit(root)
+    provenance = _source_from_copied_package(package_root)
+    assert provenance["sha"] is None, f"Unrelated HEAD {head} was attributed to {placement}: {provenance}"
+    assert provenance["working_tree_dirty"] is None
+    assert "could not be established" in provenance["origin"]
+
+
+@pytest.mark.parametrize("error", [OSError("missing git"), subprocess.CalledProcessError(128, ["git"]), subprocess.TimeoutExpired(["git"], 5)])
+def test_r7_software_git_failure_is_nonfatal(inputs, error):
+    with patch("didgeridoo_optimizer.pipeline.fixed_design.subprocess.run", side_effect=error):
+        response = run_fixed_design(*inputs, dry_run=True)
+    assert response["ok"] and response["provenance"]["software"]["sha"] is None
+
+
+def test_r7_unavailable_git_does_not_prevent_real_evaluation(inputs, tmp_path):
+    with patch("didgeridoo_optimizer.pipeline.fixed_design.subprocess.run", side_effect=OSError("git unavailable")):
+        response = run_fixed_design(*inputs, output_dir_override=tmp_path / "without_git")
+    assert response["ok"]
+    payload = json.loads(Path(response["exports"]["result_json"]).read_text(encoding="utf-8"))
+    assert len(payload["result"]["zin"]) == 128
+    assert payload["provenance"]["software"]["sha"] is None

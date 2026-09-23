@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -25,11 +26,32 @@ def _software_source() -> dict[str, Any]:
             return subprocess.run(
                 ["git", "-C", str(root), *args], check=True, capture_output=True, text=True, timeout=5,
             ).stdout.strip()
+        if Path(git("rev-parse", "--show-toplevel")).resolve() != root:
+            raise ValueError("the package root is not the Git worktree root")
+        # Inspect actual loaded D-Calc modules, not similarly named files guessed
+        # under the checkout. This also rejects a mixture of installation roots.
+        paths = {Path(__file__).resolve()}
+        for name, module in tuple(sys.modules.items()):
+            if name == "didgeridoo_optimizer" or name.startswith("didgeridoo_optimizer."):
+                source = getattr(module, "__file__", None)
+                if source is None:
+                    raise ValueError(f"source path unavailable for {name}")
+                paths.add(Path(source).resolve())
+        relative_paths = []
+        for path in sorted(paths):
+            if path.suffix != ".py" or not path.is_file():
+                raise ValueError("loaded Python source files could not be established")
+            relative_paths.append(path.relative_to(root).as_posix())
+        tracked = set(git("ls-files", "-z", "--error-unmatch", "--", *relative_paths).split("\0"))
+        if not set(relative_paths) <= tracked:
+            raise ValueError("loaded source files are not all tracked in this worktree")
         head = git("rev-parse", "--verify", "HEAD")
         dirty = bool(git("status", "--porcelain"))
-        return {"sha": head, "origin": "git HEAD of installed source checkout", "working_tree_dirty": dirty}
-    except (OSError, subprocess.SubprocessError):
-        return {"sha": None, "origin": "Git source revision could not be established", "working_tree_dirty": None}
+        return {"sha": head, "origin": "git HEAD of verified worktree with tracked loaded D-Calc sources", "working_tree_dirty": dirty}
+    except (OSError, subprocess.SubprocessError, ValueError) as exc:
+        # No remote query, checkout mutation or opportunistic parent-repo SHA.
+        reason = str(exc) if isinstance(exc, ValueError) else "Git or source-file checks failed"
+        return {"sha": None, "origin": f"Git source revision could not be established: {reason}", "working_tree_dirty": None}
 
 
 def load_fixed_context(config_path: str | Path, design_path: str | Path, *, output_dir_override: str | Path | None = None) -> dict[str, Any]:

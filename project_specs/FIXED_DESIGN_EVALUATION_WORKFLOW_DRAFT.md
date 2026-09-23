@@ -1,6 +1,8 @@
 ﻿# FIXED-01 — fixed-design linear evaluation contract
 
 Implemented locally for R5 (23 September 2026), replacing the earlier workflow draft.
+R7 tightens DESIGN ambiguity/annotation checks and software-source attribution;
+the acoustic calculation and generic exporters are unchanged.
 The code and tests are authoritative. This workflow supplies no experimental validation
 or material promotion.
 
@@ -52,9 +54,25 @@ linear discretizer does not implement them. Profile keys follow existing consume
 `throat_diameter_cm` for mouthpiece (positive); `flare_parameter` for flares, plus
 `power` for flare_powerlaw (finite; existing discretizer and validator retain their
 own policy). Other profile keys, segment keys and top-level keys are rejected.
-Extra annotations belong in `metadata`, which must contain finite JSON-compatible
-values. Metadata is preserved as annotation, not trusted as an acoustic outlet.
+Extra annotations belong in `metadata`. Every nested mapping, including mappings
+inside lists, must have textual keys. Values are mappings, lists, strings, booleans,
+integers, finite floats or null; tuples, dates, sets, bytes and nonfinite values are
+rejected with field paths. Keys are never coerced to strings: YAML keys `1` and
+`"1"` cannot silently lose an annotation during export. Lists, nulls and valid
+annotations are preserved. Cycles are rejected; shared acyclic aliases are allowed.
+Metadata is preserved as annotation, not trusted as an acoustic outlet.
 The builder still computes its derived total length.
+
+R7 explicitly adds rejection of duplicate keys at every DESIGN level in both
+YAML and JSON (this was not an explicit R5 rule). YAML node inspection occurs
+before constructing dictionaries, so nontext keys such as `1` and `true` cannot
+collapse first. YAML merge directives (`<<`) are rejected even when a particular
+merge would not collide: write explicit unique keys instead. An ordinary quoted
+textual `"<<"` annotation key is allowed. Parsing retains `SafeLoader` semantics;
+Python object tags are never executed. JSON object-pair checks reject duplicates
+inside nested objects and lists. Errors identify the source file and key or field;
+YAML key diagnostics also give a line. Config/material readers keep their existing
+policies; these stricter rules apply only to DESIGN.
 
 `metadata.is_discretized` truthy is rejected: supply the physical profile, not an
 `analysis_design`. A mesh whose provenance was removed cannot be recognized reliably.
@@ -119,10 +137,17 @@ and JSON/YAML exporters are reused without modifying their optimizer contracts.
 Provenance records resolved config, design, material database and optional variant
 rules paths, SHA-256 fingerprints and whether the files were read. Fingerprints are
 checked before/after loading; a changing input is rejected. Missing optional rules
-have `sha256: null`, `read: false` and a reason. Software SHA comes from a bounded
-Git query of the source checkout, with the working-tree dirty flag. If Git cannot
-establish it, SHA is null with an explicit origin; a dirty HEAD is not presented as
-an exact committed-source identity. No credentials or environment dump is exported.
+have `sha256: null`, `read: false` and a reason. Software SHA comes from bounded
+Git queries only after the resolved package root matches the Git worktree root and
+the actual loaded D-Calc Python source files are verified as tracked there. Git
+worktrees with a `.git` file are supported. Ignored/untracked copies below a foreign
+repository, partially tracked copies and mixed source roots do not inherit its HEAD.
+The whole-worktree dirty flag accompanies an established HEAD; a dirty HEAD is not
+an exact identity of uncommitted code. No remote identity or byte-for-byte identity
+of in-memory code is claimed by this membership check. If Git fails, files are not
+available as tracked Python sources or membership cannot be established, SHA and
+dirty are null with an explicit origin. This does not prevent an otherwise valid
+evaluation/export. No credentials or environment dump is exported.
 
 The summary states that `valid` is not experimental validation, Zin = p/U in
 Pa.s/m³ is input acoustic impedance (not static pressure, played FFT or input-output
@@ -142,6 +167,18 @@ Real module CLI subprocesses run both YAML and JSON designs. Tests preserve inpu
 bytes, exercise valid=false, partial/unavailable diagnostics, nonfinite curves,
 misalignment, preflight failures and nonzero error exits. The unchanged historical
 CLI suite is replayed alongside the new tests.
+
+R7 regressions exercise nested nontext keys, exact annotation export, cycle versus
+alias handling, duplicate keys at every schema level, YAML merge refusal and
+dry-run/normal rejection before acoustics or output. Provenance fixtures create
+temporary local Git repositories and a detached worktree, covering clean/dirty
+sources, unrelated ignored/untracked copies, partially tracked packages and Git
+absence/failure; all Git operations stay in the test temporaries. Git-unavailable
+coverage also completes a real API evaluation and exports null software provenance.
+Before correction, F1 was reproduced with the real `MaterialDatabase` and linear
+API on the 128-point internal cylinder; accepted integer/textual keys collapsed
+during payload conversion. Exact regression sources and red/green logs are kept in
+`D-Calc-lab/batch-01/review-r7`, including any initial fixture setup failures.
 
 Local run logs and exact source/diff fingerprints are kept outside the worktree in
 `D-Calc-lab/batch-01/FIXED-01`; they are execution evidence, not physical validation.

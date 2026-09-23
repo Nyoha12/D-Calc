@@ -45,20 +45,97 @@ def _reject_json_constant(value: str) -> None:
     raise ValueError(f"design: non-standard JSON constant {value}")
 
 
+def _unique_json_mapping(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    data: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in data:
+            raise ValueError(f"design: duplicate key {key!r}")
+        data[key] = value
+    return data
+
+
+def _check_yaml_node(node: yaml.Node, field: str, ancestors: set[int]) -> None:
+    """Inspect keys before SafeLoader can collapse them or apply YAML merges."""
+    if id(node) in ancestors:
+        raise ValueError(f"{field}: cyclic YAML alias is not supported")
+    ancestors.add(id(node))
+    try:
+        if isinstance(node, yaml.MappingNode):
+            seen = set()
+            for key_node, value_node in node.value:
+                location = f"{field} (line {key_node.start_mark.line + 1})"
+                if key_node.tag == "tag:yaml.org,2002:merge":
+                    raise ValueError(f"{location}: YAML merge key << is not supported; write explicit unique keys")
+                if not isinstance(key_node, yaml.ScalarNode) or key_node.tag != "tag:yaml.org,2002:str":
+                    raise ValueError(f"{location}: mapping keys must be strings; got {key_node.value!r}")
+                key = key_node.value
+                if key in seen:
+                    raise ValueError(f"{location}: duplicate key {key!r}")
+                seen.add(key)
+                _check_yaml_node(value_node, f"{field}.{key}", ancestors)
+        elif isinstance(node, yaml.SequenceNode):
+            for index, item in enumerate(node.value):
+                _check_yaml_node(item, f"{field}[{index}]", ancestors)
+    finally:
+        ancestors.remove(id(node))  # A shared acyclic alias is not a cycle.
+
+
+def _load_yaml_design(text: str) -> Any:
+    loader = yaml.SafeLoader(text)
+    try:
+        node = loader.get_single_node()
+        if node is None:
+            return None
+        _check_yaml_node(node, "design", set())
+        return loader.construct_document(node)
+    finally:
+        loader.dispose()
+
+
+def _validate_annotations(value: Any, field: str, ancestors: set[int]) -> None:
+    """Validate without coercion, preserving keys, lists, nulls and alias values."""
+    if isinstance(value, (Mapping, list)):
+        if id(value) in ancestors:
+            raise ValueError(f"{field}: cyclic annotation reference is not supported")
+        ancestors.add(id(value))
+        try:
+            if isinstance(value, Mapping):
+                for key, item in value.items():
+                    if not isinstance(key, str):
+                        raise ValueError(f"{field}: mapping keys must be strings; got {key!r}")
+                    _validate_annotations(item, f"{field}.{key}", ancestors)
+            else:
+                for index, item in enumerate(value):
+                    _validate_annotations(item, f"{field}[{index}]", ancestors)
+        finally:
+            ancestors.remove(id(value))
+    elif value is None or isinstance(value, (str, bool, int)):
+        return
+    elif isinstance(value, float) and math.isfinite(value):
+        return
+    else:
+        raise ValueError(f"{field}: expected finite, JSON-compatible annotations (got {type(value).__name__})")
+
+
 def load_design(path: str | Path, materials: MaterialDatabase, config: Mapping[str, Any]) -> tuple[Path, Design]:
     # Unlike material/config helper resolution, an explicit design has no fallback.
     source = Path(path).resolve()
     try:
         text = source.read_text(encoding="utf-8-sig")
         if source.suffix.lower() == ".json":
-            raw = json.loads(text, parse_constant=_reject_json_constant)
+            raw = json.loads(text, parse_constant=_reject_json_constant, object_pairs_hook=_unique_json_mapping)
         elif source.suffix.lower() in {".yaml", ".yml"}:
-            raw = yaml.safe_load(text)
+            raw = _load_yaml_design(text)
         else:
             raise ValueError("design: expected a .yaml, .yml or .json file")
     except (yaml.YAMLError, json.JSONDecodeError) as exc:
         raise ValueError(f"design {source}: syntax error: {exc}") from exc
-    return source, validate_design(raw, materials, config)
+    except (ValueError, RecursionError) as exc:
+        raise ValueError(f"design {source}: {exc}") from exc
+    try:
+        return source, validate_design(raw, materials, config)
+    except (ValueError, RecursionError) as exc:
+        raise ValueError(f"design {source}: {exc}") from exc
 
 
 def validate_design(raw: Any, materials: MaterialDatabase, config: Mapping[str, Any]) -> Design:
@@ -70,10 +147,7 @@ def validate_design(raw: Any, materials: MaterialDatabase, config: Mapping[str, 
     metadata = _mapping(data.get("metadata", {}), "design.metadata")
     if metadata.get("is_discretized"):
         raise ValueError("design.metadata.is_discretized: supply a physical design, not an analysis_design mesh")
-    try:
-        json.dumps(metadata, allow_nan=False)
-    except (TypeError, ValueError, RecursionError) as exc:
-        raise ValueError("design.metadata: expected finite, JSON-compatible annotations") from exc
+    _validate_annotations(metadata, "design.metadata", set())
     segments = data.get("segments")
     if not isinstance(segments, list) or not segments:
         raise ValueError("design.segments: expected a non-empty list")
