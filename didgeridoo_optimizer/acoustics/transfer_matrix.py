@@ -10,7 +10,7 @@ from ..geometry.models import Design, Segment
 from ..materials.database import MaterialDatabase
 from ..materials.models import Material
 from .air import AirProperties
-from .losses import LegacyBetaLossModel
+from .losses import LegacyBetaLossModel, LossModel
 from .radiation import radiation_impedance
 
 
@@ -73,6 +73,7 @@ def input_impedance(
     air: AirProperties | None = None,
     *,
     exit_radius_m: float | None = None,
+    loss_model: LossModel | None = None,
 ) -> np.ndarray:
     """Return p/U at the inlet, with an optional physical radiation radius.
 
@@ -113,7 +114,7 @@ def input_impedance(
         length_m = max(float(segment.length_cm) / 100.0, 1e-12)
         area_m2 = area_from_diameter(diameter_m)
         zc_nominal = characteristic_impedance(air.rho, air.c, area_m2)
-        loss_result = DEFAULT_LOSS_MODEL.evaluate(omega, diameter_m, material, zc_nominal, air)
+        loss_result = (DEFAULT_LOSS_MODEL if loss_model is None else loss_model).evaluate(omega, diameter_m, material, zc_nominal, air)
         z_load = propagate_impedance_uniform_segment(
             z_load,
             loss_result.zc_complex,
