@@ -77,6 +77,21 @@ def test_separate_peak_phase_q_resolution_and_frequency_refinement():
     assert insufficient['frequency_phase_zero_hz'] is None and insufficient['unavailable_reason']
 
 
+def test_phase_definition_differs_from_magnitude_and_closed_dc_is_not_a_mode():
+    f=np.linspace(90,110,10001)
+    z=1/(1+1j*(f-100))+.2j
+    peak=tool.mode_metrics(f,z)
+    phase=tool.benchmark_modes(f,z)[0]
+    assert abs(peak['frequency_max_abs_hz']-phase['frequency_phase_zero_hz']) > .1
+    mat=tool.synthetic_material()
+    evaluate,_,_=tool.make_evaluator(tool.builtin_design('closed_cylinder'),{mat.id:mat},CK_DRY_25C,ZwikkerKostenLossModel(CK_DRY_25C),1,closed=True)
+    f=np.arange(.2,1400.,.2)
+    z=evaluate(f)
+    assert abs(z[0]) > max(abs(z[f>500]))
+    mode=tool.benchmark_modes(f,z)[0]
+    assert mode['q_half_power'] > 0 and mode['q_unavailable_reason'] is None
+
+
 def test_real_config_diagnostic_preserves_context_inputs_and_no_optimizer(tmp_path,monkeypatch):
     cp,dp = context_files(tmp_path)
     before = [p.read_bytes() for p in (cp,dp)]

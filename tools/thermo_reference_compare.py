@@ -398,6 +398,7 @@ def benchmark_modes(frequency, zin, *, max_modes=3):
         count = int(mask.sum())
         item = dict(mode_ordinal=ordinal+1, observed_window_samples=count, frequency_phase_zero_hz=None,
                     magnitude_at_phase_zero_pa_s_m3=None, q_half_power=None,
+                    q_unavailable_reason='Magnitude mode not bracketed',
                     method='linear phase / quadratic log-magnitude fit, +/-5 cents, >=11 samples')
         if count < 11:
             item['unavailable_reason'] = 'Fewer than 11 observations in +/-5-cent phase window'
@@ -411,8 +412,12 @@ def benchmark_modes(frequency, zin, *, max_modes=3):
                 logmag = np.polyfit(x,np.log(abs(zin[mask])),2)
                 item.update(frequency_phase_zero_hz=float(fzero),
                             magnitude_at_phase_zero_pa_s_m3=float(np.exp(np.polyval(logmag,fzero-guess))),unavailable_reason=None)
-        lo = 0 if ordinal == 0 else (int(crossing[ordinal-1])+int(index))//2
-        hi = len(frequency)-1 if ordinal+1 == len(crossing) else (int(index)+int(crossing[ordinal+1]))//2
+        # Closed-tube compliance diverges toward DC: the first mode must be
+        # bracketed by valleys rather than selecting the largest DC sample.
+        previous = 0 if ordinal == 0 else int(crossing[ordinal-1])+1
+        following = len(frequency)-1 if ordinal+1 == len(crossing) else int(crossing[ordinal+1])
+        lo = previous+int(np.argmin(abs(zin[previous:index+1])))
+        hi = int(index)+1+int(np.argmin(abs(zin[index+1:following+1])))
         ordinary = mode_metrics(frequency[lo:hi+1],zin[lo:hi+1])
         if ordinary:
             item['q_half_power'] = ordinary['q_half_power']
