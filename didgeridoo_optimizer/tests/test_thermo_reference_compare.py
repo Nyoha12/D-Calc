@@ -92,6 +92,123 @@ def test_phase_definition_differs_from_magnitude_and_closed_dc_is_not_a_mode():
     assert mode['q_half_power'] > 0 and mode['q_unavailable_reason'] is None
 
 
+@pytest.mark.parametrize('model', [LegacyBetaLossModel(), ZwikkerKostenLossModel(CK_DRY_25C)], ids=['legacy','zk'])
+def test_d1_closed_modes_survive_near_dc_and_lower_bound_change(model):
+    material=tool.synthetic_material()
+    evaluate,_,_=tool.make_evaluator(tool.builtin_design('closed_cylinder'),{material.id:material},CK_DRY_25C,model,1.,closed=True)
+    by_lower_bound=[]
+    for lower,points in ((.2,15000),(40.,14801)):
+        frequency=np.linspace(lower,3000.,points)
+        zin=evaluate(frequency)
+        magnitude=abs(zin)
+        candidates=np.flatnonzero((magnitude[1:-1]>magnitude[:-2]) & (magnitude[1:-1]>=magnitude[2:]))+1
+        assert len(candidates) == 3
+        rows=tool.extract_modes(evaluate,frequency,zin,max_modes=3)
+        print('D1',model.name,'f_min',lower,'candidates',frequency[candidates].tolist(),
+              'rows',[(row['mode_ordinal'],row.get('status'),row['frequency_max_abs_hz']) for row in rows])
+        by_lower_bound.append((frequency,candidates,rows))
+    for frequency,candidates,rows in by_lower_bound:
+        assert [row['mode_ordinal'] for row in rows] == [1,2,3]
+        for row,index in zip(rows,candidates,strict=True):
+            assert row['status'] == 'resolved' and row['unavailable_reason'] is None
+            assert row['candidate_frequency_hz'] == frequency[index]
+            assert all(level['status']=='resolved' for level in row['frequency_refinement'])
+            assert abs(row['frequency_max_abs_hz']-frequency[index]) <= row['step_hz']+(frequency[1]-frequency[0])
+    first,second=[item[2][0] for item in by_lower_bound]
+    # A conservative numerical-resolution bound: one of the actual finest
+    # local grid intervals, not an empirical or claimed sub-bin precision.
+    assert abs(first['frequency_max_abs_hz']-second['frequency_max_abs_hz']) <= max(first['step_hz'],second['step_hz'])
+    assert first['resonant_phase_zero_hz'] != first['frequency_max_abs_hz']
+
+
+def test_d1_unequal_neighbour_does_not_replace_candidate_or_max_modes_boundary():
+    def response(f):
+        return (1+np.exp(-((f-100)/.5)**2)+20*np.exp(-((f-110)/3)**2)).astype(complex)
+    f=np.linspace(90,125,141)
+    rows=tool.extract_modes(response,f,response(f),max_modes=2)
+    assert [row['mode_ordinal'] for row in rows] == [1,2]
+    for row,centre in zip(rows,(100.,110.),strict=True):
+        assert row['status']=='resolved'
+        for level in row['frequency_refinement']:
+            assert level['status']=='resolved' and abs(level['frequency_max_abs_hz']-centre)<.05
+    only_first=tool.extract_modes(response,f,response(f),max_modes=1)[0]
+    assert only_first['bracket_hz']==rows[0]['bracket_hz']
+    assert only_first['frequency_max_abs_hz']==rows[0]['frequency_max_abs_hz']
+
+
+def test_d1_refinement_keeps_anchor_when_a_missed_stronger_neighbour_appears():
+    def response(f):
+        return (1+np.exp(-((f-100)/2)**2)+100*np.exp(-((f-105.25)/.025)**2)).astype(complex)
+    f=np.arange(90.,116.)  # Narrow neighbour deliberately missed by survey.
+    rows=tool.extract_modes(response,f,response(f),refinement_points=(2001,4001))
+    assert len(rows)==1 and rows[0]['mode_ordinal']==1
+    assert rows[0]['status']=='resolved'
+    for level in rows[0]['frequency_refinement']:
+        assert level['status']=='resolved' and abs(level['frequency_max_abs_hz']-100)<.02
+
+
+def test_d1_unresolved_levels_are_explicit_and_never_reuse_stale_metrics():
+    f=np.linspace(80,120,81)
+    zin=1/(1+1j*(f-100))
+    calls=[]
+    def response(grid):
+        calls.append(len(grid))
+        # Controlled failure of resolution, without a nonfinite acoustic result.
+        return 1/(1+1j*(grid-100)) if len(calls)==1 else np.ones(len(grid),dtype=complex)
+    row=tool.extract_modes(response,f,zin,refinement_points=(65,129))[0]
+    assert row['mode_ordinal']==1 and len(row['frequency_refinement'])==2
+    assert row['frequency_refinement'][0]['status']=='resolved'
+    assert row['frequency_refinement'][1]['status']=='unresolved'
+    assert row['status']=='unresolved' and row['unavailable_reason']
+    for key in ('frequency_max_abs_hz','magnitude_pa_s_m3','phase_rad','q_half_power','width_hz','resonant_phase_zero_hz'):
+        assert row[key] is None
+    assert row['q_unavailable_reason']
+    lost=tool.extract_modes(lambda grid:np.ones(len(grid),dtype=complex),f,zin)[0]
+    assert lost['status']=='unresolved' and lost['unavailable_reason']
+    assert len(lost['frequency_refinement'])==2
+    # Same analytic response at survey/refinement: three refinement samples
+    # genuinely miss the interior peak and place the largest value at a border.
+    def narrow(grid):
+        return 1/(1+1j*(grid-89.5))
+    underresolved=tool.extract_modes(narrow,f,narrow(f),refinement_points=(3,))[0]
+    assert underresolved['status']=='unresolved' and underresolved['unavailable_reason']
+    assert tool.extract_modes(lambda grid:pytest.fail('max_modes=0 evaluated'),f,zin,max_modes=0)==[]
+
+
+def test_d1_ambiguous_refined_candidates_do_not_choose_the_taller_peak():
+    def response(f):
+        return (1+np.exp(-((f-99.75)/.12)**2)+2*np.exp(-((f-100.25)/.12)**2)).astype(complex)
+    f=np.arange(95.,106.)
+    rows=tool.extract_modes(response,f,response(f))
+    assert len(rows)==1 and rows[0]['mode_ordinal']==1
+    assert rows[0]['status']=='unresolved'
+    assert 'ambiguous' in rows[0]['unavailable_reason'].lower()
+    assert rows[0]['frequency_max_abs_hz'] is None
+
+
+def test_d1_real_cli_near_dc_json_keeps_all_three_modes(tmp_path):
+    output=tmp_path/'d1-cli'
+    command=[sys.executable,'-B','-m','tools.thermo_reference_compare','--case','closed_cylinder',
+             '--air-reference','ck_dry25','--f-min','.2','--f-max','3000','--points','15000',
+             '--spatial-steps','1','--max-modes','3','--output-dir',str(output)]
+    result=subprocess.run(command,cwd=Path(__file__).resolve().parents[2],capture_output=True,text=True,timeout=45)
+    assert result.returncode==0,result.stderr+result.stdout
+    payload=json.loads((output/'thermo_comparison.json').read_text())
+    models=payload['cases'][0]['models']
+    for model in models:
+        rows=model['levels'][0]['modes']
+        print('D1 CLI',model['model'],[(row['mode_ordinal'],row.get('status'),row['frequency_max_abs_hz']) for row in rows])
+    for model in models:
+        level=model['levels'][0]
+        assert level['h_cm']==1 and len(level['frequency_hz'])==15000
+        rows=level['modes']
+        assert [row['mode_ordinal'] for row in rows]==[1,2,3]
+        assert all(row['status']=='resolved' and row['unavailable_reason'] is None for row in rows)
+        assert 900 < rows[0]['frequency_max_abs_hz'] < 1000
+        assert 1800 < rows[1]['frequency_max_abs_hz'] < 2000
+        assert 2800 < rows[2]['frequency_max_abs_hz'] < 3000
+
+
 def test_real_config_diagnostic_preserves_context_inputs_and_no_optimizer(tmp_path,monkeypatch):
     cp,dp = context_files(tmp_path)
     before = [p.read_bytes() for p in (cp,dp)]

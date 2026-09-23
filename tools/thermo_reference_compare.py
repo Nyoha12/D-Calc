@@ -140,22 +140,88 @@ def mode_metrics(freq, zin):
                 phase_zero_method='linear ImZ crossing; distinct from published +/-5-cent phase-fit protocol')
 
 
+def _local_maxima(magnitude):
+    return np.flatnonzero((magnitude[1:-1] > magnitude[:-2]) &
+                         (magnitude[1:-1] >= magnitude[2:]))+1
+
+
+def _candidate_bracket(magnitude, peaks, ordinal):
+    """Valleys between this candidate and its neighbours, including survey ends."""
+    index = int(peaks[ordinal])
+    previous = 0 if ordinal == 0 else int(peaks[ordinal-1])
+    following = len(magnitude)-1 if ordinal+1 == len(peaks) else int(peaks[ordinal+1])
+    lo = previous+int(np.argmin(magnitude[previous:index+1]))
+    hi = index+int(np.argmin(magnitude[index:following+1]))
+    return lo, hi
+
+
+def _unresolved_mode(reason):
+    return dict(status='unresolved', unavailable_reason=reason,
+                frequency_max_abs_hz=None, magnitude_pa_s_m3=None, phase_rad=None,
+                q_half_power=None, width_hz=None, q_unavailable_reason=reason,
+                resonant_phase_zero_hz=None,
+                phase_zero_method='linear ImZ crossing; distinct from published +/-5-cent phase-fit protocol')
+
+
 def extract_modes(evaluate, frequency, zin, *, max_modes=3, refinement_points=(1025, 2049)):
+    """Refine each survey candidate in its own basin without renumbering it.
+
+    Valleys use all survey candidates, including those beyond max_modes. The
+    original neighbouring samples anchor the candidate. Each refinement must
+    identify one local maximum whose sample cell overlaps that tracking interval
+    and whose fitted maximum remains inside it. Successful levels intersect the
+    interval with their neighbouring samples; ambiguous/missing peaks stay
+    explicit. The final row reflects the last level, never a stale success.
+    """
+    if max_modes == 0:
+        return []
+    refinement_points = tuple(refinement_points)
+    if not 1 <= len(refinement_points) <= 4 or any(
+        isinstance(points, (bool, np.bool_)) or not isinstance(points, (int, np.integer))
+        or not 3 <= points <= 100000 for points in refinement_points
+    ):
+        raise ValueError('Expected 1..4 refinement levels with 3..100000 points each')
     mag = np.abs(zin)
-    peaks = np.flatnonzero((mag[1:-1] > mag[:-2]) & (mag[1:-1] >= mag[2:]))+1
+    peaks = _local_maxima(mag)
     results = []
     for ordinal, index in enumerate(peaks[:max_modes]):
-        lo = 0 if ordinal == 0 else (int(peaks[ordinal-1])+int(index))//2
-        hi = len(frequency)-1 if ordinal+1 == len(peaks) else (int(index)+int(peaks[ordinal+1]))//2
+        lo, hi = _candidate_bracket(mag, peaks, ordinal)
+        tracking_lo, tracking_hi = float(frequency[index-1]), float(frequency[index+1])
         levels = []
         for points in refinement_points:
             local_f = np.linspace(frequency[lo], frequency[hi], points)
-            metrics = mode_metrics(local_f, evaluate(local_f))
-            if metrics is not None:
-                levels.append(dict(points=points, step_hz=float(local_f[1]-local_f[0]), **metrics))
-        if levels:
-            results.append(dict(mode_ordinal=ordinal+1, bracket_hz=[float(frequency[lo]), float(frequency[hi])],
-                                frequency_refinement=levels, **levels[-1]))
+            level = dict(points=int(points), step_hz=float(local_f[1]-local_f[0]),
+                         tracking_interval_hz=[tracking_lo, tracking_hi], metric_bracket_hz=None)
+            metrics = _unresolved_mode('Survey valleys do not bracket the candidate')
+            if lo < index < hi:
+                local_z = evaluate(local_f)
+                local_mag = np.abs(local_z)
+                refined = _local_maxima(local_mag)
+                eligible = refined[(local_f[refined+1] >= tracking_lo) &
+                                   (local_f[refined-1] <= tracking_hi)]
+                if len(eligible) != 1:
+                    reason = ('No refined local maximum overlaps the candidate tracking interval'
+                              if len(eligible) == 0 else
+                              'Ambiguous refined maxima overlap the candidate tracking interval')
+                    metrics = _unresolved_mode(reason)
+                else:
+                    selected = int(eligible[0])
+                    selected_ordinal = int(np.searchsorted(refined, selected))
+                    metric_lo, metric_hi = _candidate_bracket(local_mag, refined, selected_ordinal)
+                    level['metric_bracket_hz'] = [float(local_f[metric_lo]), float(local_f[metric_hi])]
+                    measured = mode_metrics(local_f[metric_lo:metric_hi+1], local_z[metric_lo:metric_hi+1])
+                    if measured is None:
+                        metrics = _unresolved_mode('Refined magnitude maximum is not interior to its valleys')
+                    elif not tracking_lo <= measured['frequency_max_abs_hz'] <= tracking_hi:
+                        metrics = _unresolved_mode('Refined peak estimate left the candidate tracking interval')
+                    else:
+                        metrics = dict(status='resolved', unavailable_reason=None, **measured)
+                        tracking_lo = max(tracking_lo, float(local_f[selected-1]))
+                        tracking_hi = min(tracking_hi, float(local_f[selected+1]))
+            levels.append(dict(**level, **metrics))
+        results.append(dict(mode_ordinal=ordinal+1, candidate_frequency_hz=float(frequency[index]),
+                            bracket_hz=[float(frequency[lo]), float(frequency[hi])],
+                            frequency_refinement=levels, **levels[-1]))
     return results
 
 
