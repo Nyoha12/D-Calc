@@ -5,11 +5,12 @@ reference and diagnostic, not a default-model change, experimental validation,
 material calibration or adoption. Base: `13d3801be4cb2baf2578b24e4aeddf981da37d9a`,
 tree `524c7c948e1429ce7977e16ce39c23d75ba4966e`.
 
-The complete code/test revision executed for the final checks and comparisons
-is `d5adb9ed81071403bed91fdee8efe5d9f67c5359`. This note is added afterwards;
-the publication report/PR identifies its documentary descendant. No acoustics
-test is claimed to have run on a later documentary SHA merely because its code
-and test blobs are identical.
+The original complete code/test revision for the checks and comparisons below
+is `d5adb9ed81071403bed91fdee8efe5d9f67c5359`; its documentary descendant was
+`37706c8b06174ec94a268008d71253f4c079e7b5`. The D1 correction and its separate
+execution at `391a121bd42627797a365f304396f64c80665780` are documented below.
+The PR identifies the final documentary descendant. No test is attributed to a
+later documentary SHA merely because its code and test blobs are identical.
 
 ## Scope and use
 
@@ -158,6 +159,21 @@ half-power width are required for Q, otherwise null plus a reason. This gate
 is a numerical resolution rule, not empirical accuracy. The changes between
 refinements are retained, not treated as exact error bars.
 
+After D1, internal windows end at sampled valleys on either side of each
+detected candidate, using all neighbours even when max_modes excludes their
+output. The original adjacent survey samples anchor its identity. Each level
+requires a unique refined local maximum whose adjacent-sample interval overlaps
+that anchor and whose fitted maximum stays inside it. Successful levels narrow
+the anchor by intersection. Refined neighbours delimit the metric window too,
+so a newly observed taller neighbour cannot silently replace the candidate.
+Ordinal, survey frequency, windows and every refinement level are retained.
+Missing/ambiguous candidates have status `unresolved`, an explicit reason and
+null metrics; the final row reflects the final level, never a stale success.
+Status `resolved` identifies the magnitude peak only: Q can still be null with
+its unchanged resolution reason. max_modes=0 performs no extraction. One to four
+local refinement levels of3..100000 points are permitted; CLI defaults remain
+1025/2049. Frequency refinement remains separate from spatial refinement.
+
 The external benchmark uses a different definition: a linear phase-zero fit
 and quadratic log-magnitude fit within±5cents, with at least11 observations.
 No interpolation manufactures missing observations. Closed-tube DC compliance
@@ -166,7 +182,7 @@ guarantee that an arbitrary user's initial grid found every mode. Budgets are
 100000 frequencies,10000 slices, at most4 spatial levels and10 modes; fine
 meshes can be expensive. No runtime prediction launches hidden evaluations.
 
-## Executed numerical evidence
+## Original numerical evidence at d5adb9e (historical)
 
 Windows, Python3.13.1, NumPy2.2.2, PyYAML6.0.2, pytest9.0.3,
 Matplotlib3.10.0. SciPy absent; neither SciPy nor mpmath is required/installed.
@@ -217,7 +233,7 @@ original names and excluded closed-tube DC compliance from peak brackets. Final
 green logs coexist with earlier failures; one early clean-run harness omitted
 an empty diff file, corrected for subsequent runs. No old evidence was replaced.
 
-### Synthetic comparison on the tested commit
+### Original synthetic comparison on d5adb9e
 
 CK20, fixed physical radius, h=.25cm for open profiles,2049-point local mode
 refinement. First-mode values below are numerical diagnostics, not targets or
@@ -248,6 +264,88 @@ cylinder legacy0.0311/ZK5.004; body+bell0.1002/8.745; closed analytic0.000157/
 it is materially slower than legacy, with no equal-performance claim or timing
 confidence interval. Full bounded three-case comparison completed successfully;
 no global sweep was used.
+
+## D1 correction after pilot review R14
+
+Starting/reviewed head: `37706c8b06174ec94a268008d71253f4c079e7b5`.
+Corrective code/tests executed on clean head:
+`391a121bd42627797a365f304396f64c80665780`, tree
+`9f21df547d8b3a0c6eaeccde862c2ddb75e50b42`. This section is added afterwards;
+the PR records the published documentary SHA. Only the comparison tool, its
+test module and this note change. No kernel, solver, propagation, material,
+geometry, fixed-design export, external benchmark method or Q threshold changes.
+
+Before correction, the true make_evaluator and true module CLI both reproduced
+the missing first resonance: CK25 closed180mm/14mm, .2..3000Hz/15000 points,
+legacy and ZK each returned ordinals `[2,3]` despite three survey maxima. The
+first global search window included the larger DC compliance. With lower bound
+40Hz, all three appeared. Valleys now separate that compliance from resonance;
+no lower-frequency cutoff or coefficient was introduced.
+
+The same seven new regression cases, with exact sources retained, gave **7
+failed,21 deselected** before correction and **7 passed,21 deselected** after
+correction. These include unequal neighbours, a taller narrow neighbour missed
+by the survey, ambiguous refinement, truly insufficient refinement resolution,
+late loss of resolution without stale values, max_modes=0, and real CLI JSON.
+Both models were exercised at .2Hz and40Hz lower bounds with approximately
+.2Hz survey steps. The source SHA256 of these identical red/green test snapshots
+is `5b397a49f01da5531900ba64381910e16dff9e096d76a7ad11967a6ccc8ba371`.
+
+```
+python -B -m pytest -q -s didgeridoo_optimizer/tests/test_thermo_reference_compare.py -k d1
+python -B -m pytest -q didgeridoo_optimizer/tests/test_thermoviscous.py didgeridoo_optimizer/tests/test_thermo_reference_compare.py
+python -B -m tools.thermo_reference_compare --case closed_cylinder --air-reference ck_dry25 --f-min .2 --f-max 3000 --points 15000 --spatial-steps 1 --max-modes 3 --output-dir EVIDENCE/d1-cli
+```
+
+The two-module suite at391a121 reported **136 passed in9.49s**, exit0, no
+failures/skips and no separate subtest count. It includes the last command as
+a real subprocess in a new fixture output directory, followed by JSON checks,
+and the existing Lorentzian/phase/Q and config/CLI interface tests. The exported
+source is391a121 with working_tree_dirty=false. Environment remains Python3.13.1,
+NumPy2.2.2, PyYAML6.0.2, pytest9.0.3, Matplotlib3.10.0, SciPy absent. Local
+PowerShell proof runs enforce180s suite/45s CLI timeouts, process-local temp and
+caches, exit checks, exact source snapshots, diff hashes and before/after source
+stability. Red logs and their original sources remain alongside green logs.
+
+CLI results after correction: all three entries and every refinement level
+are `resolved`, ordinals `[1,2,3]`, for each model. Max-magnitude frequencies
+(Hz, displayed digits are diagnostic output, not experimental accuracy):
+
+| Model | Mode1 | Mode2 | Mode3 | First-mode final grid step Hz |
+| --- | ---: | ---: | ---: | ---: |
+| Legacy |961.877343322|1923.782658105|2885.687996879|0.46962890625|
+| ZK |954.635044164|1913.529036269|2873.123519432|0.46787109375|
+
+Switching the lower bound between .2 and40Hz changed the first frequency by
+0Hz for legacy and approximately1.4e-12Hz for ZK. The assertion allows one
+actual finest local-grid interval, a conservative resolution bound rather than
+an empirical tolerance or claimed sub-bin accuracy. Windows differ from the
+old implementation: at40Hz the first legacy/ZK estimates move by approximately
+-0.0002812/-0.0006658Hz. Magnitude, phase and Q estimates can likewise change
+with those sampling windows. The two15000-point CLI frequency/ReZ/ImZ arrays
+are exactly equal before/after for both models, as are geometry, air and
+material inputs. This correction changes diagnostic extraction only.
+
+The local first ZK phase-zero interpolation is954.642919630Hz; its maximum is
+954.635044164Hz. Neither is substituted for the historical external benchmark's
+separate phase-fit result954.644248Hz. No external data was downloaded or
+recompared, no A-E replay or broad375-test replay was performed for D1.
+The original375 tests/129 subtests and pilot probes remain separately attributed
+historical evidence, not summed with these136 tests. Previously received data,
+simulation/measurement status and limits above/below are preserved.
+
+Frozen Git blobs, identical to37706c8:
+
+| File | Blob |
+| --- | --- |
+| didgeridoo_optimizer/acoustics/thermoviscous.py |3577e8813e837903679f70b41e82b09b7ea7777b|
+| didgeridoo_optimizer/acoustics/transfer_matrix.py |bc81c088b9a248f2853cdd42729c4a7dc025e143|
+| didgeridoo_optimizer/tests/test_thermoviscous.py |fbf6564e0b811f92091fd59d699914872fe7bfad|
+| didgeridoo_optimizer/tests/fixtures/thermo_reference.json |555efd10bdcbdef94669b7aee3ec944d08c80009|
+
+Mode identity remains conditional on the initial survey detecting the mode;
+the correction cannot certify modes absent from that grid or experimentally
+validate the reference. A nonresolved candidate remains visible for review.
 
 ## External acquisition and held-out comparison
 
