@@ -1,0 +1,22 @@
+{
+  "schema": "dcalc.forced_response.reference.v1",
+  "nature": "synthetic numerical reference; not measurement",
+  "convention": "exp(+j omega t), U positive input to output, peak amplitudes",
+  "air": {"rho": 1.2046925976462561, "c": 343.3700171691432, "mu": 1.807064e-05, "kappa": 0.025735030880000002, "cp": 1004.16, "gamma": 1.402},
+  "load": "D-Calc fixed physical low-frequency radiation, r_out=0.06 m, no extra length",
+  "units": {"frequency_hz": "Hz", "zin": "Pa.s/m^3", "huu": "1", "hup": "m^3/(Pa.s)"},
+  "cone_reference": {
+    "profile_si": [[1.2, 0.038, 0.038], [0.2, 0.038, 0.12]],
+    "method": "DOP853 variable-area pressure/volume-flow ODE, jve constitutive; rtol=1e-12 atol=1e-14; constant body analytic",
+    "repeat_relative_stability": 1.6309492014969966e-11,
+    "curve": [
+      {"frequency_hz": 40.0, "zin": {"real": 15439.976129179071, "imag": 501098.40687074134}, "huu": {"real": 1.7051999049839108, "imag": -0.02895532066203525}, "hup": {"real": 4.702345240766262e-08, "imag": -3.4014753202775505e-06}},
+      {"frequency_hz": 70.0, "zin": {"real": 1183193.3320678733, "imag": -5035446.312384392}, "huu": {"real": -14.059963747831658, "imag": -3.336690948634925}, "hup": {"real": 6.207013391427662e-09, "imag": -2.7936566040016574e-06}},
+      {"frequency_hz": 160.0, "zin": {"real": 14229.75904126524, "imag": 249456.15185203633}, "huu": {"real": -1.3468787192090792, "imag": 0.027014205665829728}, "hup": {"real": -1.9905060240127472e-07, "imag": 5.38790591902141e-06}},
+      {"frequency_hz": 280.0, "zin": {"real": 14966.670301374903, "imag": 106708.59139287073}, "huu": {"real": 1.4704620462585858, "imag": -0.03733208551069232}, "hup": {"real": 1.5523808245278017e-06, "imag": -1.356243255941238e-05}},
+      {"frequency_hz": 400.0, "zin": {"real": 22883.374904637356, "imag": 21865.768914991397}, "huu": {"real": -2.1655254409476847, "imag": 0.1193667703901094}, "hup": {"real": -4.686197456257832e-05, "imag": 4.999436848118982e-05}},
+      {"frequency_hz": 640.0, "zin": {"real": 385617.95842586516, "imag": 483806.0776752613}, "huu": {"real": -7.7325329661370485, "imag": 3.0104066360877058}, "hup": {"real": -3.985036495550995e-06, "imag": 1.2806435500442089e-05}},
+      {"frequency_hz": 1000.0, "zin": {"real": 153966.98374355747, "imag": 359409.2766644151}, "huu": {"real": 3.0668114830949222, "imag": -0.41076201208417656}, "hup": {"real": 2.122934392296258e-06, "imag": -7.6234806832377065e-06}}
+    ]
+  }
+}
