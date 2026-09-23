@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from numbers import Real
 from typing import Any, Iterable, Sequence
 
 import numpy as np
@@ -70,17 +71,40 @@ def input_impedance(
     design: Design,
     materials: MaterialDatabase | dict[str, Material],
     air: AirProperties | None = None,
+    *,
+    exit_radius_m: float | None = None,
 ) -> np.ndarray:
+    """Return p/U at the inlet, with an optional physical radiation radius.
+
+    A known discretized design requires ``exit_radius_m``: its last cylinder
+    describes a midpoint, not the physical outlet. Unmarked physical designs
+    retain the historical last-diameter fallback. If mesh provenance was lost,
+    the caller is responsible for supplying the physical radius explicitly.
+    The radius changes only the load, never the propagation geometry.
+    """
     air = air or DEFAULT_AIR
     freq = np.asarray(freq_hz, dtype=float)
     omega = 2.0 * np.pi * freq
     if freq.ndim != 1:
         raise ValueError("freq_hz must be a 1D sequence.")
+    if exit_radius_m is None:
+        if design.metadata.get("is_discretized"):
+            raise ValueError("A discretized design requires the physical exit_radius_m.")
+    else:
+        if isinstance(exit_radius_m, (bool, np.bool_)) or not isinstance(exit_radius_m, Real):
+            raise ValueError("exit_radius_m must be a finite, strictly positive real scalar (not bool).")
+        try:
+            exit_radius_m = float(exit_radius_m)
+        except (ValueError, OverflowError) as exc:
+            raise ValueError("exit_radius_m must be a finite, strictly positive real scalar.") from exc
+        if not math.isfinite(exit_radius_m) or exit_radius_m <= 0.0:
+            raise ValueError("exit_radius_m must be a finite, strictly positive real scalar.")
     if not design.segments:
         return np.zeros_like(freq, dtype=complex)
 
     material_lookup = materials.materials if isinstance(materials, MaterialDatabase) else materials
-    exit_radius_m = max(float(design.segments[-1].d_out_cm) / 200.0, 1e-9)
+    if exit_radius_m is None:
+        exit_radius_m = max(float(design.segments[-1].d_out_cm) / 200.0, 1e-9)
     z_load = radiation_impedance(omega, exit_radius_m, air)
 
     for segment in reversed(design.segments):

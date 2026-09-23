@@ -46,6 +46,8 @@ class LinearEvaluationPipeline:
                 "aggregate_score": float("-inf"),
             }
 
+        # The physical outlet is shared by the solver load and radiation metrics.
+        exit_radius_m = float(built_design.segments[-1].d_out_cm) / 200.0
         discretization_cm = float(
             dict((config or {}).get("frequency_analysis", {}) or {}).get("discretization_max_segment_cm", 1.0)
         )
@@ -59,10 +61,8 @@ class LinearEvaluationPipeline:
             int(freq_cfg.get("n_points", 4096)),
         )
         air = AirProperties.from_config(config)
-        zin = input_impedance(freq_hz, discretized_design, material_db, air)
+        zin = input_impedance(freq_hz, discretized_design, material_db, air, exit_radius_m=exit_radius_m)
         zin_mag = np.abs(zin)
-        # Radiation happens at the physical outlet, not the midpoint of the last discretized slice.
-        exit_radius_m = float(built_design.segments[-1].d_out_cm) / 200.0
         zr = radiation_impedance(2.0 * np.pi * freq_hz, exit_radius_m, air)
         peaks = find_peaks(freq_hz, zin_mag, config)
         features = extract(freq_hz, zin, peaks, built_design, air, zr=zr)
