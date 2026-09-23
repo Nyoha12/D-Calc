@@ -6,6 +6,7 @@ import json
 import shutil
 import subprocess
 import sys
+import tempfile
 from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import patch
@@ -337,7 +338,7 @@ def test_r7_valid_annotations_exactly_preserved_in_both_exports(inputs, tmp_path
 
 
 def _fixture_git(root, *args):
-    proc = subprocess.run(["git", "-c", "core.longpaths=true", "-C", str(root), *args], capture_output=True, text=True, check=True, timeout=15)
+    proc = subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, check=True, timeout=15)
     return proc.stdout.strip()
 
 
@@ -370,8 +371,16 @@ def _source_from_copied_package(root):
     return json.loads(proc.stdout)
 
 
-def test_r7_software_clean_dirty_and_real_worktree(tmp_path):
-    root = tmp_path / "tracked_repo"
+@pytest.fixture
+def git_fixture_dir():
+    # The runner routes process TEMP to the lot. Avoid long pytest function names:
+    # Git for Windows can misreport clean tracked files at MAX_PATH as modified.
+    # Keep evidence until the enclosing run directory is explicitly reviewed.
+    return Path(tempfile.mkdtemp(prefix="g-", dir=tempfile.gettempdir()))
+
+
+def test_r7_software_clean_dirty_and_real_worktree(git_fixture_dir):
+    root = git_fixture_dir / "r"
     _init_fixture_repository(root)
     _copy_fixture_package(root)
     _fixture_git(root, "add", "didgeridoo_optimizer")
@@ -382,7 +391,7 @@ def test_r7_software_clean_dirty_and_real_worktree(tmp_path):
     source.write_text(source.read_text(encoding="utf-8") + "\n# uncommitted fixture change\n", encoding="utf-8")
     dirty = _source_from_copied_package(root)
     assert dirty["sha"] == head and dirty["working_tree_dirty"] is True
-    worktree = tmp_path / "fixture_worktree"
+    worktree = git_fixture_dir / "w"
     _fixture_git(root, "worktree", "add", "--detach", str(worktree), head)
     assert (worktree / ".git").is_file()
     provenance = _source_from_copied_package(worktree)
@@ -390,8 +399,8 @@ def test_r7_software_clean_dirty_and_real_worktree(tmp_path):
 
 
 @pytest.mark.parametrize("placement", ["nested_ignored", "root_untracked", "root_ignored", "partly_tracked"])
-def test_r7_software_rejects_foreign_parent_or_untracked_source(tmp_path, placement):
-    root = tmp_path / "foreign_repo"
+def test_r7_software_rejects_foreign_parent_or_untracked_source(git_fixture_dir, placement):
+    root = git_fixture_dir / "r"
     _init_fixture_repository(root)
     package_root = root / "copied-package" if placement == "nested_ignored" else root
     _copy_fixture_package(package_root)
