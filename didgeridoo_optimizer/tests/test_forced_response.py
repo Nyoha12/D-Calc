@@ -2,6 +2,7 @@
 from dataclasses import replace
 import json
 from pathlib import Path
+import warnings
 
 import numpy as np
 import pytest
@@ -236,6 +237,63 @@ def test_efficiency_survives_unrepresentable_power_projection(amplitude):
     assert state['powers']['Pin']['value']==[None]
     assert state['powers']['Pin']['positive_log_resolved']==[True]
     np.testing.assert_allclose(state['powers']['eta']['value'],np.exp(-.6),rtol=1e-12)
+
+
+@pytest.mark.parametrize('kind', ['volume_flow', 'pressure'])
+def test_nonfinite_power_log_is_unavailable_not_analytic_zero(kind):
+    # Deliberately astronomical numerical input, not a physical tube claim.
+    tr = fr.transfer_from_slices([1.], [(1., 2-9e307j, 3e5)], 3e5, zref=3e5)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter('always', RuntimeWarning)
+        state = fr.apply_source(tr, kind, 1.)
+    for name in ('Pload', 'eta', 'Pdiss'):
+        power = state['powers'][name]
+        assert power['value'] == [None], (name, power)
+        assert power['status'] == ['unavailable']
+        assert power['reason'][0]
+    assert state['powers']['Pload']['log_abs'] == [None]
+    assert state['powers']['eta']['log_abs'] == [None]
+    assert state['powers']['Pin']['status'] == ['ok']
+    assert state['powers']['Pin']['positive_log_resolved'] == [True]
+    hu = tr['transfers']['Hu'].payload()
+    assert hu['status'] == ['underflow'] and hu['log_abs'] == [-9e307]
+    assert hu['phase_rad'][0] == pytest.approx(-2.)
+    assert not caught, [str(w.message) for w in caught]
+
+
+@pytest.mark.parametrize('kind', ['volume_flow', 'pressure'])
+def test_power_log_finite_underflow_recovery_and_true_zeros(kind):
+    tr = fr.transfer_from_slices([1.], [(1., 2-800j, 3e5)], 3e5, zref=3e5)
+    with np.errstate(over='raise', invalid='raise'):
+        tiny = fr.apply_source(tr, kind, 1.)
+        recovered = fr.apply_source(tr, kind, np.exp(700))
+        zero = fr.apply_source(tr, kind, 0.)
+    for name in ('Pload', 'eta'):
+        power = tiny['powers'][name]
+        assert power['value'] == [None] and power['status'] == ['underflow']
+        assert np.isfinite(power['log_abs'][0]) and power['reason'][0]
+    assert tiny['powers']['eta']['log_abs'][0] == pytest.approx(-1600.)
+    coefficient = 3e5 if kind == 'volume_flow' else 1/3e5
+    expected = .5*coefficient*np.exp(-200.)
+    np.testing.assert_allclose(recovered['powers']['Pload']['value'], expected, rtol=1e-12, atol=0)
+    assert recovered['powers']['Pload']['status'] == ['ok']
+    assert recovered['powers']['eta']['log_abs'][0] == pytest.approx(-1600.)
+    for name in ('Pin', 'Pload', 'Pdiss'):
+        assert zero['powers'][name]['value'] == [0.]
+        assert zero['powers'][name]['status'] == ['analytic_zero']
+    assert zero['powers']['eta']['value'] == [None]
+    # A nonzero imaginary load also establishes zero resistive load power.
+    lossless_load = fr.transfer_from_slices([1.], [(1., 2-.3j, 3e5)], 1j*3e5, zref=3e5)
+    power = fr.apply_source(lossless_load, kind, 1.)['powers']
+    assert power['Pload']['value'] == [0.] and power['Pload']['status'] == ['analytic_zero']
+    assert power['eta']['value'] == [0.] and power['eta']['status'] == ['analytic_zero']
+
+
+@pytest.mark.parametrize('log', [-np.inf, np.inf, np.nan])
+def test_nonfinite_real_payload_needs_explicit_zero_sign(log):
+    power = fr._real_payload([log], [1.], [''])
+    assert power['value'] == [None] and power['status'] == ['unavailable']
+    assert power['log_abs'] == [None] and power['reason'][0]
 
 
 def test_independent_cone_ode_convergence():

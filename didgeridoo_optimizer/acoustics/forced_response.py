@@ -281,12 +281,16 @@ def validate_source(kind, amplitude, count):
 
 
 def _real_payload(logs, signs, reasons, *, limited=None):
+    """Project signed logs; sign=0 is an explicitly established zero marker.
+
+    A nonfinite logarithm alone never establishes an analytic zero.
+    """
     result = dict(value=[], log_abs=[], sign=[], status=[], reason=[])
     for i, (log, sign, reason) in enumerate(zip(logs, signs, reasons, strict=True)):
         value, status = None, 'unavailable'
         available_log = float(log) if np.isfinite(log) and not reason else None
         if not reason:
-            if sign == 0 or log == -np.inf:
+            if sign == 0:
                 value, status = 0., 'analytic_zero'
             elif not np.isfinite(log):
                 reason = 'Nonfinite power log'
@@ -319,7 +323,9 @@ def apply_source(transfer, kind, amplitude):
     angle = p1.phase-u1.phase
     cosine = np.cos(angle)
     zero_source = source == 0
-    with np.errstate(divide='ignore', invalid='ignore'):
+    # Detect arithmetic overflow independently of an underflowed projection.
+    # Only the explicit masks below may establish a zero power.
+    with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
         pinlog = np.log(.5)+p1.log_abs+u1.log_abs+np.log(abs(cosine))
         loadreal = transfer['load'].real
         plog = np.log(.5)+np.log(loadreal)+2*u2.log_abs
@@ -329,6 +335,8 @@ def apply_source(transfer, kind, amplitude):
     load_reasons = u2.reason.copy()
     loadzero = (loadreal == 0) | zero_source
     plog[loadzero] = -np.inf; load_reasons[loadzero] = ''
+    reasons[~np.isfinite(pinlog) & ~pinzero & (reasons == '')] = 'Input power logarithm outside finite numerical range'
+    load_reasons[~np.isfinite(plog) & ~loadzero & (load_reasons == '')] = 'Load power logarithm outside finite numerical range'
     tol = 64*EPS*(transfer['segment_count']+1)
     # Re(p*conj(U)) may be unresolved long before either component vanishes.
     # Bound its absolute error on the |p||U| scale, using the propagated bounds.
@@ -367,6 +375,10 @@ def apply_source(transfer, kind, amplitude):
         status, reason = 'ok', None
         if difference is None or not np.isfinite(difference):
             difference, status, reason = None, 'unavailable', 'Representable port powers required for signed difference'
+            missing = [f'{name}: {power["reason"][i]}' for name, power in (('Pin', pin), ('Pload', pload))
+                       if power['value'][i] is None]
+            if missing:
+                reason += '; '+ '; '.join(missing)
         elif pin['status'][i] == pload['status'][i] == 'analytic_zero':
             status = 'analytic_zero'
         elif threshold is None or (abs(difference) <= threshold and not zero_source[i]):
@@ -377,9 +389,14 @@ def apply_source(transfer, kind, amplitude):
         diss['reason'].append(reason); diss['roundoff_tolerance_w'].append(threshold)
         if not positive_pin_resolved[i] or load_reasons[i]:
             eta['value'].append(None); eta['log_abs'].append(None); eta['status'].append('unavailable')
-            eta['reason'].append('Efficiency requires a nonzero source and positive numerically resolved input power')
+            eta['reason'].append('Efficiency unavailable: '+load_reasons[i] if load_reasons[i] else
+                                 'Efficiency requires a nonzero source and positive numerically resolved input power')
         else:
-            e = _real_payload(np.array([plog[i]-pinlog[i]]), np.array([0. if loadzero[i] else 1.]), np.array([''], dtype=object))
+            # Even two finite power logs can have a nonfinite difference.
+            # _real_payload checks this before projecting the ratio.
+            with np.errstate(over='ignore', invalid='ignore'):
+                eta_log = plog[i]-pinlog[i]
+            e = _real_payload(np.array([eta_log]), np.array([0. if loadzero[i] else 1.]), np.array([''], dtype=object))
             for key in eta:
                 eta[key].append(e[key][0])
     return dict(source=dict(kind=kind, amplitude=s.payload(), units='m^3/s peak' if kind == 'volume_flow' else 'Pa peak'),

@@ -210,3 +210,44 @@ def test_strict_serialization_alignment_and_unavailable_not_zero(tmp_path):
     with pytest.raises(ValueError,match='alignment'):
         report.export_bundle(payload,tmp_path/'unaligned')
     assert not (tmp_path/'unaligned').exists()
+
+
+@pytest.mark.parametrize('kind', ['volume_flow', 'pressure'])
+def test_power_log_limit_export_distinguishes_null_and_zero(tmp_path, kind):
+    tr = fr.transfer_from_slices([1., 2., 3., 4.],
+                                [(1., np.array([2-9e307j, 2-800j, 2-800j, 2-9e307j]), 3e5)],
+                                3e5, zref=3e5)
+    tr.update(model='numerical_domain_fixture', model_version='test', warnings=[],
+              ka_out=np.zeros(4), load_type='matched finite', exit_radius_m=.01)
+    response = fr.apply_source(tr, kind, [1., 1., np.exp(700), 0.])
+    model = report.model_payload(tr, response, 0.)
+    out = tmp_path/'log_limit'
+    report.export_bundle(dict(schema=report.SCHEMA,
+                              cases=[dict(physical_design={'id':'log_limit'}, models=[model])]), out)
+    payload = json.loads((out/'forced_response.json').read_text(encoding='utf-8'),
+                         parse_constant=lambda s: pytest.fail('Nonfinite JSON '+s))
+    with (out/'forced_response.csv').open(encoding='utf-8', newline='') as stream:
+        rows = list(csv.DictReader(stream))
+    powers = payload['cases'][0]['models'][0]['powers']
+    assert len(rows) == 4
+    assert powers['Pload']['status'] == ['unavailable', 'underflow', 'ok', 'analytic_zero']
+    assert powers['eta']['status'] == ['unavailable', 'underflow', 'underflow', 'unavailable']
+    assert powers['Pdiss']['value'][0] is None
+    assert powers['Pload']['value'][:2] == [None, None]
+    assert powers['Pload']['value'][3] == 0.
+    assert powers['Pload']['log_abs'][0] is None
+    assert np.isfinite(powers['Pload']['log_abs'][1])
+    for index, row in enumerate(rows):
+        for name in ('Pin', 'Pload', 'Pdiss', 'eta'):
+            value = powers[name]['value'][index]
+            assert row[name+'_status'] == powers[name]['status'][index]
+            assert row[name+'_reason'] == (powers[name]['reason'][index] or '')
+            if value is None:
+                assert row[name] == ''
+            else:
+                assert float(row[name]) == value
+        if index < 2:
+            assert row['Pload_reason']
+    assert rows[0]['Pload_log_abs'] == ''
+    assert float(rows[1]['Pload_log_abs']) == powers['Pload']['log_abs'][1]
+    assert float(rows[3]['Pload']) == 0.

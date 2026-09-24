@@ -225,3 +225,48 @@ nonlinéaire, acquisition Zenodo, optimisation ou calibration. Python3.13.1,
 NumPy2.2.2, PyYAML6.0.2, pytest9.0.3, Matplotlib3.10.0 existants ; aucune dépendance
 installée. Aucun résultat ne constitue une validation expérimentale ou promotion
 matériau, une FFT jouée, un SPL distant ou une pression respiratoire statique.
+
+## Retouche IO-N1 / revue R18 : limite du logarithme de puissance
+
+Point de départ relu : `986fd7e2d45e9e009cb852a2f5835879e9901f36`.
+La revue R18 de la PR #55 a identifié un défaut de disponibilité, sans remettre
+en cause les relations de ports ni le backend physique. Pour la tranche
+astronomique de test k=2-9e307j, l=1, Zc=Zr=Zref=3e5 et une source non nulle,
+ln|Hu|=-9e307 reste fini mais le doublement du logarithme dans Pload dépasse
+binary64. Le précédent -Inf était étiqueté à tort comme zéro analytique.
+
+Le marqueur de zéro de puissance est désormais réservé aux conditions
+explicitement établies : source nulle, état analytique nul, résistance de charge
+nulle. Un logarithme de puissance non fini après calcul donne null,
+`unavailable` et une raison explicite. Cette indisponibilité est transmise à
+eta et à Pdiss ; Pin et les logs/phases de Hu encore calculables sont conservés.
+Les opérations susceptibles de déborder sont contrôlées après calcul ; leur
+signal flottant ne constitue ni une valeur physique ni un zéro. Le quotient
+logarithmique d'efficacité est lui aussi contrôlé avant projection.
+
+Les logarithmes finis avec projection trop petite restent `underflow`, avec
+log conservé. Un produit peut redevenir représentable après application de la
+source en domaine logarithmique. Aucun clamp du rendement, modification de
+tolérance acoustique ou assimilation d'une puissance inconnue à zéro. Les
+valeurs et résidus signés restent exposés avec leur qualité numérique.
+
+Les mêmes régressions ont d'abord produit **5 échecs, 91 succès**, avec les deux
+sources et le vrai export JSON/CSV : faux zéro Pload, contrôle direct du helper,
+et statuts d'export. Sources exactes et logs rouges conservés avant correction.
+Les positifs couvrent aussi l'underflow à log fini, la récupération après source,
+les zéros réels, et les cas antérieurs d'atténuation 1000/800 et d'eta indépendant
+de la projection absolue. Commande de remise bornée :
+
+```text
+python -B -m pytest -q didgeridoo_optimizer/tests/test_forced_response.py didgeridoo_optimizer/tests/test_forced_response_cli.py
+```
+
+Le compte rendu de PR attribue le résultat vert observé à son SHA effectivement
+testé, incluant cette note, et donne la comparaison stricte des quatre profils
+usuels avec le point de départ. Les anciennes assertions sont conservées ; seules
+les fonctions de disponibilité des puissances changent en production. Backend,
+CLI, reporting, fixtures indépendantes et tous les modèles existants sont gelés.
+Les 446 tests et 120 sous-tests historiques restent attribués à `986fd7e`, sans
+cumul avec ce passage ciblé ni prétention de nouveau rejeu global/A–E. Aucun
+nouveau benchmark de performance, téléchargement, résultat expérimental ou
+calibration ; environnement Python/bibliothèques inchangé.
