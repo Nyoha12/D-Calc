@@ -76,6 +76,7 @@ def _rows(payload):
                            radiation_source=json.dumps(radiation['source'], ensure_ascii=False) if radiation else None,
                            radiation_n1=coefficients.get('n1'), radiation_d1=coefficients.get('d1'), radiation_d2=coefficients.get('d2'),
                            radiation_radius_m=(radiation or {}).get('radius_m'),
+                           radiation_normalization_radius_m=(radiation or {}).get('normalization_radius_m'),
                            radiation_reference_abs_ka_max=(radiation or {}).get('reference_band', {}).get('abs_ka_max'),
                            radiation_assumptions=json.dumps(radiation['assumptions'], ensure_ascii=False) if radiation else None,
                            radiation_termination=json.dumps(radiation.get('termination'), ensure_ascii=False) if radiation else None,

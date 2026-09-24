@@ -88,3 +88,13 @@ def test_numerical_range_shapes_metadata_and_no_default_mutation():
     assert get_radiation_model('legacy').name=='legacy'
     with pytest.raises(ValueError): get_radiation_model('unknown')
     with pytest.raises(ValueError): SilvaRadiationModel('legacy')
+
+
+def test_legacy_identity_and_historical_effective_radius():
+    with pytest.raises(TypeError): LegacyRadiationModel('silva_unflanged')
+    with pytest.raises(TypeError): LegacyRadiationModel(name='silva_flanged')
+    result=LegacyRadiationModel().evaluate([1.],1e-12,AIR)
+    np.testing.assert_array_equal(result.impedance,radiation_impedance([1.],1e-12,AIR))
+    assert result.metadata['radius_m']==1e-12
+    assert result.metadata['normalization_radius_m']==1e-9
+    assert result.metadata['ka_out']==[1e-12/AIR.c]

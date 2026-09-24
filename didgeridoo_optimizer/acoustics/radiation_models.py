@@ -6,7 +6,7 @@ or geometric end length enter this boundary normalization.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from numbers import Real
 from typing import Protocol
 
@@ -83,7 +83,7 @@ class RadiationModel(Protocol):
 
 @dataclass(frozen=True)
 class LegacyRadiationModel:
-    name: str = 'legacy'
+    name: str = field(default='legacy', init=False)
 
     def describe(self):
         return dict(name=self.name, variant='existing_low_frequency', version='dcalc.legacy.v1',
@@ -91,10 +91,12 @@ class LegacyRadiationModel:
                     category='low-frequency approximation; not measurement',
                     reference_band=dict(abs_ka_max=None, description='low-frequency asymptote; no quantified precision threshold'),
                     assumptions=['existing 0.613*a reactive term; no added length',
+                                 'historical helper radius floor 1e-9 m retained; ka_out describes the physical radius',
                                  'exterior environment and wall thickness not established'])
 
     def metadata(self, ka, radius_m):
         return dict(**self.describe(), radius_m=radius_m, ka_out=np.asarray(ka).tolist(),
+                    normalization_radius_m=max(float(radius_m), 1e-9),
                     model_status=np.full(np.shape(ka), 'low_frequency_asymptote', dtype=object).tolist(),
                     model_reason=np.full(np.shape(ka), 'No quantified precision band established', dtype=object).tolist(),
                     warnings=[])
@@ -129,6 +131,7 @@ class SilvaRadiationModel:
     def metadata(self, ka, radius_m):
         beyond = abs(np.asarray(ka)) > 2
         return dict(**self.describe(), radius_m=radius_m, ka_out=np.asarray(ka).tolist(),
+                    normalization_radius_m=radius_m,
                     model_status=np.where(beyond, 'extrapolation', 'within_reference_band').tolist(),
                     model_reason=np.where(beyond, '|ka|>2: model extrapolation, not a numerical failure', None).tolist(),
                     warnings=['Radiation extrapolated beyond |ka|=2'] if np.any(beyond) else [])

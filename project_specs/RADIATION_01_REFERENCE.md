@@ -66,6 +66,10 @@ métadonnées. `input_impedance` et `loaded_transfer` acceptent le keyword-only
 explicite est évalué une fois avant propagation, avec le rayon terminal physique.
 L'adaptateur legacy appelle le helper inchangé. Aucun défaut global n'est muté.
 La charge dans les transferts est aussi celle des puissances.
+L'identité de cet adaptateur n'est pas configurable : il ne peut pas annoncer
+Silva tout en calculant legacy. `normalization_radius_m` distingue le rayon
+effectivement utilisé par le plancher historique legacy de1e-9m du rayon
+physique demandé ; ce plancher reste inchangé. Silva utilise le rayon physique.
 
 ```text
 python -B -m tools.forced_response_compare --config CONFIG --design DESIGN --pressure-peak-pa 1 --loss-model zk --air-reference ck_dry20 --radiation-model silva_unflanged --output-dir EVIDENCE/unflanged
