@@ -1,0 +1,43 @@
+{
+  "schema": "dcalc.radiation.reference.v1",
+  "nature": "80-decimal arithmetic evaluation of published rounded fit, not measurement or exact radiation solution",
+  "convention": "exp(+j omega t), z=Z/(rho*c/(pi*a^2)), x=ka=omega*a/c real",
+  "table": {
+    "unflanged": {"n1": 0.167, "d1": 1.393, "d2": 0.457},
+    "flanged": {"n1": 0.182, "d1": 1.825, "d2": 0.649}
+  },
+  "reference_method": "mpmath 80 decimal digits using Eq16 reflection and z=(1+R)/(1-R), then binary64 rounding",
+  "rows": [
+    {"termination":"unflanged","ka":0.0,"z_normalized":{"real":0.0,"imag":0.0},"reflection":{"real":-1.0,"imag":0.0}},
+    {"termination":"unflanged","ka":0.0001,"z_normalized":{"real":2.4964000014416755e-09,"imag":6.12999999453513e-05},"reflection":{"real":-0.9999999874918201,"imag":0.00012259999881789253}},
+    {"termination":"unflanged","ka":0.1,"z_normalized":{"real":0.0024978264740043257,"imag":0.061245114621938795},"reflection":{"real":-0.9875984892870094,"imag":0.12142739274251371}},
+    {"termination":"unflanged","ka":0.5,"z_normalized":{"real":0.06307984711497754,"imag":0.2989779765347037},"reflection":{"real":-0.7434303675993353,"imag":0.4903180931785911}},
+    {"termination":"unflanged","ka":1.0,"z_normalized":{"real":0.25078861568582406,"imag":0.5410043807712991},"reflection":{"real":-0.34699221311878775,"imag":0.5826153828259141}},
+    {"termination":"unflanged","ka":1.5,"z_normalized":{"real":0.5146589603656966,"imag":0.6531495062971648},"reflection":{"real":-0.11339397440061093,"imag":0.48011647751941483}},
+    {"termination":"unflanged","ka":2.0,"z_normalized":{"real":0.7513146273078695,"imag":0.6273160627874851},"reflection":{"real":-0.012136780871702233,"imag":0.3625445996273401}},
+    {"termination":"unflanged","ka":3.0,"z_normalized":{"real":0.9824266306329663,"imag":0.43528472851977396},"reflection":{"real":0.037537401292809636,"imag":0.21132952136288194}},
+    {"termination":"flanged","ka":0.0,"z_normalized":{"real":0.0,"imag":0.0},"reflection":{"real":-1.0,"imag":0.0}},
+    {"termination":"flanged","ka":0.0001,"z_normalized":{"real":4.998752492633878e-09,"imag":8.214999976495194e-05},"reflection":{"real":-0.9999999765052504,"imag":0.0001642999967785152}},
+    {"termination":"flanged","ka":0.1,"z_normalized":{"real":0.004991360284590949,"imag":0.08191493094636225},"reflection":{"real":-0.9769329677499771,"imag":0.1611360395107959}},
+    {"termination":"flanged","ka":0.5,"z_normalized":{"real":0.12001820913727883,"imag":0.38147828982763743},"reflection":{"real":-0.6000643295550072,"imag":0.5449820360715537}},
+    {"termination":"flanged","ka":1.0,"z_normalized":{"real":0.41356545508905307,"imag":0.6017573143125614},"reflection":{"real":-0.1977951408090622,"imag":0.509903509904668}},
+    {"termination":"flanged","ka":1.5,"z_normalized":{"real":0.7088833848925155,"imag":0.612147419696308},"reflection":{"real":-0.03725633584610153,"imag":0.3715606314422532}},
+    {"termination":"flanged","ka":2.0,"z_normalized":{"real":0.8949323670288932,"imag":0.5138565792851967},"reflection":{"real":0.01684970291843912,"imag":0.26660489702525236}},
+    {"termination":"flanged","ka":3.0,"z_normalized":{"real":1.0217047804950197,"imag":0.3183245205312455},"reflection":{"real":0.03466801330799369,"imag":0.15199491279926988}}
+  ],
+  "cone_reference": {
+    "nature": "synthetic independent 1D ODE, not measurements",
+    "method": "DOP853 pressure/volume-flow ODE with scipy.special.jve for ZK, analytic uniform upstream section; reference rtol=3e-13/atol=3e-15",
+    "stability_vs_rtol_1e12_atol_1e14": {"Zin":1.495288659373112e-13,"Hu":1.9945854701320847e-13,"Yt":1.4265644851131155e-12},
+    "air": {"rho":1.2046925976462561,"c":343.3700171691432,"mu":1.807064e-05,"kappa":0.025735030880000002,"cp":1004.16,"gamma":1.402},
+    "profile_si": [[1.2,0.038,0.038],[0.2,0.038,0.12]],
+    "load_model": "silva_pade_unflanged_table1_rounded",
+    "radius_m": 0.06,
+    "rows": [
+      {"frequency_hz":70.0,"Zin":{"real":1183267.5885240934,"imag":-5035621.595078343},"Hu":{"real":-14.060409801089632,"imag":-3.3368929224038806},"Yt":{"real":6.207687455336998e-09,"imag":-2.7936481903653362e-06}},
+      {"frequency_hz":400.0,"Zin":{"real":22850.62028686869,"imag":21009.065300700844},"Hu":{"real":-2.1544214174091882,"imag":0.11877001042984309},"Yt":{"real":-4.8503458874879134e-05,"imag":4.9792186424622945e-05}},
+      {"frequency_hz":1000.0,"Zin":{"real":144737.41187006616,"imag":327058.9246574388},"Hu":{"real":3.007418051675965,"imag":-0.3781973566908194},"Yt":{"real":2.4359108112499283e-06,"imag":-8.11734652429994e-06}},
+      {"frequency_hz":1500.0,"Zin":{"real":733739.9598643758,"imag":-94544.76229983923},"Hu":{"real":1.7833072271704138,"imag":-4.9359681191718545},"Yt":{"real":3.243397422627378e-06,"imag":-6.309213255417246e-06}}
+    ]
+  }
+}

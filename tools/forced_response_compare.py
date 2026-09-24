@@ -15,6 +15,7 @@ import yaml
 from didgeridoo_optimizer.acoustics import forced_response as fr
 from didgeridoo_optimizer.acoustics.air import AirProperties
 from didgeridoo_optimizer.acoustics.losses import LegacyBetaLossModel
+from didgeridoo_optimizer.acoustics.radiation_models import NAMES as RADIATION_NAMES, get_radiation_model
 from didgeridoo_optimizer.acoustics.thermoviscous import CK_DRY_20C, CK_DRY_25C, ZwikkerKostenLossModel
 from didgeridoo_optimizer.geometry.builders import DesignBuilder
 from didgeridoo_optimizer.geometry.constraints import GeometryValidator
@@ -44,6 +45,17 @@ def builtin_design(name):
                      d_in_cm=100*di, d_out_cm=100*do, material_id='io_test')
                 for length, di, do in PROFILES[name]]
     return DesignBuilder().build(dict(id=name, segments=segments, metadata={'nature': 'synthetic'}))
+
+
+def termination_assumptions(design):
+    last = design.segments[-1]
+    transposed = last.kind not in {'cylinder', 'mouthpiece'} or not last.is_uniform
+    return dict(last_physical_segment_kind=last.kind,
+                interpretation=('charge cylindrique transposée au pavillon ou profil variable' if transposed
+                                else 'sortie cylindrique; montage extérieur non établi'),
+                wall_thickness='unknown', exterior_environment='unknown',
+                physical_radius_m=last.d_out_cm/200,
+                model_geometry_validated=False)
 
 
 def source_identity():
@@ -76,6 +88,7 @@ def parser():
     source.add_argument('--flow-peak-m3-s', type=float)
     source.add_argument('--pressure-peak-pa', type=float)
     p.add_argument('--loss-model', choices=['legacy','zk','both'], default='legacy')
+    p.add_argument('--radiation-model', choices=RADIATION_NAMES, default='legacy')
     p.add_argument('--air-reference', choices=AIR_REFERENCES)
     p.add_argument('--f-min', type=float); p.add_argument('--f-max', type=float)
     p.add_argument('--points', type=int); p.add_argument('--h-cm', type=float)
@@ -84,6 +97,7 @@ def parser():
 
 
 def run(args):
+    radiation_model = get_radiation_model(args.radiation_model)
     if bool(args.config) != bool(args.design) or (args.config and args.case):
         raise ValueError('Use CONFIG+DESIGN together, or built-in cases')
     if args.loss_model in {'zk','both'} and not args.air_reference:
@@ -135,9 +149,12 @@ def run(args):
     identity = source_identity()
     effective = dict(air=effective_air, original_air=asdict(original_air),
                      air_substitution='explicit diagnostic memory-only' if state else 'none; config/DEFAULT_AIR',
-                     f_min_hz=fmin, f_max_hz=fmax, n_points=count, h_cm=h)
+                     f_min_hz=fmin, f_max_hz=fmax, n_points=count, h_cm=h,
+                     radiation=radiation_model.describe(),
+                     radiation_selection='explicit diagnostic option; original CONFIG unchanged')
     if args.dry_run:
         return dict(ok=True, dry_run=True, output_created=False, effective=effective, provenance=identity,
+                    terminations=[termination_assumptions(design) for design, _ in prepared],
                     segment_counts=[len(mesh.segments) for _, mesh in prepared], not_executed=NOT_EXECUTED)
     frequency = fr.frequencies(np.linspace(fmin, fmax, count))
     models = [LegacyBetaLossModel()] if args.loss_model == 'legacy' else [ZwikkerKostenLossModel(state)]
@@ -150,7 +167,9 @@ def run(args):
         zref = fr.characteristic_impedance(air.rho, air.c, fr.area_from_diameter(design.segments[0].d_in_cm/100))
         for model in models:
             started = time.perf_counter()
-            transfer = fr.loaded_transfer(frequency, mesh, materials, air, exit_radius_m=radius, loss_model=model, zref=zref)
+            transfer = fr.loaded_transfer(frequency, mesh, materials, air, exit_radius_m=radius, loss_model=model, zref=zref,
+                                          radiation_model=radiation_model)
+            transfer['radiation']['termination'] = termination_assumptions(design)
             elapsed = time.perf_counter()-started
             response = fr.apply_source(transfer, kind, amplitude)
             results.append(model_payload(transfer, response, elapsed))
@@ -160,7 +179,8 @@ def run(args):
                    provenance=identity, original_context=original, effective_parameters=effective,
                    materials_used=materials_used, units=UNITS, warnings=warnings, cases=cases,
                    assumptions=['linear resting air; circular 1D sections', 'existing material statuses unchanged',
-                                'low-frequency radiation approximation; no far field', 'no broadband power sum'],
+                                'radiation boundary: '+radiation_model.describe()['name']+'; see reference band and mounting assumptions; no far field',
+                                'no broadband power sum'],
                    not_executed=NOT_EXECUTED)
     exports = export_bundle(payload, output)
     return dict(ok=True, dry_run=False, schema=SCHEMA, cases=len(cases), models_per_case=len(models), exports=exports)

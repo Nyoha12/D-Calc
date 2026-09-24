@@ -30,6 +30,8 @@ def model_payload(transfer, response, elapsed_seconds):
                 transfers={name: curve.payload() for name, curve in transfer['transfers'].items()},
                 source=response['source'], ports={name: curve.payload() for name, curve in response['ports'].items()},
                 powers=response['powers'])
+    if 'radiation' in transfer:
+        result['radiation'] = _to_builtin(transfer['radiation'])
     counts = {}
     for group in ('transfers', 'ports', 'powers'):
         for data in result[group].values():
@@ -53,6 +55,9 @@ def _rows(payload):
                     raise ValueError(f'Export alignment mismatch: {key}')
             if any(len(v) != n for v in model['source']['amplitude'].values()):
                 raise ValueError('Export source alignment mismatch')
+            radiation = model.get('radiation')
+            if radiation and any(len(radiation[key]) != n for key in ('ka_out', 'model_status', 'model_reason')):
+                raise ValueError('Export radiation alignment mismatch')
             for i, frequency in enumerate(model['frequency_hz']):
                 amplitude = model['source']['amplitude']['value'][i]
                 row = dict(case=case['physical_design']['id'], model=model['model'], frequency_hz=frequency,
@@ -62,6 +67,20 @@ def _rows(payload):
                            ka_out=model['ka_out'][i], load_real_pa_s_m3=model['load'][i]['real'],
                            load_imag_pa_s_m3=model['load'][i]['imag'], log_scale=model['log_scale'][i],
                            log_scale_status=model['log_scale_status'][i])
+                # Low-level explicit-load fixtures may have no radiation model.
+                coefficients = (radiation or {}).get('coefficients') or {}
+                row.update(radiation_model=(radiation or {}).get('name'),
+                           radiation_variant=(radiation or {}).get('variant'),
+                           radiation_version=(radiation or {}).get('version'),
+                           radiation_category=(radiation or {}).get('category'),
+                           radiation_source=json.dumps(radiation['source'], ensure_ascii=False) if radiation else None,
+                           radiation_n1=coefficients.get('n1'), radiation_d1=coefficients.get('d1'), radiation_d2=coefficients.get('d2'),
+                           radiation_radius_m=(radiation or {}).get('radius_m'),
+                           radiation_reference_abs_ka_max=(radiation or {}).get('reference_band', {}).get('abs_ka_max'),
+                           radiation_assumptions=json.dumps(radiation['assumptions'], ensure_ascii=False) if radiation else None,
+                           radiation_termination=json.dumps(radiation.get('termination'), ensure_ascii=False) if radiation else None,
+                           radiation_model_status=radiation['model_status'][i] if radiation else 'explicit_load',
+                           radiation_model_reason=radiation['model_reason'][i] if radiation else None)
                 for name, data in observables.items():
                     value = data['value'][i]
                     if name in model['powers']:
@@ -89,7 +108,7 @@ def render_bundle(payload):
     lines = ['Réponse entrée-sortie sous excitation acoustique définie',
              'Amplitudes complexes crête ; U positif vers la sortie ; puissances en W.',
              'Transferts chargés du profil entier ; p2 est une pression équivalente de section 1D.',
-             'La loi de rayonnement existante est une approximation basse fréquence ; consulter ka_out.',
+             'La charge et son domaine de référence sont identifiés par modèle ; consulter ka_out et les hypothèses de montage.',
              'Les statuts et raisons accompagnent chaque observable. Un null ne vaut pas zéro.',
              'eta est un rapport de puissances acoustiques, pas un rendement du joueur.',
              'Le balayage ne définit aucun spectre broadband : les watts ne sont pas sommés.',
@@ -97,6 +116,18 @@ def render_bundle(payload):
              'Phases non exécutées : '+', '.join(NOT_EXECUTED)+'.']
     for case in payload['cases']:
         for model in case['models']:
+            radiation = model.get('radiation')
+            if radiation:
+                description = ('asymptote basse fréquence sans seuil de précision établi' if radiation['name'] == 'legacy'
+                               else 'fit numérique publié Padé(1,2), pas une mesure ; bande privilégiée |ka|<=2')
+                lines.append(f"Radiation {radiation['name']} : {description}. "
+                             f"{radiation['model_status'].count('extrapolation')} points en extrapolation.")
+                lines.append('Montage : '+'; '.join(radiation['assumptions'])+'.')
+                if radiation.get('termination'):
+                    lines.append('Sortie physique : '+radiation['termination']['interpretation']+
+                                 '; épaisseur et environnement extérieur inconnus. Aucune validation géométrique implicite.')
+            else:
+                lines.append('Charge explicite du calcul bas niveau ; aucun modèle de radiation attribué.')
             unavailable = sum(status not in {'ok', 'analytic_zero', 'subnormal'}
                               for group in ('transfers', 'ports', 'powers')
                               for data in model[group].values() for status in data['status'])
