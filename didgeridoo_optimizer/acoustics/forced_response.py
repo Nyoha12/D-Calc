@@ -157,6 +157,15 @@ def _multiply(left, right):
     return _curve(np.where(zero, -np.inf, left.log_abs+right.log_abs), left.phase+right.phase, reason)
 
 
+def _roundoff_norm(ep, eu, weight):
+    """Euclidean error norm after diag(1/sqrt(r), sqrt(r)), r=Zc/Zref.
+
+    Only |sqrt(r)| is needed: complex phases are unitary. The margin covers
+    the metric's division, multiplication and hypot, not a physical loss.
+    """
+    return np.hypot(ep/weight, eu*weight)*(1+8*EPS)
+
+
 def transfer_from_slices(freq_hz, slices_from_outlet, load, *, zref):
     """Low-level passive finite load, streamed (length_m, k, Zc) from outlet.
 
@@ -175,7 +184,10 @@ def transfer_from_slices(freq_hz, slices_from_outlet, load, *, zref):
         scale = np.log(m)
         p, u = p/m, u/m
     bad = ~np.isfinite(scale) | ~np.isfinite(p) | ~np.isfinite(u)
-    ep, eu = 8*EPS*abs(p), 8*EPS*abs(u)
+    # Absolute allowance also covers gradual underflow of local arithmetic.
+    floor = 8*np.nextafter(0., 1.)
+    ep, eu = 8*EPS*abs(p)+floor, 8*EPS*abs(u)+floor
+    error, previous_weight = None, None
     count = 0
     for count, (length, wave, impedance) in enumerate(slices_from_outlet, 1):
         check_budget(n, count)
@@ -193,16 +205,36 @@ def transfer_from_slices(freq_hz, slices_from_outlet, load, *, zref):
             p1, p2, u1, u2 = co*p, r*si*u, ri*si*p, co*u
             pn, un = p1+p2, u1+u2
             m = np.maximum(abs(pn), abs(un))
-            # Conservative accumulated arithmetic scale, not a physical loss.
-            epn = abs(co)*ep+abs(r*si)*eu+8*EPS*(abs(p1)+abs(p2))
-            eun = abs(ri*si)*ep+abs(co)*eu+8*EPS*(abs(u1)+abs(u2))
-            # co/si themselves contain sums/differences of exponentials. Their
-            # absolute arithmetic/argument scale matters near cos/sin zeros.
-            coefficient_error = 8*EPS*(1+abs(phase))*(abs(eplus)+abs(eminus))/2
-            epn += coefficient_error*(abs(p)+abs(r)*abs(u))
-            eun += coefficient_error*(abs(ri)*abs(p)+abs(u))
+            # In the impedance-adapted norm the exact scaled slice is a
+            # contraction: D^-1 T D = [[co,si],[si,co]], with eigenvalues
+            # eplus, eminus and a unitary eigenbasis. Transport ONE error
+            # ball, rather than destroying phase cancellation with |T|.
+            weight = np.sqrt(abs(r))
+            if previous_weight is None:
+                error = _roundoff_norm(ep, eu, weight)
+            else:
+                change = np.maximum(previous_weight/weight, weight/previous_weight)
+                error = error*change*(1+8*EPS)
+            previous_weight = weight
+            # Local defects still use absolute sums. The extra off-diagonal
+            # term includes r/ri division error; exp/argument/co/si errors
+            # include attenuation in eminus, without forming b*exp(+b).
+            coefficient_error = 8*EPS*((1+abs(phase))*(abs(eplus)+abs(eminus))/2
+                                       + b*abs(eminus))+floor
+            dp = (8*EPS*(abs(p1)+2*abs(p2))
+                  + coefficient_error*(abs(p)+abs(r)*abs(u))+floor)
+            du = (8*EPS*(2*abs(u1)+abs(u2))
+                  + coefficient_error*(abs(ri)*abs(p)+abs(u))+floor)
+            error = (error+_roundoff_norm(dp, du, weight))*(1+8*EPS)/m
             p, u = pn/m, un/m
-            ep, eu = epn/m+4*EPS*abs(p), eun/m+4*EPS*abs(u)
+            error = (error+_roundoff_norm(4*EPS*abs(p)+floor,
+                                          4*EPS*abs(u)+floor, weight))*(1+8*EPS)
+            ep, eu = error*weight*(1+8*EPS)+floor, error/weight*(1+8*EPS)+floor
+            # Relative coefficient-error estimates require normal, finite
+            # r and ri. Unrepresentable/extremely ill-scaled frames fail
+            # closed instead of silently losing a term or capping the bound.
+            bad |= ((abs(r) < np.finfo(float).tiny) | (abs(ri) < np.finfo(float).tiny)
+                    | ~np.isfinite(r) | ~np.isfinite(ri))
             scale = scale+b+np.log(m)
         bad |= (m == 0) | ~np.isfinite(scale) | ~np.isfinite(p) | ~np.isfinite(u) | ~np.isfinite(ep) | ~np.isfinite(eu)
     p_reason = np.full(n, '', dtype=object)
