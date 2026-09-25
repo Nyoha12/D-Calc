@@ -103,10 +103,12 @@ charge ou eta tronqué à [0,1]. Les données JSON ne contiennent aucun NaN/Inf.
 
 Les bornes d'arrondi sont des estimations conservatrices d'arithmétique binary64,
 pas des incertitudes expérimentales ni une preuve par arithmétique d'intervalles.
-Chaque somme de propagation cumule les erreurs absolues de ses deux termes,
-leurs erreurs antérieures, puis celles de cstar/sstar (y compris l'échelle de
-l'argument trigonométrique), avec facteurs 8eps et 4eps pour la normalisation.
-Cela évite de déclarer résolu un faux très grand pic près d'un zéro de cosinus.
+Le transport de l'erreur utilise désormais une boule dans la norme adaptée à
+Zc/Zref, contractante pour chaque tranche mise à l'échelle ; les changements
+d'impédance, défauts locaux de coefficients/produits et normalisations restent
+comptabilisés. La dérivation, le domaine et les preuves IO-N2 sont détaillés dans
+[IO_N2_REFERENCE.md](IO_N2_REFERENCE.md). Ce majorant à maillage fixé est distinct
+de l'erreur de discrétisation spatiale mesurée contre les références ODE.
 Pour les puissances, ep|U|+eu|p|+ep*eu borne le produit sur l'échelle |p||U|,
 avec 64eps(Nsegments+1) et une marge de calcul logarithmique. Pin trop proche de
 cette borne garde sa valeur signée avec statut `roundoff_limited` ; eta est null.
