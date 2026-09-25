@@ -35,3 +35,33 @@ Do not commit `.codex_tmp/`.
 - `results/` artifacts are traceability aids; they do not replace code, validation, and replay context.
 - Red blocks from `project_specs/WORKFLOW_CONTROL_SPEC_V1.md` still require explicit approval before action.
 - Use the smallest command that covers the changed surface, then broaden only when the risk justifies it.
+
+## 5. Test readiness before implementation
+
+Check the interpreter and the runner required by the intended acceptance command
+before starting the block. `unittest` discovery is not a replacement for pytest
+function tests, fixtures, parametrization or the `subtests` fixture.
+
+For the authorized D-Calc Linux environment (not the owner's Windows shell):
+
+```bash
+cd /home/dcalc/D-Calc || exit 1
+test "$(id -un)" = dcalc || exit 1
+test "$(hostname)" = dcalc-dev || exit 1
+/home/dcalc/.venv/bin/python -c "import sys, pytest, numpy, yaml; print(sys.executable, pytest.__version__, numpy.__version__, yaml.__version__)" || exit 1
+/home/dcalc/.venv/bin/python -m pip check || exit 1
+```
+
+If pytest is absent, either install it under an explicit mandate for this
+virtual environment, or request that mandate immediately. Do not reinstall
+packages to mask an access failure. Prefer a pinned test-tool version compatible
+with the recorded test evidence; inspect the dependency plan and record new
+packages without silently upgrading existing runtime libraries. A dated run
+manifest, not this document, records what is actually installed.
+
+Use a unique run directory for temporary files, logs and source fingerprints.
+Keep caches out of the checkout, constrain numerical library threads and use
+the task's time/memory limits. Record exact pytest commands, return codes,
+passed/failed/skipped/subtest counts, SHA and any dirty integration diff.
+Do not total overlapping re-runs. Do not weaken a test because the environment
+or collection differs; diagnose that difference and preserve the evidence.

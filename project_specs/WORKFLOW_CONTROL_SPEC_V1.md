@@ -131,3 +131,27 @@ Evolutions possibles seulement si elles reduisent vraiment la charge humaine ou 
 - templates de PR par classe de bloc.
 
 Ne pas transformer cette spec en manuel lourd ni en architecture multi-agents complete sans besoin concret.
+
+## 11. Anticipation des prerequis et responsabilite du pilote
+
+Le pilote doit conduire un bloc autorise jusqu'au livrable verifie, et non
+attendre une relance de l'humain a chaque transition normale. Les regles
+operationnelles sont dans `AGENTS.md`, section "Execution ownership and
+prerequisite readiness".
+
+Avant implementation : verifier l'environnement, les outils de test requis par
+les commandes d'acceptation, l'acces necessaire au depot et les fixtures.
+Un prerequis absent appelle tout de suite une action : le resoudre dans le
+mandat, ou demander l'autorisation precise des sa decouverte. Continuer un
+travail independant ne dispense pas de signaler ce blocage sans attendre.
+
+Une autorisation deja donnee reste acquise pour son operation et son
+perimetre. Ce n'est pas une autorisation generale : installations non mandatees,
+changements systeme, autres projets, secrets, politiques scientifiques et merges
+restent soumis aux regles existantes. Ne pas deduire d'un "continue" une
+permission de contourner un refus de securite.
+
+Le handoff compact distingue code implemente, tests executes, publication et
+merge. Le pilote actualise les blocages resolus dans les PR et l'etat actif.
+Ne pas remplacer une suite native manquante par un chiffre de tests auxiliaires.
+Un calcul direct ou un oracle est rapporte comme preuve distincte.
