@@ -45,8 +45,9 @@ function tests, fixtures, parametrization or the `subtests` fixture.
 For the authorized D-Calc Linux environment (not the owner's Windows shell):
 
 ```bash
-cd /home/dcalc/D-Calc
-test "$(id -un)" = dcalc && test "$(hostname)" = dcalc-dev
+cd /home/dcalc/D-Calc || exit 1
+test "$(id -un)" = dcalc || exit 1
+test "$(hostname)" = dcalc-dev || exit 1
 /home/dcalc/.venv/bin/python -c "import sys, pytest, numpy, yaml; print(sys.executable, pytest.__version__, numpy.__version__, yaml.__version__)"
 /home/dcalc/.venv/bin/python -m pip check
 ```
