@@ -13,6 +13,7 @@ import numpy as np
 import yaml
 
 from didgeridoo_optimizer.acoustics import forced_response as fr
+from didgeridoo_optimizer.acoustics.source_impedance import apply_thevenin_source
 from didgeridoo_optimizer.acoustics.air import AirProperties
 from didgeridoo_optimizer.acoustics.losses import LegacyBetaLossModel
 from didgeridoo_optimizer.acoustics.radiation_models import NAMES as RADIATION_NAMES, get_radiation_model
@@ -21,7 +22,7 @@ from didgeridoo_optimizer.geometry.builders import DesignBuilder
 from didgeridoo_optimizer.geometry.constraints import GeometryValidator
 from didgeridoo_optimizer.materials.models import Material, AcousticParameter
 from didgeridoo_optimizer.pipeline.fixed_design import load_fixed_context, _software_source
-from didgeridoo_optimizer.reporting.forced_response import SCHEMA, NOT_EXECUTED, UNITS, model_payload, export_bundle
+from didgeridoo_optimizer.reporting.forced_response import SCHEMA, SCHEMA_V2, SOURCE_UNITS, NOT_EXECUTED, UNITS, model_payload, export_bundle
 
 PROFILES = {
     'cylinder': [(1.21,.03,.03)],
@@ -87,6 +88,8 @@ def parser():
     source = p.add_mutually_exclusive_group(required=True)
     source.add_argument('--flow-peak-m3-s', type=float)
     source.add_argument('--pressure-peak-pa', type=float)
+    source.add_argument('--thevenin-pressure-peak-pa', type=float)
+    p.add_argument('--source-resistance-pa-s-m3', type=float)
     p.add_argument('--loss-model', choices=['legacy','zk','both'], default='legacy')
     p.add_argument('--radiation-model', choices=RADIATION_NAMES, default='legacy')
     p.add_argument('--air-reference', choices=AIR_REFERENCES)
@@ -102,8 +105,22 @@ def run(args):
         raise ValueError('Use CONFIG+DESIGN together, or built-in cases')
     if args.loss_model in {'zk','both'} and not args.air_reference:
         raise ValueError('--air-reference is required for zk/both')
-    kind = 'volume_flow' if args.flow_peak_m3_s is not None else 'pressure'
-    amplitude = fr.real_positive(args.flow_peak_m3_s if kind == 'volume_flow' else args.pressure_peak_pa, 'peak source')
+    thevenin = args.thevenin_pressure_peak_pa is not None
+    resistance = args.source_resistance_pa_s_m3
+    if thevenin:
+        if resistance is None:
+            raise ValueError('--source-resistance-pa-s-m3 is required for thevenin')
+        resistance = fr.complex_vector(resistance, 1, 'source resistance')[0]
+        if resistance.imag != 0 or resistance.real < 0:
+            raise ValueError('source resistance: finite real Rs>=0 required')
+        kind = 'thevenin_pressure'
+        amplitude = fr.real_positive(args.thevenin_pressure_peak_pa, 'peak source')
+    else:
+        if resistance is not None:
+            raise ValueError('--source-resistance-pa-s-m3 requires --thevenin-pressure-peak-pa (including Rs=0)')
+        kind = 'volume_flow' if args.flow_peak_m3_s is not None else 'pressure'
+        amplitude = fr.real_positive(args.flow_peak_m3_s if kind == 'volume_flow' else args.pressure_peak_pa, 'peak source')
+    schema = SCHEMA_V2 if thevenin else SCHEMA
     context = load_fixed_context(args.config, args.design) if args.config else None
     if context:
         original = dict(config=context['config'], effective_parameters=context['effective_parameters'],
@@ -171,19 +188,20 @@ def run(args):
                                           radiation_model=radiation_model)
             transfer['radiation']['termination'] = termination_assumptions(design)
             elapsed = time.perf_counter()-started
-            response = fr.apply_source(transfer, kind, amplitude)
+            response = (apply_thevenin_source(transfer, amplitude, resistance) if thevenin
+                        else fr.apply_source(transfer, kind, amplitude))
             results.append(model_payload(transfer, response, elapsed))
         cases.append(dict(nature='user supplied; no experimental status inferred' if context else 'synthetic',
                           physical_design=design.as_dict(), analysis_design=mesh.as_dict(), models=results))
-    payload = dict(schema=SCHEMA, convention='exp(+j omega t), forward exp(-j k x), U1/U2 toward outlet; peak amplitudes',
+    payload = dict(schema=schema, convention='exp(+j omega t), forward exp(-j k x), U1/U2 toward outlet; peak amplitudes',
                    provenance=identity, original_context=original, effective_parameters=effective,
-                   materials_used=materials_used, units=UNITS, warnings=warnings, cases=cases,
+                   materials_used=materials_used, units=UNITS | SOURCE_UNITS if thevenin else UNITS, warnings=warnings, cases=cases,
                    assumptions=['linear resting air; circular 1D sections', 'existing material statuses unchanged',
                                 'radiation boundary: '+radiation_model.describe()['name']+'; see reference band and mounting assumptions; no far field',
                                 'no broadband power sum'],
                    not_executed=NOT_EXECUTED)
     exports = export_bundle(payload, output)
-    return dict(ok=True, dry_run=False, schema=SCHEMA, cases=len(cases), models_per_case=len(models), exports=exports)
+    return dict(ok=True, dry_run=False, schema=schema, cases=len(cases), models_per_case=len(models), exports=exports)
 
 
 def main(argv=None):

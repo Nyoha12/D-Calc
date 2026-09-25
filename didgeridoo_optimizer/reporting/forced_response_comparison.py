@@ -1,4 +1,4 @@
-"""Offline diagnostics for forced-response v1 exports; standard library only.
+"""Offline diagnostics for forced-response v1/v2 exports; standard library only.
 
 No acoustics, scoring, peak extraction or normalization is performed here.
 The CLI loads this file directly to avoid reporting.__init__'s eager imports.
@@ -18,6 +18,7 @@ import subprocess
 import sys
 
 INPUT_SCHEMA = 'dcalc.forced_response.v1'
+INPUT_SCHEMA_V2 = 'dcalc.forced_response.v2'
 SCHEMA = 'dcalc.forced_response_comparison.v1'
 VERSION = '1'
 MAX_BYTES = 32 * 1024 * 1024
@@ -27,6 +28,7 @@ UNITS = dict(Zin='Pa.s/m^3', Yin='m^3/(Pa.s)', Hu='1', Yt='m^3/(Pa.s)',
              p2='Pa peak', U2='m^3/s peak', Pin='W', Pload='W', Pdiss='W', eta='1')
 COMPLEX_NAMES = ('Zin', 'Hu', 'Yt')
 REAL_NAMES = ('Pin', 'Pload', 'Pdiss', 'eta')
+SOURCE_UNITS = dict(Psupply='W', Pinternal='W', eta_source='1')
 CARTESIAN = {'ok', 'subnormal', 'analytic_zero', 'passivity_violation'}
 LOGARITHMIC = {'ok', 'subnormal', 'underflow', 'overflow', 'passivity_violation'}
 STATUSES = CARTESIAN | LOGARITHMIC | {'unavailable', 'roundoff_limited'}
@@ -118,7 +120,7 @@ def load_export(path):
         _finite_tree(payload)
         validate_export(payload)
     except (KeyError, TypeError, RecursionError) as exc:
-        raise ValueError(f'{path}: structure v1 incomplète ou invalide ({exc})') from exc
+        raise ValueError(f'{path}: structure v1/v2 incomplète ou invalide ({exc})') from exc
     return dict(payload=payload, file=dict(path=str(path), bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest()))
 
 
@@ -150,7 +152,7 @@ def validate_curve(data, n, where, complex_value):
         string(point['reason'], where+'.reason', nullable=True)
         if status not in {'ok', 'analytic_zero', 'subnormal'} and not point['reason']:
             fail(where, 'statut non résolu sans raison')
-        for key in ('log_abs', 'phase_rad', 'sign', 'roundoff_tolerance_w'):
+        for key in ('log_abs', 'phase_rad', 'sign', 'roundoff_tolerance_w', 'roundoff_tolerance_log_w'):
             if key in point:
                 number(point[key], where+'.'+key, nullable=True)
         if 'positive_log_resolved' in point and type(point['positive_log_resolved']) is not bool:
@@ -224,11 +226,56 @@ def effective_air(payload):
             if k not in {'identifier', 'provenance', 'thermoviscous_parameters_used'}}
 
 
+def validate_source_model(model, n, schema):
+    """Shared source/schema contract, also used by the producer serializer."""
+    mapping(model, 'model')
+    source = mapping(model['source'], 'source')
+    thevenin = schema == INPUT_SCHEMA_V2
+    allowed = {'thevenin_pressure'} if thevenin else {'pressure', 'volume_flow'}
+    if source['kind'] not in allowed:
+        fail('schema/source.kind', 'type de source contradictoire avec '+schema)
+    expected_units = 'm^3/s peak' if source['kind'] == 'volume_flow' else 'Pa peak'
+    if source['units'] != expected_units:
+        fail('source.units', 'unités incompatibles avec le type')
+    validate_curve(source['amplitude'], n, 'source.amplitude', True)
+    if any(s not in {'ok', 'subnormal', 'analytic_zero'} for s in source['amplitude']['status']):
+        fail('source', 'amplitudes complexes représentables requises')
+    if not thevenin:
+        if 'impedance' in source or 'impedance_units' in source or 'source_powers' in model:
+            fail('schema/source', 'métadonnées Thévenin interdites dans v1')
+        return
+    if source['impedance_units'] != 'Pa.s/m^3':
+        fail('source.impedance_units', 'Pa.s/m^3 requis')
+    validate_curve(source['impedance'], n, 'source.impedance', True)
+    if any(s not in {'ok', 'subnormal', 'analytic_zero'} for s in source['impedance']['status']):
+        fail('source.impedance', 'impédance complexe finie représentable requise')
+    if any(v['real'] < 0 for v in source['impedance']['value']):
+        fail('source.impedance', 'Re(Zs)>=0 requis')
+    powers = mapping(model['source_powers'], 'source_powers')
+    if set(powers) != set(SOURCE_UNITS):
+        fail('source_powers', 'Psupply/Pinternal/eta_source requis')
+    for name, curve in powers.items():
+        validate_curve(curve, n, 'source_powers.'+name, False)
+        required = {'log_abs'} if name == 'eta_source' else {'log_abs', 'sign', 'roundoff_tolerance_w', 'roundoff_tolerance_log_w'}
+        if name == 'Psupply':
+            required.add('positive_log_resolved')
+        if not required <= curve.keys():
+            fail('source_powers.'+name, 'champs numériques manquants')
+
+
 def validate_export(payload):
+    try:
+        _validate_export(payload)
+    except (KeyError, TypeError, AttributeError, RecursionError) as exc:
+        raise ValueError(f'structure v1/v2 incomplète ou invalide ({exc})') from exc
+
+
+def _validate_export(payload):
     mapping(payload, 'export')
-    if payload['schema'] != INPUT_SCHEMA:
-        fail('schema', f'attendu {INPUT_SCHEMA}')
-    if payload['units'] != UNITS or payload['convention'] != CONVENTION:
+    if payload['schema'] not in (INPUT_SCHEMA, INPUT_SCHEMA_V2):
+        fail('schema', f'attendu {INPUT_SCHEMA} ou {INPUT_SCHEMA_V2}')
+    units = UNITS | SOURCE_UNITS if payload['schema'] == INPUT_SCHEMA_V2 else UNITS
+    if payload['units'] != units or payload['convention'] != CONVENTION:
         fail('units/convention', 'unités ou convention v1 non reconnues')
     effective = mapping(payload['effective_parameters'], 'effective_parameters')
     if 'radiation' in effective:
@@ -299,15 +346,7 @@ def validate_export(payload):
             if name == 'zwikker_kosten_circular':
                 for key in ('mu','kappa','cp','gamma'):
                     number(air[key], 'air.'+key, positive=True)
-            source = model['source']
-            if source['kind'] not in {'pressure', 'volume_flow'}:
-                fail('source', 'type imposé inconnu')
-            expected_units = 'Pa peak' if source['kind'] == 'pressure' else 'm^3/s peak'
-            if source['units'] != expected_units:
-                fail('source.units', 'unités incompatibles avec le type')
-            validate_curve(source['amplitude'], n, 'source.amplitude', True)
-            if any(s not in {'ok', 'subnormal', 'analytic_zero'} for s in source['amplitude']['status']):
-                fail('source', 'amplitudes complexes représentables requises')
+            validate_source_model(model, n, payload['schema'])
             for group, expected_names in [('transfers', set(UNITS)-set(REAL_NAMES)-{'p1','p2','U1','U2'}),
                                           ('ports', {'p1','p2','U1','U2'}), ('powers', set(REAL_NAMES))]:
                 if set(mapping(model[group], group)) != expected_names:
@@ -441,11 +480,11 @@ def compare_real(a, b, name):
         av, bv = Fraction(a['value']), Fraction(b['value'])
         result = dict(delta=metric(bv-av), relative=metric((bv-av)/av) if av else
                       unavailable('baseline_zero: quotient par zéro analytique'))
-    if name == 'eta':
+    if name in {'eta', 'eta_source'}:
         return result
     logs = []
     for label, point in [('baseline', a), ('candidate', b)]:
-        if point['status'] not in LOGARITHMIC or (name == 'Pin' and not point.get('positive_log_resolved', False)):
+        if point['status'] not in LOGARITHMIC or (name in {'Pin', 'Psupply'} and not point.get('positive_log_resolved', False)):
             result['power_ratio_db'] = unavailable(f"{label}: puissance positive résolue requise ({point['status']})")
             return result
         value = point['value']
@@ -507,8 +546,14 @@ def context(loaded, case, model):
 def compare_exports(baseline, candidate, *, baseline_case=None, candidate_case=None,
                     baseline_model=None, candidate_model=None, comparator=None):
     a, b = baseline['payload'], candidate['payload']
+    validate_export(a); validate_export(b)
     ac, am = select(a, baseline_case, baseline_model, 'baseline')
     bc, bm = select(b, candidate_case, candidate_model, 'candidate')
+    if am['source']['kind'] != bm['source']['kind']:
+        fail('source_kind', 'familles de sources différentes ; Thévenin Zs=0 reste distinct de la pression idéale')
+    thevenin = am['source']['kind'] == 'thevenin_pressure'
+    if thevenin and am['source']['impedance']['value'] != bm['source']['impedance']['value']:
+        fail('source_impedance', 'Zs diffère : sources Thévenin différentes, aucune normalisation autorisée')
     compatibility = dict(frequency_hz=(am['frequency_hz'], bm['frequency_hz']),
                          air=(effective_air(a), effective_air(b)),
                          h_cm=(a['effective_parameters']['h_cm'], b['effective_parameters']['h_cm']),
@@ -547,16 +592,17 @@ def compare_exports(baseline, candidate, *, baseline_case=None, candidate_case=N
             point['radiation'][label] = dict(status=rad['model_status'][i] if rad else 'unidentified_explicit_load',
                                              reason=rad['model_reason'][i] if rad else 'Aucun modèle de radiation attribué',
                                              ka_out=model['ka_out'][i], load=model['load'][i])
-        for name in (*COMPLEX_NAMES, *REAL_NAMES):
-            group = 'transfers' if name in COMPLEX_NAMES else 'powers'
+        for name in (*COMPLEX_NAMES, *REAL_NAMES, *(SOURCE_UNITS if thevenin else ())):
+            group = 'transfers' if name in COMPLEX_NAMES else 'source_powers' if name in SOURCE_UNITS else 'powers'
+            observable = group+'.'+name if group == 'source_powers' else name
             av, bv = _snapshot(am[group][name],i), _snapshot(bm[group][name],i)
             metrics = compare_complex(av,bv) if name in COMPLEX_NAMES else compare_real(av,bv,name)
             flags = [label+'_subnormal' for label,p in [('baseline',av),('candidate',bv)]
                      if _subnormal(p)]
-            point['observables'][name] = dict(units=UNITS[name], baseline=av, candidate=bv,
+            point['observables'][observable] = dict(units=(UNITS | SOURCE_UNITS)[name], baseline=av, candidate=bv,
                                              flags=flags, metrics=metrics)
             for key, entry in metrics.items():
-                counts = coverage.setdefault(name+'.'+key, dict(available=0, unavailable=0, subnormal=0, refused_indices=[]))
+                counts = coverage.setdefault(observable+'.'+key, dict(available=0, unavailable=0, subnormal=0, refused_indices=[]))
                 if entry['value'] is None:
                     counts['unavailable'] += 1
                     counts['refused_indices'].append(i)
@@ -564,8 +610,8 @@ def compare_exports(baseline, candidate, *, baseline_case=None, candidate_case=N
                     counts['available'] += 1
                     counts['subnormal'] += entry['status'] == 'subnormal'
         points.append(point)
-    return dict(schema=SCHEMA, comparator_provenance=comparator, contexts=contexts,
-                convention=CONVENTION, units=UNITS, changed_factors=factors,
+    result = dict(schema=SCHEMA, comparator_provenance=comparator, contexts=contexts,
+                convention=CONVENTION, units=(UNITS | {'source_powers.'+k:v for k,v in SOURCE_UNITS.items()} if thevenin else UNITS), changed_factors=factors,
                 interpretation='multifactorielle ; aucune causalité isolée' if len(factors)>1 else
                                'écart descriptif conditionnel ; aucune supériorité instrumentale',
                 context_changes=dict(analysis_mesh=mesh_changed, load=load_changed,
@@ -579,6 +625,9 @@ def compare_exports(baseline, candidate, *, baseline_case=None, candidate_case=N
                                  real_relative='(candidate - baseline) / baseline, signé',
                                  eta='différence absolue et relative du rapport acoustique Pload/Pin, sans dB'),
                 coverage=coverage, points=points, limits=LIMITS)
+    if thevenin:
+        result['definitions']['eta_source'] = 'différence absolue et relative de Pload/Psupply, sans dB ni rendement physiologique'
+    return result
 
 
 def source_identity(cli_path):
@@ -644,6 +693,8 @@ def render_bundle(payload):
                   '(vecteur complet conservé dans comparison.json).',
                   f"  Air effectif : {json.dumps(context_data['effective_parameters']['air'], ensure_ascii=False)}.",
                   f"  Pas demandé : {context_data['effective_parameters']['h_cm']} cm."]
+        if context_data['source']['kind'] == 'thevenin_pressure':
+            lines += ['  Zs (Pa.s/m^3) : '+json.dumps(context_data['source']['impedance']['value'], ensure_ascii=False)+'.']
         if rad:
             lines += ['  Hypothèses : '+json.dumps(rad.get('assumptions'), ensure_ascii=False)+'.',
                       '  Montage : '+json.dumps(rad.get('termination'), ensure_ascii=False)+'.']
@@ -677,6 +728,13 @@ def render_bundle(payload):
             lines.append(f"| {p['frequency_hz']:g} | {name} | {cell('delta_real' if name in COMPLEX_NAMES else 'delta')} | "
                          f"{cell('delta_imag')} | {cell('magnitude_ratio_db' if name in COMPLEX_NAMES else 'power_ratio_db')} | "
                          f"{cell('phase_delta_rad')} |")
+    if any('source_powers.Psupply' in p['observables'] for p in payload['points']):
+        lines += ['', '| Hz | Puissance source | Unité | Référence : valeur / statut / raison | Candidat : valeur / statut / raison |', '|---:|---|---|---|---|']
+        for p in payload['points']:
+            for name, data in p['observables'].items():
+                if name.startswith('source_powers.'):
+                    cells = [json.dumps({k:data[side][k] for k in ('value','status','reason')}, ensure_ascii=False).replace('|', '&#124;') for side in ('baseline','candidate')]
+                    lines.append(f"| {p['frequency_hz']:g} | {name} | {data['units']} | {cells[0]} | {cells[1]} |")
     lines += ['', '## Définitions et limites', '']
     lines += ['- '+key+' : '+value for key,value in payload['definitions'].items()]
     lines += ['']+['- '+line for line in payload['limits']]
