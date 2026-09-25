@@ -48,8 +48,8 @@ For the authorized D-Calc Linux environment (not the owner's Windows shell):
 cd /home/dcalc/D-Calc || exit 1
 test "$(id -un)" = dcalc || exit 1
 test "$(hostname)" = dcalc-dev || exit 1
-/home/dcalc/.venv/bin/python -c "import sys, pytest, numpy, yaml; print(sys.executable, pytest.__version__, numpy.__version__, yaml.__version__)"
-/home/dcalc/.venv/bin/python -m pip check
+/home/dcalc/.venv/bin/python -c "import sys, pytest, numpy, yaml; print(sys.executable, pytest.__version__, numpy.__version__, yaml.__version__)" || exit 1
+/home/dcalc/.venv/bin/python -m pip check || exit 1
 ```
 
 If pytest is absent, either install it under an explicit mandate for this
