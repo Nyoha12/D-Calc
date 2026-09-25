@@ -17,6 +17,51 @@ Main technical goals:
 - material calibration;
 - physical validation through the A-E validation bench.
 
+## Execution ownership and prerequisite readiness
+
+The pilot owns the requested outcome, not merely a sequence of isolated steps.
+When the owner says to continue an agreed block, proceed through its authorized
+implementation, tests, review, branch push and PR handoff. Do not require a new
+"continue" for each routine transition. Merges remain separately authorized.
+
+Before a substantial task, check the critical prerequisites for its actual
+acceptance commands: correct device/user/worktree and Python environment,
+required test runner/imports, scoped repository access, commit identity when
+publishing, fixtures and resource budget. Checking imports is not running a global suite. Raise a missing
+prerequisite before spending the block on work that cannot satisfy acceptance.
+
+For every blocker, choose and execute the next action:
+- Within the current mandate: resolve it and verify the result.
+- Requires explicit approval not yet given: request that exact operation
+  immediately, state its scope and why it is necessary, and continue genuinely
+  independent authorized work when possible. Do not defer the request to the
+  final report or merely repeat "missing".
+- Access denied, wrong device, security boundary or out-of-scope change: stop
+  that operation, report the concrete evidence, and route to the owner or
+  Administration. Never bypass the restriction.
+
+Record approvals by operation and environment in the active task handoff.
+An approval already given for that scope is not requested again. Approval to
+install one test tool in a named virtual environment does not authorize system
+packages, upgrades of unrelated libraries, security changes or other projects.
+This section does not widen the red-operation permissions below.
+
+Use the existing native test suite once its runner is available. An independent
+numerical oracle is valuable additional evidence, not a substitute for an
+unexecuted test suite. Preserve original assertions, fixtures and tolerances.
+
+Keep one active pilot and a compact task state: objective, authorized actions,
+baseline, worktree/branch, remaining acceptance checks, blockers and owner of the
+next action. Temporary agents finish their mandate and return to the pilot;
+they do not start independent roadmaps. Parallelize only disjoint work, with
+isolated worktrees and within the environment's resource budget.
+
+On completion, reconcile actual process exit codes, source fingerprints and
+live PR state. Report implemented, tested, published and merged separately;
+update stale PR status text instead of leaving an already-resolved blocker as
+current. Give the user commands only for actions requiring their presence or
+unavailable through authorized tools, not as routine clerical work.
+
 ## Source of truth
 
 The source of truth for code is the real Git repository checked out in this working tree, cross-checked with origin/main.
