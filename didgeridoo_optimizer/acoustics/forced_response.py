@@ -13,6 +13,7 @@ import numpy as np
 from .air import AirProperties
 from .losses import LegacyBetaLossModel
 from .radiation import radiation_impedance
+from .radiation_models import LegacyRadiationModel
 from .thermoviscous import positive_vector
 from .transfer_matrix import DEFAULT_AIR, area_from_diameter, characteristic_impedance, _resolve_material
 from ..geometry.discretization import GeometryDiscretizer
@@ -264,7 +265,7 @@ def transfer_from_slices(freq_hz, slices_from_outlet, load, *, zref):
                                Zt=_multiply(load_curve, hu), Hp=_multiply(load_curve, yt)))
 
 
-def loaded_transfer(freq_hz, mesh, materials, air=None, *, exit_radius_m, loss_model=None, zref=None):
+def loaded_transfer(freq_hz, mesh, materials, air=None, *, exit_radius_m, loss_model=None, zref=None, radiation_model=None):
     """Response of a uniform analysis mesh with a separately supplied physical outlet.
 
     Use prepare_mesh on a physical design first. No geometric/radiation epsilon
@@ -286,10 +287,15 @@ def loaded_transfer(freq_hz, mesh, materials, air=None, *, exit_radius_m, loss_m
             real_positive(getattr(segment, field), f'segment.{field}')
     model = LegacyBetaLossModel() if loss_model is None else loss_model
     omega = 2*np.pi*freq
-    zr = radiation_impedance(omega, radius, air)
+    if radiation_model is None:
+        zr = radiation_impedance(omega, radius, air)
+        radiation = LegacyRadiationModel().metadata(omega*radius/air.c, radius)
+    else:
+        boundary = radiation_model.evaluate(omega, radius, air)
+        zr, radiation = boundary.impedance, boundary.metadata
     if zref is None:
         zref = characteristic_impedance(air.rho, air.c, area_from_diameter(mesh.segments[0].d_in_cm/100))
-    warnings = set()
+    warnings = set(radiation['warnings'])
     def slices():
         for segment in reversed(mesh.segments):
             material = materials.get(segment.material_id) if isinstance(materials, MaterialDatabase) else _resolve_material(segment, materials)
@@ -302,7 +308,9 @@ def loaded_transfer(freq_hz, mesh, materials, air=None, *, exit_radius_m, loss_m
     result = transfer_from_slices(freq, slices(), zr, zref=zref)
     result.update(exit_radius_m=radius, ka_out=omega*radius/air.c, model=model.name,
                   model_version='repository source revision', warnings=sorted(warnings),
-                  load_type='D-Calc existing low-frequency radiation; no extra length')
+                  radiation=radiation,
+                  load_type=('D-Calc existing low-frequency radiation; no extra length' if radiation['name'] == 'legacy'
+                             else radiation['name']+' published Pade(1,2) fit; no extra length'))
     return result
 
 

@@ -74,6 +74,7 @@ def input_impedance(
     *,
     exit_radius_m: float | None = None,
     loss_model: LossModel | None = None,
+    radiation_model=None,
 ) -> np.ndarray:
     """Return p/U at the inlet, with an optional physical radiation radius.
 
@@ -106,7 +107,8 @@ def input_impedance(
     material_lookup = materials.materials if isinstance(materials, MaterialDatabase) else materials
     if exit_radius_m is None:
         exit_radius_m = max(float(design.segments[-1].d_out_cm) / 200.0, 1e-9)
-    z_load = radiation_impedance(omega, exit_radius_m, air)
+    z_load = (radiation_impedance(omega, exit_radius_m, air) if radiation_model is None
+              else radiation_model.evaluate(omega, exit_radius_m, air).impedance)
 
     for segment in reversed(design.segments):
         material = materials.get(segment.material_id) if isinstance(materials, MaterialDatabase) else _resolve_material(segment, material_lookup)
