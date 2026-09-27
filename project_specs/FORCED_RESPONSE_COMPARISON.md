@@ -168,3 +168,12 @@ Les sorties décrivent des calculs synthétiques locaux : aucune mesure, validat
 A–E, calibration, promotion matériau, monotonie générale, FFT jouée ou rendement
 joueur. Une grille de 10 Hz ne suffit pas à déduire f0, Q ou déplacement de pics
 sans analyse dédiée. Les watts des différentes fréquences ne sont pas additionnés.
+
+## Entrées SOURCE-02 v2
+
+Le lecteur accepte aussi `dcalc.forced_response.v2`, réservé à Thévenin. La
+comparaison exige la même famille, chaque Ps complexe et chaque Zs complexe
+identiques ; Zs=0 ne convertit pas une source en pression idéale. Les puissances
+source sont qualifiées `source_powers.*` dans les sorties, avec différences,
+rapports admissibles et raisons ; eta_source reste sans dB. Le chemin v1
+conserve ses champs et valeurs. Voir [SOURCE_02_REFERENCE](SOURCE_02_REFERENCE.md).

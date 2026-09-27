@@ -260,6 +260,7 @@ def transfer_from_slices(freq_hz, slices_from_outlet, load, *, zref):
     load_curve = _from_complex(zr)
     return dict(frequency_hz=freq, load=zr, zref=reference, segment_count=count,
                 log_scale=scale, normalized_pressure=p, normalized_flow=u,
+                propagation_invalid=bad.copy(),
                 pressure_roundoff_bound=ep, flow_roundoff_bound=eu,
                 transfers=dict(Zin=zin, Yin=yin, Hu=hu, Yt=yt,
                                Zt=_multiply(load_curve, hu), Hp=_multiply(load_curve, yt)))

@@ -11,6 +11,8 @@ import numpy as np
 from .export import _to_builtin
 
 SCHEMA = 'dcalc.forced_response.v1'
+SCHEMA_V2 = 'dcalc.forced_response.v2'
+SOURCE_UNITS = dict(Psupply='W', Pinternal='W', eta_source='1')
 NOT_EXECUTED = ['optimization', 'ranking', 'pareto', 'robustness', 'nonlinear',
                 'scoring', 'peak_extraction', 'calibration', 'far_field', 'played_sound']
 UNITS = dict(Zin='Pa.s/m^3', Yin='m^3/(Pa.s)', Hu='1', Yt='m^3/(Pa.s)',
@@ -32,8 +34,10 @@ def model_payload(transfer, response, elapsed_seconds):
                 powers=response['powers'])
     if 'radiation' in transfer:
         result['radiation'] = _to_builtin(transfer['radiation'])
+    if 'source_powers' in response:
+        result['source_powers'] = response['source_powers']
     counts = {}
-    for group in ('transfers', 'ports', 'powers'):
+    for group in ('transfers', 'ports', 'powers', *(['source_powers'] if 'source_powers' in result else [])):
         for data in result[group].values():
             for status in data['status']:
                 counts[status] = counts.get(status, 0)+1
@@ -46,7 +50,7 @@ def _rows(payload):
     for case in payload['cases']:
         for model in case['models']:
             n = len(model['frequency_hz'])
-            observables = {**model['transfers'], **model['ports'], **model['powers']}
+            observables = {**model['transfers'], **model['ports'], **model['powers'], **model.get('source_powers', {})}
             for name, data in observables.items():
                 if any(len(values) != n for values in data.values()):
                     raise ValueError(f'Export alignment mismatch: {name}')
@@ -67,6 +71,14 @@ def _rows(payload):
                            ka_out=model['ka_out'][i], load_real_pa_s_m3=model['load'][i]['real'],
                            load_imag_pa_s_m3=model['load'][i]['imag'], log_scale=model['log_scale'][i],
                            log_scale_status=model['log_scale_status'][i])
+                if 'impedance' in model['source']:
+                    impedance = model['source']['impedance']
+                    value = impedance['value'][i]
+                    row.update(source_impedance_real=value['real'], source_impedance_imag=value['imag'],
+                               source_impedance_units=model['source']['impedance_units'])
+                    for key in impedance:
+                        if key != 'value':
+                            row['source_impedance_'+key] = impedance[key][i]
                 # Low-level explicit-load fixtures may have no radiation model.
                 coefficients = (radiation or {}).get('coefficients') or {}
                 row.update(radiation_model=(radiation or {}).get('name'),
@@ -84,12 +96,12 @@ def _rows(payload):
                            radiation_model_reason=radiation['model_reason'][i] if radiation else None)
                 for name, data in observables.items():
                     value = data['value'][i]
-                    if name in model['powers']:
+                    if name in model['powers'] or name in model.get('source_powers', {}):
                         row[name] = value
                     else:
                         row[name+'_real'] = None if value is None else value['real']
                         row[name+'_imag'] = None if value is None else value['imag']
-                    row[name+'_units'] = UNITS[name]
+                    row[name+'_units'] = (UNITS | SOURCE_UNITS)[name]
                     for key in data:
                         if key != 'value':
                             row[name+'_'+key] = data[key][i]
@@ -98,9 +110,25 @@ def _rows(payload):
 
 def render_bundle(payload):
     """Serialize all three artifacts before creating any output directory."""
+    try:
+        return _render_bundle(payload)
+    except (KeyError, TypeError, AttributeError, IndexError) as exc:
+        raise ValueError(f'Invalid forced-response export structure: {exc}') from exc
+
+
+def _render_bundle(payload):
     payload = _to_builtin(payload)
-    if payload.get('schema') != SCHEMA:
-        raise ValueError('Expected dcalc.forced_response.v1')
+    if not isinstance(payload, dict) or payload.get('schema') not in (SCHEMA, SCHEMA_V2):
+        raise ValueError('Expected dcalc.forced_response.v1 or dcalc.forced_response.v2')
+    if payload['schema'] == SCHEMA_V2 and payload.get('units') != UNITS | SOURCE_UNITS:
+        raise ValueError('v2 units: instrument and source power units required')
+    from .forced_response_comparison import validate_source_model
+    try:
+        for case in payload['cases']:
+            for model in case['models']:
+                validate_source_model(model, len(model['frequency_hz']), payload['schema'])
+    except (KeyError, TypeError, AttributeError) as exc:
+        raise ValueError(f'Invalid source/export structure: {exc}') from exc
     js = json.dumps(payload, ensure_ascii=False, allow_nan=False, indent=2)+'\n'
     rows = list(_rows(payload))
     stream = io.StringIO(newline='')
@@ -130,11 +158,21 @@ def render_bundle(payload):
             else:
                 lines.append('Charge explicite du calcul bas niveau ; aucun modèle de radiation attribué.')
             unavailable = sum(status not in {'ok', 'analytic_zero', 'subnormal'}
-                              for group in ('transfers', 'ports', 'powers')
+                              for group in ('transfers', 'ports', 'powers', *(['source_powers'] if 'source_powers' in model else []))
                               for data in model[group].values() for status in data['status'])
             lines.append(f"Profil {case['physical_design']['id']}, modèle {model['model']}, "
                          f"{len(model['frequency_hz'])} fréquences, propagation {model['propagation_seconds']:.6g} s, "
                          f"{unavailable} observations indisponibles ou limitées par l'arrondi.")
+            if 'source_powers' in model:
+                lines += ['Source Thévenin : Ps=p1+Zs U1 ; eta_source=Pload/Psupply, sans rendement physiologique.',
+                          'Ps (Pa peak) : '+json.dumps(model['source']['amplitude']['value'], ensure_ascii=False)+'.',
+                          'Zs (Pa.s/m^3) : '+json.dumps(model['source']['impedance']['value'], ensure_ascii=False)+'.',
+                          '| Hz | Observable source | Unité | Valeur | Statut | Raison |', '|---:|---|---|---:|---|---|']
+                for i, frequency in enumerate(model['frequency_hz']):
+                    for name, data in model['source_powers'].items():
+                        reason = str(data['reason'][i] or '').replace('|', '&#124;')
+                        value = 'null' if data['value'][i] is None else repr(data['value'][i])
+                        lines.append(f"| {frequency:g} | {name} | {SOURCE_UNITS[name]} | {value} | {data['status'][i]} | {reason} |")
     return {'forced_response.json': js, 'forced_response.csv': stream.getvalue(),
             'forced_response.txt': '\n'.join(lines)+'\n'}
 

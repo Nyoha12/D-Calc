@@ -272,3 +272,11 @@ Les 446 tests et 120 sous-tests historiques restent attribués à `986fd7e`, san
 cumul avec ce passage ciblé ni prétention de nouveau rejeu global/A–E. Aucun
 nouveau benchmark de performance, téléchargement, résultat expérimental ou
 calibration ; environnement Python/bibliothèques inchangé.
+
+## Extension SOURCE-02 optionnelle
+
+La source Thévenin explicite (`--thevenin-pressure-peak-pa` avec
+`--source-resistance-pa-s-m3`) utilise `dcalc.forced_response.v2` et un groupe
+`source_powers` distinct. Les deux sources idéales et leurs exports v1 gardent
+leur contrat. Voir [SOURCE_02_REFERENCE](SOURCE_02_REFERENCE.md) pour l'API,
+les bornes numériques, les unités et les limites physiques.
