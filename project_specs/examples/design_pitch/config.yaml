@@ -1,0 +1,31 @@
+schema_version: dcalc.optimizer.config.v1
+materials:
+  database_file: ../../materials_base_v1.yaml
+  variant_rules_file: ../../wood_variant_rules_v1.yaml
+environment:
+  air_density_kg_m3: 1.204
+  sound_speed_m_s: 343.0
+  air_temperature_c: 20.0
+  relative_humidity_percent: 50.0
+frequency_analysis:
+  f_min_hz: 10.0
+  f_max_hz: 700.0
+  n_points: 691
+  discretization_max_segment_cm: 0.5
+geometry_constraints:
+  total_length_cm: {min: 70.0, max: 230.0}
+  diameter_cm: {min: 2.0, max: 8.0}
+  body_segments: {min_count: 1, max_count: 8, min_length_cm: 2.0}
+  allow_steps: false
+  allow_reverse_taper: true
+  allow_local_constrictions: true
+  allow_local_expansions: true
+topology:
+  allow_bell: true
+  allow_bell_types: [conical, exponential, powerlaw]
+bell:
+  geometry_constraints:
+    length_cm: {min: 5.0, max: 45.0}
+    throat_diameter_cm: {min: 2.0, max: 5.0}
+    exit_diameter_cm: {min: 2.0, max: 8.0}
+    flare_parameter: {min: 0.5, max: 4.0}
