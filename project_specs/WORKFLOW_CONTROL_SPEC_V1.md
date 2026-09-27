@@ -15,14 +15,14 @@ Le principe central est le controle par preuves synthetiques: Codex agit dans un
 | GitHub | Garde l'historique canonique, les branches, les PR et les merges. |
 | Tests deterministes | Bornent les regressions et fournissent la preuve minimale avant commit ou PR. |
 | PRs bornees | Isolent les changements par objectif coherent et rendent la review rapide. |
-| Humain | Supervise les exceptions, les decisions sensibles et les merges tant que la politique ne dit pas autrement. |
+| Humain | Supervise les exceptions et decisions sensibles ; delegue les integrations ordinaires selon la section 12. |
 
 ## 3. Classification des blocs
 
 | Classe | Intention | Controle humain |
 |---|---|---|
 | Vert | Changement faible risque, scope clair, validation locale simple. | Intervention minimale; rapport synthetique suffisant. |
-| Orange | Changement produit ou comportemental borne, avec risque utilisateur ou compatibilite. | Review humaine avant merge. |
+| Orange | Changement produit ou comportemental borne, avec risque utilisateur ou compatibilite. | Review du pilote et preuves ; delegation section 12 si le perimetre est deja approuve. |
 | Rouge | Changement sensible scientifique, validation, securite, historique ou workflow. | Planning/read-only par defaut sauf accord explicite. |
 
 ## 4. Blocs verts
@@ -44,11 +44,13 @@ Conditions:
 - tests ou validation adaptes OK;
 - diff court et coherent;
 - pas de push direct sur `main`;
-- merge humain explicite pour l'instant.
+- merge par le pilote selon la delegation et les conditions de la section 12.
 
 ## 5. Blocs orange
 
-Dans un bloc orange, Codex peut implementer et ouvrir une PR, mais ne doit pas merger sans review humaine explicite.
+Dans un bloc orange, Codex peut implementer et ouvrir une PR. Le pilote peut
+integrer apres review et validation dans le cadre de la section 12 ; un executant
+Codex temporaire ne merge pas de sa propre initiative.
 
 Exemples:
 - comportement CLI;
@@ -63,7 +65,8 @@ Controle attendu:
 - montrer les fichiers touches;
 - lancer les tests pertinents;
 - signaler les risques de compatibilite;
-- attendre l'accord humain avant merge.
+- appliquer les conditions de delegation de la section 12, ou obtenir le mandat
+  explicite requis si le bloc ne les remplit pas.
 
 ## 6. Blocs rouges
 
@@ -106,9 +109,9 @@ Le rapport doit etre suffisant pour decider sans relire tout le code, mais assez
 |---|---|
 | Commit | Possible sur bloc vert si scope respecte, diff coherent et validation OK. |
 | PR | Possible sur bloc vert ou orange si la branche est propre et le rapport est clair. |
-| Merge | Accord humain explicite pour l'instant. |
+| Merge | Pilote delegue, scope approuve et conditions section 12 ; sinon mandat explicite. |
 | Push `main` | Interdit. Passer par PR. |
-| Orange / rouge | Pas de merge sans accord humain explicite. |
+| Orange / rouge | Orange ordinaire : section 12. Rouge : mandat explicite distinct, non couvert par la delegation. |
 | Scope inattendu | Stopper, rapporter, attendre decision. |
 
 ## 9. Relation avec AGENTS.md et dcalc.rules
@@ -147,11 +150,31 @@ travail independant ne dispense pas de signaler ce blocage sans attendre.
 
 Une autorisation deja donnee reste acquise pour son operation et son
 perimetre. Ce n'est pas une autorisation generale : installations non mandatees,
-changements systeme, autres projets, secrets, politiques scientifiques et merges
-restent soumis aux regles existantes. Ne pas deduire d'un "continue" une
-permission de contourner un refus de securite.
+changements systeme, autres projets, secrets et politiques scientifiques restent
+soumis a leurs mandats distincts. Les merges ordinaires suivent la section 12.
+Ne pas deduire d'un "continue" une permission de contourner un refus de securite.
 
 Le handoff compact distingue code implemente, tests executes, publication et
 merge. Le pilote actualise les blocages resolus dans les PR et l'etat actif.
 Ne pas remplacer une suite native manquante par un chiffre de tests auxiliaires.
 Un calcul direct ou un oracle est rapporte comme preuve distincte.
+
+## 12. Delegation des integrations ordinaires — decision du 27 septembre 2026
+
+Le proprietaire a approuve #63 puis demande : « ne me demande pas pour ce genre
+de choses avance juste correctement ». La section "Standing owner delegation
+for ordinary merges" d'AGENTS.md est la regle operationnelle de reference.
+
+Cette decision remplace la demande systematique d'accord par PR pour les blocs
+verts/orange ordinaires deja approuves. Le pilote verifie le diff et les risques,
+les tests natifs du head exact, la base distante, l'absence de review bloquante et
+les controles CI requis. Il peut alors merger la PR sans nouvelle sollicitation,
+sans bypass ni push direct sur main, puis verifier le contenu integre, executer
+les controles post-merge pertinents et actualiser l'etat de reprise.
+
+Ce n'est pas une delegation de merge aux executants temporaires, ni une
+autorisation generale des operations rouges. Les limites scientifiques, les
+protections du serveur, les permissions d'outils et les regles GitHub ne changent
+pas. Si le head, la base ou le scope a change, revoir et revalider avant de merger.
+Un echec de validation arrete les integrations dependantes ; aucune tolerance ou
+preuve n'est modifiee pour debloquer artificiellement la fusion.
