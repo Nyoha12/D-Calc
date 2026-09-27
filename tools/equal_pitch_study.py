@@ -14,7 +14,10 @@ import json
 import math
 import os
 from pathlib import Path
-import resource
+try:
+    import resource
+except ImportError:  # Keep helpers, dry-run and test collection usable on Windows.
+    resource = None
 import subprocess
 import sys
 import time
@@ -211,7 +214,8 @@ def validate(name, factor, target):
         if abs(peak['frequency_hz']-modes[0]['frequency_max_abs_hz']) > .002:
             raise StudyError('First mode extraction disagrees with local peak check')
         levels.append(dict(h_cm=h, slices=len(mesh.segments), modes=modes,
-                           first_peak_check=peak, residual_hz=modes[0]['frequency_max_abs_hz']-target))
+                           survey_frequency_hz=SURVEY.tolist(), survey_zin_real=zin.real.tolist(),
+                           survey_zin_imag=zin.imag.tolist(), first_peak_check=peak, residual_hz=modes[0]['frequency_max_abs_hz']-target))
     if abs(levels[0]['residual_hz']) > TOLERANCE_HZ:
         raise StudyError('Final h=.5 extraction exceeds tuning residual')
     deltas = []
@@ -358,7 +362,13 @@ def write_json(path, payload):
         stream.write(text)
 
 
+def execution_ready():
+    if resource is None or os.name != 'posix':
+        raise StudyError('Bounded numerical execution requires POSIX resource limits; helpers and --dry-run remain available')
+
+
 def _child_limits():
+    execution_ready()
     resource.setrlimit(resource.RLIMIT_AS, (768*1024**2, 768*1024**2))
     resource.setrlimit(resource.RLIMIT_CPU, (175, 175))
 
@@ -378,6 +388,7 @@ def _worker():
 
 
 def bounded_task(task, timeout):
+    execution_ready()
     env = dict(os.environ, OPENBLAS_NUM_THREADS='1', OMP_NUM_THREADS='1', MKL_NUM_THREADS='1',
                NUMEXPR_NUM_THREADS='1', PYTHONDONTWRITEBYTECODE='1')
     started = time.monotonic()
@@ -430,6 +441,7 @@ def run(output, target=70., *, dry_run=False):
     plan = preflight(output, target)
     if dry_run:
         return dict(ok=True, dry_run=True, output_created=False, plan=plan)
+    execution_ready()
     output = Path(plan['output_dir'])
     identity = provenance()
     output.mkdir(parents=True, exist_ok=False)

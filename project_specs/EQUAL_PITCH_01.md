@@ -100,7 +100,9 @@ un échec explicite, sans relance ; les artefacts acquis sont conservés.
 
 Les destinataires sont `design_*.json`, `tune_*.json`, `validation_*.json`,
 `sources_*.json`, `run.json`, `run.csv`, `ratios.csv`, `run.md`. Les fichiers design
-sont des profils physiques réutilisables. `run.json` contient provenance du vrai
+sont des profils physiques synthétiques avec `material_id: io_test`. Ce matériau
+est créé par le diagnostic, pas par la base matériau du starter ; ces fichiers
+ne sont donc pas directement exécutables avec le CONFIG starter inchangé. `run.json` contient provenance du vrai
 checkout, HEAD/origin-main, état local, empreintes SHA-256 des sources Python,
 versions Python/NumPy, méthodes, durées et codes de sortie des enfants. JSON strict
 sans NaN/Inf. Le SHA du commit final et les commandes/exits des tests sont à
@@ -112,3 +114,56 @@ géométrique, exclusivité des sorties, dry-run, sources absolues communes,
 séparation fréquence commune/pic propre et petit smoke moteur à 12 fréquences.
 Complément : tests natifs ciblés d'extraction modale, sans suite globale ni A–E.
 Le livrable n'autorise aucune promotion de matériau.
+
+
+## Résultat de référence — 27 septembre 2026
+
+Une campagne complète a été exécutée avant commit avec le moteur main
+`09b3f468b0db70136a98c6cbd63de1b8d13f08c9` : 12 étapes achevées, 370,36 s
+sur le budget de 420 s. Les diamètres et rapports de longueurs internes sont
+conservés ; le facteur longitudinal n'est pas une homothétie 3D.
+Vérification du même profil à h=0,25 cm, sans réaccord :
+
+| Profil synthétique | Longueur cm | f1 Hz | f2 Hz | Q1 demi-puissance |
+|---|---:|---:|---:|---:|
+| cylinder | 120,16004 | 69,999973 | 211,13857 | 38,822 |
+| expansion | 111,73755 | 69,998952 | 220,69787 | 41,714 |
+| constriction | 115,30355 | 69,999218 | 214,10150 | 34,928 |
+| body_bell — groupe distinct | 134,11225 | 69,999013 | 210,28111 | 49,861 |
+
+Ratios Pload expansion/cylindre, à source et fréquence identiques :
+
+| Source | 70 Hz | 210 Hz | 350 Hz |
+|---|---:|---:|---:|
+| Pression 1 Pa crête | 1,759088 | 0,246269 | 31,740200 |
+| Débit 1e-6 m³/s crête | 1,089429 | 0,025523 | 0,010084 |
+| Thévenin Ps=1 Pa, Rs=Zref commun | 1,740553 | 0,249911 | 1,800217 |
+| Thévenin Ps=1 Pa, Rs=10 Zref commun | 1,610436 | 0,145574 | 0,046859 |
+
+Zref commun = 585202,5652086788 Pa.s/m³. La source Rs=0 retrouve la pression
+idéale. L'avantage à 70 Hz n'est pas une amélioration uniforme du spectre.
+Les points à 210/350 Hz sont des réponses à des composantes hypothétiques,
+non les amplitudes d'un son joué. Body_bell ne permet pas d'isoler l'effet de
+la seule cloche : ses diamètres et sa longueur diffèrent également.
+
+La vérification indépendante relit les puissances, sources absolues, bilans,
+rapports, facteurs de longueur et critères d'accord. Un cylindre ABCD analytique
+(non discrétisé) donne 120,15999493 cm ; l'écart avec l'accord testé est
+0,00004297 cm. Quatre évaluations ciblées du moteur main, avec un ajustement
+parabolique indépendant, retrouvent les premiers pics à moins de 0,00005 Hz.
+Ce sont des contrôles numériques, pas une validation empirique.
+
+Preuves serveur : `/home/dcalc/rdc-runs/EQUAL-PITCH-01-20260927T093939Z/`.
+Le `run.json` d'origine a pour SHA256
+`25bce50f638f09fbc9e236554ca48ef87f86a708fcc665ba8b7bb6494f80d3ef`.
+Le script réellement exécuté, conservé dans `pilot/study_tool_snapshot.py`, a
+pour SHA256 `944db23fc1c893f9f7853a9885e9157ea08203ee0cf3b84793526a864e3d6702`.
+Il correspond au premier commit local `95b0bb2eed8cc37f77b99c2bd606dde2b791f70f`.
+
+La revue postérieure ajoute seulement la protection d'import `resource` et la
+conservation des courbes survey déjà calculées pour les futurs runs. Les anciens
+exports ne sont pas réécrits ou complétés rétroactivement. Les évaluations de
+contrôle et leurs courbes propres restent séparées dans `pilot/peak_raw_*.npz`.
+Les helpers et le dry-run restent importables sans `resource` ; le lancement
+numérique borné exige POSIX et refuse autrement avant de créer des résultats.
+Aucun seuil, ancienne assertion, coefficient ou modèle n'a été changé.

@@ -167,3 +167,53 @@ def test_failed_jobs_preserved_no_retry(tmp_path, monkeypatch):
     payload = json.loads((out/'run.json').read_text())
     assert len(payload['jobs'])==4 and all(j['exit_code']==1 for j in payload['jobs'])
     assert all((out/f'tune_{name}.json').exists() for name in tool.NAMES)
+
+
+def test_unsupported_runner_refuses_before_output_but_dry_run_works(tmp_path, monkeypatch):
+    monkeypatch.setattr(tool, 'resource', None)
+    path = tmp_path/'not_created'
+    assert tool.run(path, dry_run=True)['ok']
+    with pytest.raises(tool.StudyError, match='POSIX'):
+        tool.run(path)
+    with pytest.raises(tool.StudyError, match='POSIX'):
+        tool.bounded_task({}, 1)
+    assert not path.exists()
+
+
+def test_module_import_without_resource_keeps_helpers_available(monkeypatch):
+    import builtins
+    import importlib.util
+    original = builtins.__import__
+    def unavailable(name, *args, **kwargs):
+        if name == 'resource':
+            raise ImportError('simulated Windows resource absence')
+        return original(name, *args, **kwargs)
+    monkeypatch.setattr(builtins, '__import__', unavailable)
+    spec = importlib.util.spec_from_file_location('_equal_pitch_no_resource', tool.__file__)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    assert module.resource is None
+    assert module.target_value(70) == 70
+
+
+def test_validation_retains_existing_survey_without_new_evaluations(monkeypatch):
+    from types import SimpleNamespace
+    calls = []
+    def evaluator(design, h):
+        def evaluate(freq):
+            calls.append(h)
+            return np.full(len(freq), 2+3j)
+        return evaluate, SimpleNamespace(segments=[1])
+    def modes(*args, **kwargs):
+        return [dict(status='resolved', mode_ordinal=i+1, frequency_max_abs_hz=f,
+                     q_half_power=40., frequency_refinement=[dict(frequency_max_abs_hz=f, q_half_power=40.)]*2)
+                for i,f in enumerate((70.,210.,350.))]
+    monkeypatch.setattr(tool, 'evaluator', evaluator)
+    monkeypatch.setattr(tool, 'extract_modes', modes)
+    monkeypatch.setattr(tool, 'first_peak', lambda evaluate: {'frequency_hz':70.})
+    result = tool.validate('cylinder', 1., 70.)
+    assert calls == [.5,.25]
+    for level in result['levels']:
+        assert level['survey_frequency_hz'] == tool.SURVEY.tolist()
+        assert level['survey_zin_real'] == [2.]*len(tool.SURVEY)
+        assert level['survey_zin_imag'] == [3.]*len(tool.SURVEY)
