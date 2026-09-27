@@ -1,0 +1,7 @@
+{
+  "id": "PVC / référence Ø30",
+  "metadata": {"nature": "exemple physique utilisateur, non mesuré", "notes": ["Diamètres conservés", null]},
+  "segments": [
+    {"kind": "cylinder", "length_cm": 120.0, "d_in_cm": 3.0, "d_out_cm": 3.0, "material_id": "pvc_pressure"}
+  ]
+}

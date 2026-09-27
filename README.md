@@ -160,3 +160,19 @@ Material calibration artifacts do not by themselves establish global material co
 ## Environment
 
 Use a Python environment with dependencies listed in `requirements.txt`.
+
+### Accorder et comparer des fichiers DESIGN
+
+Pour 1 à 4 profils physiques JSON/YAML, avec une CONFIG commune et une source explicite :
+
+```bash
+python -m tools.design_pitch_compare \
+  --config project_specs/examples/design_pitch/config.yaml \
+  --design project_specs/examples/design_pitch/cylinder.json project_specs/examples/design_pitch/cone.yaml \
+  --target-hz 70 --pressure-peak-pa 1 --output-dir results/mes-profils --dry-run
+```
+
+Retirez `--dry-run` pour accorder les longueurs et exporter les designs rechargeables,
+les réponses forcées comparables et une synthèse française avant/après. Calcul borné
+POSIX ; préflight portable. Consultez le [guide DESIGN-PITCH](project_specs/DESIGN_PITCH_01.md)
+pour les bornes, ZK/Silva, les trois exemples et les statuts d'échec conservés.
