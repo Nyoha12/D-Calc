@@ -50,21 +50,45 @@ def artifact_names(count):
 
 
 def provenance(root):
+    """Claim a revision only for verified, tracked sources from one worktree."""
+    from ..pipeline.fixed_design import _software_source
+
+    root = Path(root).resolve()
+    software = _software_source()
     paths = {Path(__file__).resolve(), root/'tools/design_pitch_compare.py'}
+    issues = []
+    if root != Path(__file__).resolve().parents[2]:
+        issues.append('Reporting module and requested worktree have different roots')
     for name, module in tuple(sys.modules.items()):
         if name.startswith(('didgeridoo_optimizer.', 'tools.')):
-            path = getattr(module, '__file__', None)
-            if path and Path(path).suffix == '.py' and Path(path).resolve().is_relative_to(root):
-                paths.add(Path(path).resolve())
+            raw = getattr(module, '__file__', None)
+            if raw is None:
+                issues.append('Loaded source path unavailable: '+name)
+                continue
+            path = Path(raw).resolve()
+            if path.suffix != '.py' or not path.is_file() or not path.is_relative_to(root):
+                issues.append('Loaded source outside verified Python worktree: '+name)
+            else:
+                paths.add(path)
     def git(*args):
         try:
-            return subprocess.run(['git', '-C', str(root), *args], capture_output=True, text=True,
-                                  check=True, timeout=5).stdout.strip()
+            return subprocess.run(['git', '-C', str(root), *args], capture_output=True,
+                text=True, check=True, timeout=5).stdout.strip()
         except (OSError, subprocess.SubprocessError):
             return None
-    return dict(head_sha=git('rev-parse', 'HEAD'), origin_main_sha=git('rev-parse', 'origin/main'),
-        worktree=str(root), status=git('status', '--short'), executable=sys.executable, python=sys.version,
-        source_sha256={p.relative_to(root).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(paths)})
+    relative = [p.relative_to(root).as_posix() for p in paths
+                if p.is_file() and p.is_relative_to(root)]
+    tracked = git('ls-files', '-z', '--error-unmatch', '--', *relative)
+    if tracked is None or not set(relative) <= set(tracked.split('\0')):
+        issues.append('Loaded source membership could not be established')
+    head = software.get('sha') if not issues else None
+    origin = software.get('origin', 'unknown') if not issues else '; '.join(issues)
+    return dict(head_sha=head, software_origin=origin,
+        working_tree_dirty=software.get('working_tree_dirty') if head else None,
+        origin_main_sha=git('rev-parse', 'origin/main'), worktree=str(root),
+        status=git('status', '--short'), executable=sys.executable, python=sys.version,
+        source_sha256={p.relative_to(root).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+                       for p in sorted(paths) if p.is_file() and p.is_relative_to(root)})
 
 
 def _read(path, errors):
@@ -102,7 +126,7 @@ def _metrics(design, level, response, target):
 def _compare(output, baseline, candidate, name):
     try:
         a, b = comparison.load_export(baseline), comparison.load_export(candidate)
-        payload = comparison.compare_exports(a, b, comparator=comparison.source_identity(__file__))
+        payload = comparison.compare_exports(a, b, comparator=comparison.source_identity(Path(__file__).resolve().parents[2]/'tools/design_pitch_compare.py'))
         content = comparison.render_bundle(payload)
         directory = comparison.preflight_output(output/name)
         exports = comparison.write_bundle(content, directory)

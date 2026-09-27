@@ -15,7 +15,7 @@ from didgeridoo_optimizer.reporting import design_pitch as report
 from didgeridoo_optimizer.reporting import forced_response_comparison as comparison
 from tools import design_pitch_compare as cli
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 EXAMPLES = ROOT/'project_specs/examples/design_pitch'
 
 
@@ -393,6 +393,11 @@ def test_real_legacy_complete_reloads_inputs_and_exports(inputs):
     for side in ('original', 'tuned'):
         loaded = comparison.load_export(output/f'response_{side}_001/forced_response.json')
         assert loaded['payload']['schema'] == 'dcalc.forced_response.v1'
+    producer = summary['provenance']
+    head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
+    assert producer['head_sha'] == head and producer['software_origin']
+    compared = json.loads((output/'comparison_before_after_001/comparison.json').read_text())
+    assert compared['comparator_provenance']['sha'] == head
     assert {p: p.read_bytes() for p in files} == before
 
 
@@ -499,3 +504,28 @@ def test_misleading_output_path_cannot_hide_existing_destination(inputs):
     with pytest.raises(FileExistsError, match='existing'):
         dp.preflight(inputs[0], inputs[1], misleading, pressure_peak_pa=1)
     assert list(existing.iterdir()) == []
+
+
+def test_verified_product_and_comparator_provenance(inputs, tmp_path, monkeypatch):
+    import sys
+    import types
+    current = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
+    valid = report.provenance(ROOT)
+    assert valid['head_sha'] == current
+    assert 'tracked loaded' in valid['software_origin']
+    assert isinstance(valid['working_tree_dirty'], bool)
+    fake = tmp_path/'foreign_tool.py'
+    fake.write_text('# not the repository\n')
+    with monkeypatch.context() as m:
+        m.setitem(sys.modules, 'tools._foreign_provenance_probe', types.SimpleNamespace(__file__=str(fake)))
+        invalid = report.provenance(ROOT)
+    assert invalid['head_sha'] is None
+    assert 'outside verified' in invalid['software_origin']
+    with monkeypatch.context() as m:
+        m.setitem(sys.modules, 'didgeridoo_optimizer._foreign_provenance_probe', types.SimpleNamespace(__file__=str(fake)))
+        invalid = report.provenance(ROOT)
+    assert invalid['head_sha'] is None
+    assert valid['head_sha'] == current
+    # Use the same actual CLI path the report hands to the native comparator.
+    comparison_source = comparison.source_identity(ROOT/'tools/design_pitch_compare.py')
+    assert comparison_source['sha'] == current

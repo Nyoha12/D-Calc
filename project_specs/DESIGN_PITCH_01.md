@@ -84,3 +84,7 @@ python -m didgeridoo_optimizer.pipeline.run_optimizer \
 ```
 
 Voir aussi [le contrat IO courant](USER_IO_CONTRACT_CURRENT.md). Les CLI historiques et `equal_pitch_study` restent inchangés.
+
+### Revue de livraison
+
+Les tests résident dans `didgeridoo_optimizer/tests`. La provenance vérifie les sources réellement chargées et leur appartenance au même worktree ; une racine mélangée laisse le SHA non établi. Les comparaisons identifient le vrai CLI producteur. Les annotations utilisateur sont conservées, tandis que `metadata.total_length_cm`, champ dérivé par le builder historique, est recalculé et vérifié.
