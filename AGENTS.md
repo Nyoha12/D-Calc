@@ -22,7 +22,8 @@ Main technical goals:
 The pilot owns the requested outcome, not merely a sequence of isolated steps.
 When the owner says to continue an agreed block, proceed through its authorized
 implementation, tests, review, branch push and PR handoff. Do not require a new
-"continue" for each routine transition. Merges remain separately authorized.
+"continue" for each routine transition. Ordinary merges can use the standing
+owner delegation below; other sensitive actions retain their separate mandates.
 
 Before a substantial task, check the critical prerequisites for its actual
 acceptance commands: correct device/user/worktree and Python environment,
@@ -61,6 +62,39 @@ live PR state. Report implemented, tested, published and merged separately;
 update stale PR status text instead of leaving an already-resolved blocker as
 current. Give the user commands only for actions requiring their presence or
 unavailable through authorized tools, not as routine clerical work.
+
+## Standing owner delegation for ordinary merges — 2026-09-27
+
+The owner approved #63 and directed the pilot not to ask again for this kind of
+routine integration. This is a project workflow mandate, not a change to tool,
+sandbox, authentication or GitHub permissions.
+
+For an already approved, bounded green/orange D-Calc block, the pilot may review,
+merge through a pull request, fast-forward the clean server main and run targeted
+post-merge checks without another confirmation, only when all of these hold:
+- The actual diff matches the approved scope and is reviewed; no unresolved
+  compatibility issue, unexpected change or blocking review remains.
+- Native targeted tests applicable to the change pass on the exact published
+  head; fixtures, assertions and tolerances have not been weakened. Independent
+  checks supplement, rather than replace, the native suite. For docs-only work
+  without a docs test harness, check text, references and scope explicitly; do
+  not describe these checks as executed code tests.
+- Live base/head and mergeability are verified immediately before integration.
+  Required CI and repository protections are respected; absent CI is recorded as
+  absent, never described as passing. Never use an admin/bypass merge.
+- The merge is pinned to the reviewed head, follows dependency order, and the
+  actual integrated content is checked before claiming success.
+- Relevant checks pass on the resulting main and the durable task state records
+  the merged SHA, evidence and remaining work. On failure, preserve the evidence,
+  stop dependent integrations and diagnose; never silently reset or weaken tests.
+
+Temporary Codex executors still return to the pilot and do not merge independently.
+A new red-scope operation still needs its own explicit mandate: material data or
+promotion, acoustic formulas, scientific validation policy, dependencies, secrets,
+authentication/security settings, destructive Git operations, or heavy/global
+replays. This delegation does not authorize new scope or direct pushes to main.
+An unresolved technical prerequisite or safety restriction is not an ordinary
+merge. The owner may narrow or revoke this delegation in a later instruction.
 
 ## Source of truth
 
@@ -254,7 +288,7 @@ Codex should not stop for routine Git or GitHub operations unless:
 - an unexpected semantic diff appears.
 
 Codex must stop before:
-- merging a pull request;
+- merging a pull request as a temporary executor (the pilot uses the delegation above);
 - pushing directly to main;
 - force-pushing;
 - destructive history or cleanup operations such as hard reset, rebase, or git clean;
