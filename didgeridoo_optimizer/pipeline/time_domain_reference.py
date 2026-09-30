@@ -5,6 +5,7 @@ import copy
 from dataclasses import replace
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import signal
@@ -48,8 +49,19 @@ def _unchanged(context):
 
 def _context(config, design):
     config, design = Path(config).resolve(strict=True), Path(design).resolve(strict=True)
-    cfg = strict_input(config)
-    raw = strict_input(design)
+    validated = {}
+    def strict_snapshot(path):
+        path = Path(path).resolve()
+        if not path.is_file() or path.stat().st_size > 2*1024**2:
+            raise ValueError('Strict input must be a regular file <=2 MiB')
+        before = hashlib.sha256(path.read_bytes()).hexdigest()
+        value = strict_input(path)
+        if hashlib.sha256(path.read_bytes()).hexdigest() != before:
+            raise ValueError('Input changed during strict validation')
+        validated[path] = before
+        return value
+    cfg = strict_snapshot(config)
+    raw = strict_snapshot(design)
     if not isinstance(cfg, dict) or not isinstance(raw, dict) or not isinstance(raw.get('segments'), list) or not 1 <= len(raw['segments']) <= 128:
         raise ValueError('CONFIG mapping and 1..128 DESIGN segments required')
     # Resolve and validate database bytes before invoking the historical loader.
@@ -57,13 +69,19 @@ def _context(config, design):
         path = Path(cfg.get('materials', {}).get(key, default))
         path = path if path.is_absolute() else config.parent/path
         if path.exists() or key == 'database_file':
-            strict_input(path)
+            strict_snapshot(path)
+        else:
+            validated[path.resolve()] = None
     context = load_fixed_context(config, design)
     for label, key, default in [('materials','database_file','materials_base_v1.yaml'), ('variant_rules','variant_rules_file','wood_variant_rules_v1.yaml')]:
         path = Path(cfg.get('materials', {}).get(key, default))
         expected = path.resolve() if path.is_absolute() else (config.parent/path).resolve()
         if expected != Path(context['provenance']['files'][label]['path']):
             raise ValueError('Ambiguous CONFIG-relative database path')
+    for source in context['provenance']['files'].values():
+        path = Path(source['path'])
+        if path not in validated or source['sha256'] != validated[path]:
+            raise ValueError('Input changed between strict validation and context loading')
     _unchanged(context)
     return context
 
@@ -87,7 +105,7 @@ def preflight(config, design, output_dir, **options):
         opt[key] = real(opt[key], key, minimum=0.)
     if not 0 < opt['fit_min_hz'] < opt['fit_max_hz'] < opt['guard_max_hz'] < fs/2:
         raise ValueError('Require 0 < fit_min < fit_max < guard_max < Nyquist')
-    if not 0 < opt['h_cm'] <= 2 or not 0 < opt['seconds'] <= 180 or not 0 <= opt['fit_seconds'] <= opt['seconds'] or not 0 < opt['v2_duration_s'] <= .2:
+    if not 0 < opt['h_cm'] <= 2 or not 0 < opt['seconds'] <= 180 or not 0 <= opt['fit_seconds'] <= opt['seconds'] or not .001 <= opt['v2_duration_s'] <= .2:
         raise ValueError('Mesh/time budget outside bounded domain')
     opt['flow_peak_m3_s'] = real(opt['flow_peak_m3_s'], 'flow_peak_m3_s', minimum=0.)
     if opt['v2_pressure_pa'] is not None:
@@ -102,9 +120,14 @@ def preflight(config, design, output_dir, **options):
     context = _context(config, design)
     _, _, _, effective = models(context, opt)
     # Geometry preflight only, no acoustic evaluation.
-    fine = GeometryDiscretizer().discretize(context['design'], max_segment_cm=opt['h_cm']/2)
-    if len(fine.segments) > 4096 or len(fine.segments)*max(opt['fit_points'],opt['audit_points']) > 8_000_000:
-        raise ValueError('Mesh/frequency resource budget exceeded')
+    fine_h = opt['h_cm']/2
+    segments = context['design'].segments
+    if fine_h == 0 or fine_h < sum(s.length_cm for s in segments)/4096:
+        raise ValueError('Mesh/frequency resource budget exceeded before allocation')
+    count = sum(max(1 if s.is_uniform else 2,math.ceil(s.length_cm/fine_h)) for s in segments)
+    if count > 4096 or count*max(opt['fit_points'],opt['audit_points']) > 8_000_000:
+        raise ValueError('Mesh/frequency resource budget exceeded before allocation')
+    GeometryDiscretizer().discretize(context['design'], max_segment_cm=fine_h)
     out = destination(output_dir)
     if opt['model_in'] is not None:
         path = Path(opt['model_in']).resolve(strict=True)
@@ -277,7 +300,7 @@ def calculate(plan, context):
         checkpoint('audited')
         # Real native legacy evaluation and native metadata, including actual peaks.
         cfg = copy.deepcopy(context['config'])
-        cfg['frequency_analysis'].update(f_min_hz=opt['fit_min_hz'],f_max_hz=opt['fit_max_hz'],n_points=opt['fit_points'],discretization_max_segment_cm=opt['h_cm'])
+        cfg.setdefault('frequency_analysis',{}).update(f_min_hz=opt['fit_min_hz'],f_max_hz=opt['fit_max_hz'],n_points=opt['fit_points'],discretization_max_segment_cm=opt['h_cm'])
         cfg['nonlinear_simulation'] = dict(sample_rate_hz=opt['sample_rate_hz'],resonator_model_type='fir_long_logfit',resonator_kernel_duration_s=1.)
         native = LinearEvaluationPipeline().evaluate(copy.deepcopy(design),cfg,context['material_db'])
         if not native['valid'] or native['errors']:
@@ -298,7 +321,10 @@ def calculate(plan, context):
         p = model.pressure_from_flow(u)
         np.savez_compressed(output/'forced.npz',flow_m3_s=u,midpoint_pressure_pa=p,
             fir_pressure_pa=fir.pressure_from_flow(u),impulse=model.impulse_response(n),fs=model.sample_rate_hz)
-        payload['forced'] = dict(status='experimental_prescribed_flow',samples=n,sample_rate_hz=model.sample_rate_hz,
+        payload['forced'] = dict(status='experimental_prescribed_flow',
+            sinusoid_within_fit_band=bool(opt['fit_min_hz'] <= 70 <= opt['fit_max_hz']),
+            extrapolation_warning=None if opt['fit_min_hz'] <= 70 <= opt['fit_max_hz'] else '70 Hz is outside the audited fit band',
+            impulse_scope='finite unit-sample experiment; broadband fidelity not certified',samples=n,sample_rate_hz=model.sample_rate_hz,
             units=dict(flow='m^3/s',pressure='Pa'),pressure_port='midpoint',frequency_hz=70.,flow_peak_m3_s=opt['flow_peak_m3_s'])
         if opt['v2_pressure_pa'] is not None:
             payload['v2'] = dict(passive=simulate_v2(model,pressure_pa=opt['v2_pressure_pa'],duration_s=opt['v2_duration_s'],air=air),

@@ -172,3 +172,22 @@ def test_reload_recertifies_all_candidates_and_refuses_modified_inventory():
             for key in inv:inv[key].pop()
         altered=PassiveResonator.from_parameters(p)
         with pytest.raises(ValueError):workflow._reload_certificate(altered,f,z,fg,zg)
+
+
+def test_tiny_mesh_is_refused_before_parent_allocation(tmp_path):
+    with patch.object(workflow.GeometryDiscretizer,'discretize',side_effect=AssertionError('must pre-count')):
+        with pytest.raises(ValueError,match='before allocation'):
+            workflow.preflight(CONFIG,DESIGN,tmp_path/'out',h_cm=1e-100)
+    with pytest.raises(ValueError):workflow.preflight(CONFIG,DESIGN,tmp_path/'out',v2_duration_s=.0001)
+
+
+def test_mutation_between_strict_validation_and_native_loading_refused(tmp_path):
+    design=tmp_path/'design.json';design.write_bytes(DESIGN.read_bytes())
+    original=workflow.load_fixed_context
+    def changed(*args,**kwargs):
+        data=json.loads(design.read_text());data['id']='changed_after_strict'
+        design.write_text(json.dumps(data))
+        return original(*args,**kwargs)
+    with patch.object(workflow,'load_fixed_context',side_effect=changed),pytest.raises(ValueError,match='between strict'):
+        workflow.preflight(CONFIG,design,tmp_path/'out')
+    assert not (tmp_path/'out').exists()
