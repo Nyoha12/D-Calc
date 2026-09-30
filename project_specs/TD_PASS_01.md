@@ -63,7 +63,8 @@ The hash detects changes; it is not an authentication signature.
 ## Fit and acceptance
 
 `fit_passive(f, complex_z, R0=..., dc_origin=..., sample_rate_hz=...,
-gates=..., guard_frequency_hz=..., guard_impedance=...)` performs real NNLS on
+gates=..., guard_frequency_hz=..., guard_impedance=...,
+basis_completion="observed-only")` performs real NNLS on
 stacked real/imaginary equations with weights
 `1/max(abs(Z),0.01*max_fit(abs(Z)))`. R0 is fixed, never silently estimated or
 set universally to zero. Seeds come from local maxima of the supplied spectrum
@@ -72,6 +73,25 @@ widths. Each observed peak supplies centers `f+{-0.2,0,0.2}*width` and damping
 multipliers `{0.6,1,1.6}`. Discrete fits prewarp the centers and widths.
 Unresolved widths are recorded and skipped; missing guard data is not invented.
 The optional single-mode reciprocal fit is an explicit structural assumption.
+
+`basis_completion="observed-only"` preserves that dictionary and remains the
+explicitly reported default. `basis_completion="r29"` adds exactly two numerical
+basis terms at `1.15*fmax` and `1.65*fmax`. At the default fmax=3000 Hz these
+centers are 3450 and 4950 Hz. For `discrete_prewarped`,
+`omega=2*fs*tan(pi*f/fs)` rad/s and `gamma=0.08*omega` 1/s; in the
+`continuous` domain `omega=2*pi*f`. These represent the out-of-band contribution
+to the in-band approximation. They are **not observed peaks, acquired data,
+physical losses or material coefficients**. They are kept separate from the
+fit/guard seed table. In particular, no measurements or computed target spectra
+between the guard band and Nyquist are implied by these terms.
+
+The choice, units, multipliers, centers, damping and transformation are present
+in the plan, model provenance/quality, full-dictionary certificate, partial
+checkpoints, JSON/CSV exports and French summary. All centers must be strictly
+below Nyquist, including in continuous-domain fits; invalid types, unknown modes
+and incompatible fs/fmax are refused before acoustics in the workflow. There is
+no automatically selected fallback. Completion terms count toward the same
+256-candidate ceiling.
 
 The full inventory contains at most 256 candidates, including zero coefficients.
 Each Lawson–Hanson active-set solve uses at most 192 columns. Deterministic
@@ -115,7 +135,7 @@ python -m tools.time_domain_reference \
   --config project_specs/examples/design_pitch/config.yaml \
   --design project_specs/examples/design_pitch/cylinder.json \
   --output-dir results/td_pass_example \
-  --loss-model zk --air-reference ck_dry20 --dry-run
+  --loss-model zk --air-reference ck_dry20 --basis-completion r29 --dry-run
 ```
 
 Remove `--dry-run` to calculate. Dry-run reads/validates CONFIG, DESIGN and real
@@ -124,6 +144,15 @@ The output directory must be new. `--model-in previous/model.json` reloads a
 compatible model, regenerates the deterministic candidate inventory, recomputes
 its global KKT certificate against the actual fit spectrum and independently
 re-audits it. Context, effective fs, R0, fit and guard identities must agree.
+The requested completion mode and its complete deterministic specification are
+part of the context identity. Reload requires that same choice (including
+`--basis-completion r29` for an R29 model), regenerates every candidate from the
+actual fit/guard inputs, checks source attribution, inactive poles and completion
+metadata, and recomputes global KKT. Changing the completion metadata or inventory
+is refused even when the JSON checksum is recomputed. The plain resonator JSON
+loader checks serialization integrity; this input-dependent recertification is
+the dedicated workflow's responsibility. Models predating explicit completion
+metadata require a new fit for this workflow; their basis is not silently inferred.
 Reusing coefficients from another design or acoustic context is refused.
 
 `load_fixed_context`, `design_pitch.models`, `GeometryDiscretizer` and
@@ -156,6 +185,10 @@ Artifacts: `plan.json`, `partial.json`, `fit_progress.json` (new fits),
 `summary.txt`. NPZs contain numerical arrays only (`allow_pickle=False` to
 read). `forced.npz` includes SI prescribed sinusoidal flow, passive midpoint
 pressure, native FIR pressure and a finite unit-sample impulse experiment.
+70 Hz is a chosen forcing frequency, which can be outside a user's fit band;
+its in-band flag is exported. The finite sinusoid, start/stop transients and
+impulse are not bandlimited. Their full time signals have no validated
+out-of-band fidelity claim.
 Artifacts remain available after failed quality gates. The saved model records
 its fit certificate; the separate immutable audit identifies the model it
 actually evaluated. A model file's historical quality fields are not accepted
@@ -185,7 +218,7 @@ analytical witness with the stated V2 parameters, R29 found continuous onset
 reference results, not thresholds recomputed by this CLI. Subsystem passivity
 alone proves neither coupled stability nor a played periodic state.
 
-## Dated fixtures and observed new-fit limit
+## Dated fixtures and separately tested new fits
 
 Both sanitized R29 fixtures and their manifest are under
 `didgeridoo_optimizer/tests/fixtures/td_pass_01/`. They preserve all final
@@ -199,15 +232,32 @@ TMM; file reloads and response identity are also checked.
 | Cylinder ZK | 154 | 0.0036897129423862 | 0.0675665997483450 | 0.181254072664681 |
 | Exponential ZK | 161 | 0.0036309410765017 | 0.0675071201022980 | 0.169672976365590 |
 
-These regressions are reconstructions of the dated final models, not assertions
-that a new fit reproduces their historical dictionary. That 227-candidate
-dictionary included two arbitrary reactive tail seeds as well as four observed
-guard resonances. The new fitter uses observed peaks only (225 candidates on
-the default cylinder). The first full new-cylinder run converged globally
-(KKT 4.50e-16 rounded upward) but obtained NRMSE 0.01523593, maximum relative
-0.11488015 and phase RMS 1.00154 degrees: **fidelity not accepted**. Its
-passivity and mesh acceptance do not override that result. No tolerance was
-relaxed and no arbitrary tail was silently restored.
+These fixture regressions reconstruct dated final models. Separate tests now
+fit new nonnegative residues from only the traced TMM fit spectrum and guard
+seeds, for **both** cylinder and exponential cases; the reserved audit arrays
+are read only after fitting. The binary fixtures and their expected numbers
+remain unchanged. The R29 completion option implements the two numerical terms
+already used in that study, with no new acoustic law or tolerance.
+
+On the correction baseline, the observed-only fits both converged globally but
+were correctly refused: cylinder NRMSE 0.0152359271, maximum relative 0.1148801459,
+phase RMS 1.0015398272 degrees; exponential NRMSE 0.0158267901, maximum relative
+0.1202010129, phase RMS 0.9771595935 degrees. These remain tested nonaccepted
+comparisons. Passivity and mesh acceptance cannot override a failed fidelity
+gate. The new R29-completed fits must pass the same .005/.08/.3 degree gates;
+reconstructing the old coefficient fixtures does not establish that result.
+
+Separate fresh-fit regression results (40..3000 Hz fit, 3000..3500 Hz guard,
+1536 withheld audit points; all 227 candidates retained for certification):
+
+| New fit with explicit R29 completion | Active terms | Complex NRMSE | Maximum relative | Phase RMS degrees | Fidelity |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Cylinder ZK | 154 | 0.0036897136 | 0.0675666162 | 0.1812540875 | accepted |
+| Exponential ZK | 161 | 0.0036309423 | 0.0675070692 | 0.1696731727 | accepted |
+
+Both converge in six column-generation passes with global KKT below 1e-15.
+These grid-specific numerical results do not validate out-of-band fidelity,
+coupled V2 stability, physical oscillation or a new ranking score.
 
 Targeted native suites remain unmodified: onset stability/CLI, V2 lips, FIR
 scaling, thermoviscous and fixed-design input/internal/CLI. New tests add exact

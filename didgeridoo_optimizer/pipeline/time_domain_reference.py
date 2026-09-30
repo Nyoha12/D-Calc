@@ -24,7 +24,8 @@ from ..acoustics.transfer_matrix import input_impedance
 from ..acoustics.air import AirProperties
 from ..nonlinear.passive_resonator import PassiveResonator, real, integer, digest
 from ..nonlinear.passive_fit import (fit_passive, audit, metrics, quality_gates, DEFAULT_GATES,
-                                    spectrum_identity, kkt_certificate, candidate_dictionary)
+                                    spectrum_identity, kkt_certificate, candidate_dictionary,
+                                    completion_spec, dictionary_identity)
 from ..nonlinear.resonator_td import TimeDomainResonator
 from ..nonlinear.thresholds import OscillationThresholdEstimator
 from ..nonlinear.lips import DimensionedLipParameters
@@ -93,7 +94,8 @@ def preflight(config, design, output_dir, **options):
         loss_model='zk', radiation_model='legacy', air_reference='ck_dry20',
         R0=None, dc_origin=None, gates=DEFAULT_GATES.copy(), mesh_gate=.005,
         seconds=175., fit_seconds=110., max_passes=10, model_in=None,
-        flow_peak_m3_s=1e-6, signal_samples=2048, v2_pressure_pa=None, v2_duration_s=.05)
+        flow_peak_m3_s=1e-6, signal_samples=2048, v2_pressure_pa=None, v2_duration_s=.05,
+        basis_completion='observed-only')
     if set(options)-set(defaults):
         raise ValueError('Unknown options: '+','.join(sorted(set(options)-set(defaults))))
     opt = {**defaults, **options}
@@ -105,6 +107,8 @@ def preflight(config, design, output_dir, **options):
         opt[key] = real(opt[key], key, minimum=0.)
     if not 0 < opt['fit_min_hz'] < opt['fit_max_hz'] < opt['guard_max_hz'] < fs/2:
         raise ValueError('Require 0 < fit_min < fit_max < guard_max < Nyquist')
+    completion = completion_spec(opt['basis_completion'], fit_max_hz=opt['fit_max_hz'],
+                                 fs=fs, domain='discrete_prewarped')
     if not 0 < opt['h_cm'] <= 2 or not 0 < opt['seconds'] <= 180 or not 0 <= opt['fit_seconds'] <= opt['seconds'] or not .001 <= opt['v2_duration_s'] <= .2:
         raise ValueError('Mesh/time budget outside bounded domain')
     opt['flow_peak_m3_s'] = real(opt['flow_peak_m3_s'], 'flow_peak_m3_s', minimum=0.)
@@ -134,12 +138,13 @@ def preflight(config, design, output_dir, **options):
         model = PassiveResonator.load(path)
         if model.sample_rate_hz != fs:
             raise ValueError('Loaded model fs differs from requested effective fs')
+        _check_completion(model, completion)
         opt['model_in'] = str(path)
         model_hash = hashlib.sha256(path.read_bytes()).hexdigest()
     else:
         model_hash = None
     plan = dict(config=str(Path(config).resolve()), design=str(Path(design).resolve()), output=str(out),
-        options=opt, model_sha256=model_hash, input_files=_inputs(context), effective=effective,
+        options=opt, basis_completion=completion, model_sha256=model_hash, input_files=_inputs(context), effective=effective,
         design_id=context['design'].id, gates_declared_before_fit=opt['gates'],
         budgets=dict(child_seconds=opt['seconds'], memory_mib=768, blas_threads=1,
                      total_scientific_seconds=600, maximum_children=1),
@@ -198,8 +203,27 @@ def simulate_v2(model, *, pressure_pa, duration_s=.05, params=None, air=None):
         schedule='native RK4 under previous pressure, native V2 flow, '+('midpoint resonator step' if isinstance(model,PassiveResonator) else 'native FIR step'))
 
 
-def _reload_certificate(model, f, z, fg, zg):
+def _check_completion(model, expected):
+    p = model.parameters()
+    q = p['quality']
+    certificate = q.get('certificate')
+    if not isinstance(certificate, dict) or p['domain'] != expected['domain']:
+        raise ValueError('Loaded completion domain/certificate mismatch')
+    for saved in (q.get('basis_completion'), p['provenance'].get('basis_completion'),
+                  certificate.get('basis_completion')):
+        # Canonical JSON comparison also distinguishes booleans from numbers.
+        if digest(saved) != digest(expected):
+            raise ValueError('Loaded basis completion differs from requested deterministic specification')
+
+
+def _reload_certificate(model, f, z, fg, zg, *, basis_completion=None):
     p = model.parameters(); q = p['quality']
+    saved = q.get('basis_completion')
+    if not isinstance(saved, dict):
+        raise ValueError('Reload requires explicit basis completion metadata')
+    mode = saved.get('mode') if basis_completion is None else basis_completion
+    completion = completion_spec(mode, fit_max_hz=float(f[-1]), fs=model.sample_rate_hz, domain=p['domain'])
+    _check_completion(model, completion)
     inventory = q.get('candidate_inventory', {})
     a, gamma, omega = (np.asarray(inventory.get(k, []), float) for k in ('a','gamma','omega'))
     if not 1 <= len(a) <= 256 or not (a.shape == gamma.shape == omega.shape):
@@ -207,20 +231,29 @@ def _reload_certificate(model, f, z, fg, zg):
     # Validate all candidate coefficients, including inactive poles, before recertifying.
     candidate = PassiveResonator(inventory.get('a'),inventory.get('gamma'),inventory.get('omega'),
         R0=model.R0,sample_rate_hz=model.sample_rate_hz,dc_origin=p['dc_origin'],domain=p['domain'])
-    expected_w,expected_g,_,_ = candidate_dictionary(f,z,R0=model.R0,fs=model.sample_rate_hz,
-        domain=p['domain'],guard_frequency_hz=fg,guard_impedance=zg)
+    expected_w,expected_g,rows,guard_identity = candidate_dictionary(f,z,R0=model.R0,fs=model.sample_rate_hz,
+        domain=p['domain'],guard_frequency_hz=fg,guard_impedance=zg,basis_completion=mode)
     if not np.array_equal(candidate.omega,expected_w) or not np.array_equal(candidate.gamma,expected_g):
         raise ValueError('Loaded candidate dictionary differs from deterministic source seeds')
     active = a > 0
     if not (np.array_equal(a[active], model.a) and np.array_equal(gamma[active], model.gamma) and np.array_equal(omega[active], model.omega)):
         raise ValueError('Loaded model diverges from fit inventory')
-    if q.get('fit_spectrum_sha256') != spectrum_identity(f,z) or q.get('fit_frequency_hz') != f.tolist():
+    fit_identity = spectrum_identity(f,z)
+    if q.get('fit_spectrum_sha256') != fit_identity or q.get('fit_frequency_hz') != f.tolist():
         raise ValueError('Loaded fit spectrum identity differs')
-    s = 2j*model.sample_rate_hz*np.tan(np.pi*f/model.sample_rate_hz)
+    for metadata in (q, p['provenance']):
+        if metadata.get('fit_spectrum_sha256') != fit_identity or metadata.get('guard_spectrum_sha256') != guard_identity:
+            raise ValueError('Loaded fit/guard source identity differs')
+    dictionary_hash = dictionary_identity(expected_w, expected_g, rows, completion, fit_identity, guard_identity)
+    if digest(q.get('seeds')) != digest(rows) or any(metadata.get('candidate_dictionary_sha256') != dictionary_hash for metadata in (q, q['certificate'])):
+        raise ValueError('Loaded dictionary identity/observed seeds differ')
+    s = 2j*model.sample_rate_hz*np.tan(np.pi*f/model.sample_rate_hz) if p['domain'] == 'discrete_prewarped' else 2j*np.pi*f
     weight = 1/np.maximum(abs(z), .01*np.max(abs(z)))
     B = s[:,None]/(s[:,None]**2+gamma*s[:,None]+omega**2)*weight[:,None]
     b = (z-model.R0)*weight
     certificate, _ = kkt_certificate(np.vstack((B.real,B.imag)),np.r_[b.real,b.imag],a)
+    certificate.update(basis_completion=completion, candidate_dictionary_sha256=dictionary_hash,
+                       candidate_count=len(a), recertified_from_actual_spectra=True)
     return certificate
 
 
@@ -228,6 +261,7 @@ def calculate(plan, context):
     opt = plan['options']; output = Path(plan['output']); started = time.monotonic()
     payload = dict(schema='dcalc.time_domain_reference.v1', status='partial', ok=False,
         statuses=report.statuses(), limits=report.LIMITS, options=opt,
+        basis_completion=plan['basis_completion'],
         provenance=dict(inputs=_inputs(context), software=context['provenance']['software']),
         materials_used=context['materials_used'], effective=plan['effective'], budgets=plan['budgets'])
     before = report.sources()
@@ -238,6 +272,10 @@ def calculate(plan, context):
     try:
         if _inputs(context) != plan['input_files']:
             raise ValueError('Inputs changed since preflight')
+        completion = completion_spec(opt['basis_completion'], fit_max_hz=opt['fit_max_hz'],
+                                     fs=opt['sample_rate_hz'], domain='discrete_prewarped')
+        if digest(completion) != digest(plan['basis_completion']):
+            raise ValueError('Basis completion changed since preflight')
         air, loss, radiation, effective = models(context,opt)
         design = context['design']; geometry = GeometryDiscretizer()
         mesh = geometry.discretize(design,max_segment_cm=opt['h_cm'])
@@ -260,7 +298,7 @@ def calculate(plan, context):
         else:
             R0 = opt['R0']; dc = dict(kind='explicit',description=opt['dc_origin'])
         identity = digest(dict(inputs=_inputs(context), effective=effective, h_cm=opt['h_cm'],
-                               fs=opt['sample_rate_hz'],R0=R0,dc=dc))
+                               fs=opt['sample_rate_hz'],R0=R0,dc=dc,basis_completion=completion))
         payload['dc'] = dict(R0=R0,origin=dc)
         payload['spectra'] = dict(fit_sha256=spectrum_identity(f,z),guard_sha256=spectrum_identity(fg,zg))
         checkpoint('spectra_ready')
@@ -269,13 +307,14 @@ def calculate(plan, context):
             if model.parameters()['provenance'].get('context_identity') != identity or model.parameters()['domain'] != 'discrete_prewarped' or model.R0 != R0 or model.sample_rate_hz != opt['sample_rate_hz']:
                 raise ValueError('Model/context mismatch; mixed sources refused')
             fit = model.parameters()['quality']
-            fit['certificate'] = _reload_certificate(model,f,z,fg,zg)
+            fit['certificate'] = _reload_certificate(model,f,z,fg,zg,basis_completion=opt['basis_completion'])
             fit['status'] = 'converged' if fit['certificate']['converged'] else 'not_converged'
             if fit.get('guard_spectrum_sha256') != spectrum_identity(fg,zg):
                 raise ValueError('Loaded guard identity differs')
         else:
             model, fit = fit_passive(f,z,R0=R0,dc_origin=dc,sample_rate_hz=opt['sample_rate_hz'],
                 gates=opt['gates'],guard_frequency_hz=fg,guard_impedance=zg,
+                basis_completion=opt['basis_completion'],
                 seconds=opt['fit_seconds'],max_passes=opt['max_passes'],
                 progress=lambda value: report.write_json(output/'fit_progress.json',value,replace=True),
                 provenance=dict(context_identity=identity,inputs=_inputs(context),sources_sha256=before))
@@ -325,6 +364,7 @@ def calculate(plan, context):
             sinusoid_within_fit_band=bool(opt['fit_min_hz'] <= 70 <= opt['fit_max_hz']),
             extrapolation_warning=None if opt['fit_min_hz'] <= 70 <= opt['fit_max_hz'] else '70 Hz is outside the audited fit band',
             impulse_scope='finite unit-sample experiment; broadband fidelity not certified',samples=n,sample_rate_hz=model.sample_rate_hz,
+            transient_scope='Start from rest, finite sinusoid and impulse are not bandlimited; no validated fidelity outside the fit band',
             units=dict(flow='m^3/s',pressure='Pa'),pressure_port='midpoint',frequency_hz=70.,flow_peak_m3_s=opt['flow_peak_m3_s'])
         if opt['v2_pressure_pa'] is not None:
             payload['v2'] = dict(passive=simulate_v2(model,pressure_pa=opt['v2_pressure_pa'],duration_s=opt['v2_duration_s'],air=air),
@@ -404,10 +444,11 @@ def run(config, design, output_dir, *, dry_run=False, **options):
             signal.signal(sig,handler)
     value['child'] = dict(exit_code=child.returncode if child else None,wall_seconds=time.monotonic()-started,
                           reaped=True,limit_seconds=plan['options']['seconds'],memory_mib=768,blas_threads=1)
+    value.setdefault('basis_completion', plan['basis_completion'])
     after = report.sources()
     if any(after.get(k) != v for k,v in initial_sources.items()):
         value.update(ok=False,status='failed',error='Parent source changed during processing')
         value['statuses']['fidelity'] = 'not_accepted'
     report.export(output,value)
     return dict(ok=value['ok'],status=value['status'],statuses=value['statuses'],
-                child=value['child'],output_dir=str(output))
+                basis_completion=value['basis_completion'],child=value['child'],output_dir=str(output))

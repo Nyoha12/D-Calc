@@ -30,6 +30,8 @@ def parser():
     p.add_argument('--r0',dest='R0',type=float)
     p.add_argument('--dc-origin')
     p.add_argument('--model-in')
+    p.add_argument('--basis-completion', choices=['observed-only','r29'], default='observed-only',
+        help='Declared numerical basis (default: observed-only); r29 adds two numerical out-of-band terms, not observed modes')
     p.add_argument('--v2-pressure-pa',type=float)
     p.add_argument('--nrmse-gate',type=float,default=.005)
     p.add_argument('--max-relative-gate',type=float,default=.08)

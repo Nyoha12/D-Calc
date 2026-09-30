@@ -20,7 +20,7 @@
     "relative_max": 0.08,
     "phase_rms_deg": 0.3
   },
-  "historical_dictionary": "Final R29 coefficients include two historical reactive tail seeds. New fitter generates observed peaks only; regression here reconstructs the exact dated coefficients, not a new fit.",
+  "historical_dictionary": "Final R29 coefficients include two numerical out-of-band basis terms at 1.15 and 1.65 times fmax, gamma=0.08*omega after prewarping. These are not observed peaks or physical loss coefficients. Fixture regression reconstructs the dated coefficients; separate new-fit tests exercise explicit basis_completion=r29 and the observed-only comparison from fit/guard spectra.",
   "cases": {
     "cylinder_zk": {
       "file": "cylinder_zk.npz",
