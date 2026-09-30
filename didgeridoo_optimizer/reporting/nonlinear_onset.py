@@ -11,9 +11,16 @@ import time
 from pathlib import Path
 
 
-def source_fingerprints() -> dict:
+def source_fingerprints(producer: str | Path | None = None) -> dict:
     root = Path(__file__).resolve().parents[2]
-    paths = {root / "tools/nonlinear_onset_audit.py"}
+    paths = set()
+    if producer is not None:
+        # The caller supplies its defining module, not the host's __main__
+        # (which may be pytest or another legitimate API consumer).
+        actual_producer = Path(producer).resolve()
+        if actual_producer != root / "tools/nonlinear_onset_audit.py":
+            raise ValueError("Producer CLI is outside the loaded package worktree: mixed source roots")
+        paths.add(actual_producer)
     for name, module in tuple(sys.modules.items()):
         if name == "didgeridoo_optimizer" or name.startswith("didgeridoo_optimizer."):
             source = getattr(module, "__file__", None)
@@ -43,9 +50,16 @@ def french_summary(payload: dict) -> str:
              "Les signes de force ne constituent aucune identification physiologique."]
     for closure, groups in payload.get("equilibria", {}).items():
         lines.append(f"Fermeture {closure} : {sum(g['branch_count'] for g in groups)} équilibres conservés.")
-        for group in groups:
+        for index, group in enumerate(groups):
+            lines.append(f"  Groupe {index} : énumération={group['status']} ; {group['branch_count']} branches conservées ; absence dans le domaine algébrique={group.get('absence_in_algebraic_domain', 'non renseignée')}.")
+            if group["ambiguous_roots"]:
+                lines.append("    Ambiguïtés : " + strict_json(group["ambiguous_roots"]).strip())
+            if group["rejected"]:
+                lines.append("    Rejets : " + strict_json(group["rejected"]).strip())
+            if not group["branches"]:
+                lines.append("    aucune branche conservée ; aucun état d'équilibre à afficher.")
             for row in group["branches"]:
-                lines.append(f"  P={row['pressure_pa']:.9g} Pa ; branche {row['branch_id']} ; Pd={row['downstream_pa']:.9g} Pa ; h={row['h_m']:.9g} m ; U={row['flow_m3_s']:.9g} m³/s ; résidu={row['residuals']['scaled_max']:.3g} ; {row['boundary_status'] or row['status']}.")
+                lines.append(f"  P={row['pressure_pa']:.9g} Pa ; branche {row['branch_id']} ; Pd={row['downstream_pa']:.9g} Pa ; h={row['h_m']:.9g} m ; U={row['flow_m3_s']:.9g} m³/s ; résidu={row['residuals']['scaled_max']:.3g} ; état de branche={row['status']} ; multiplicité={row['algebraic_multiplicity_t']} ; frontière={row['boundary_status'] or 'aucune'} ; raisons non régulières={';'.join(row['non_regular_reasons']) or 'aucune'}.")
     if "fir" in payload:
         fir = payload["fir"]
         lines.extend([f"FIR effectif : {fir['length']} coefficients, fs={fir['sample_rate_hz']} Hz, DC={fir['dc_pa_s_m3']:.9g} Pa.s/m³.",
@@ -68,11 +82,14 @@ def french_summary(payload: dict) -> str:
 
 EXPORT_NAMES = ("onset_audit.json", "onset_equilibria.csv", "onset_response.csv", "onset_candidates.csv", "onset_summary_fr.txt")
 PROGRESS_NAMES = ("onset_partial.json", "onset_trace.jsonl", ".onset_partial.tmp")
+TEMPORARY_NAMES = tuple("." + name + ".tmp" for name in EXPORT_NAMES)
 
 
 def check_output(path: Path, *, own_progress=False) -> None:
-    names = EXPORT_NAMES if own_progress else EXPORT_NAMES + PROGRESS_NAMES
-    if path.exists() and (not path.is_dir() or any((path / name).exists() for name in names)):
+    names = EXPORT_NAMES + TEMPORARY_NAMES + ((".onset_partial.tmp",) if own_progress else PROGRESS_NAMES)
+    # lexists includes dangling symlinks, which exists() silently misses.
+    if os.path.lexists(path) and (path.is_symlink() or not path.is_dir() or
+                                  any(os.path.lexists(path / name) for name in names)):
         raise ValueError("Output target exists: refusing to overwrite diagnostic artifacts")
 
 
@@ -90,7 +107,10 @@ class Progress:
         snapshot = {**payload, "partial": True, "checkpoint_stage": stage}
         content = strict_json(snapshot)
         temporary = self.path / ".onset_partial.tmp"
-        temporary.write_text(content, encoding="utf-8")
+        # Exclusive creation also closes the preflight/open race: an existing
+        # file or symlink is neither followed nor truncated.
+        with temporary.open("x", encoding="utf-8") as stream:
+            stream.write(content)
         temporary.replace(self.path / "onset_partial.json")
         with (self.path / "onset_trace.jsonl").open("a", encoding="utf-8") as stream:
             stream.write(json.dumps({"stage": stage, "elapsed_seconds": time.monotonic()-self.started}, allow_nan=False) + "\n")
@@ -109,11 +129,22 @@ def export_bundle(payload: dict, output_dir: Path, *, own_progress=False) -> dic
     # Validate all JSON and render all documents before creating anything.
     contents = {"onset_audit.json": strict_json(payload), "onset_summary_fr.txt": french_summary(payload)}
     rows = []
-    for groups in payload.get("equilibria", {}).values():
-        for group in groups:
-            rows.extend({**r, "scaled_residual": r["residuals"]["scaled_max"],
+    for closure, groups in payload.get("equilibria", {}).items():
+        for index, group in enumerate(groups):
+            metadata = {"closure": closure, "group_index": index, "group_status": group["status"],
+                        "branch_count": group["branch_count"],
+                        "absence_in_algebraic_domain": group.get("absence_in_algebraic_domain"),
+                        "ambiguous_roots": json.dumps(group["ambiguous_roots"], ensure_ascii=False, allow_nan=False),
+                        "rejected": json.dumps(group["rejected"], ensure_ascii=False, allow_nan=False)}
+            # A group with no retained branch is still an enumeration result.
+            # Leave branch fields empty, including pressure (absent in the core
+            # group schema); never manufacture a representative equilibrium.
+            if not group["branches"]:
+                rows.append({**metadata, "record_type": "group"})
+            rows.extend({**metadata, **r, "record_type": "branch", "scaled_residual": r["residuals"]["scaled_max"],
                          "non_regular_reasons": ";".join(r["non_regular_reasons"])} for r in group["branches"])
-    contents["onset_equilibria.csv"] = _csv(["closure", "pressure_pa", "branch_id", "status", "downstream_pa", "delta_pa", "x_m", "h_m", "flow_m3_s", "regular_free", "boundary_status", "non_regular_reasons", "scaled_residual"], rows)
+    contents["onset_equilibria.csv"] = _csv(["closure", "pressure_pa", "branch_id", "status", "downstream_pa", "delta_pa", "x_m", "h_m", "flow_m3_s", "regular_free", "boundary_status", "non_regular_reasons", "scaled_residual",
+                                           "record_type", "group_index", "group_status", "branch_count", "algebraic_multiplicity_t", "absence_in_algebraic_domain", "ambiguous_roots", "rejected"], rows)
     contents["onset_response.csv"] = _csv(["frequency_hz", "documented", "real_pa_s_m3", "imag_pa_s_m3", "phase_rad", "magnitude_pa_s_m3", "target_real", "target_imag", "relative_complex_error", "phase_error_rad", "negative_real"], payload.get("fir", {}).get("samples", []))
     candidates = [{**r, "representation": s["representation"], "closure": s["closure"]} for s in payload.get("searches", []) for r in s["candidates"]]
     contents["onset_candidates.csv"] = _csv(["representation", "closure", "branch_id", "status", "pressure_pa", "frequency_hz", "scaled_residual", "crossing"], candidates)

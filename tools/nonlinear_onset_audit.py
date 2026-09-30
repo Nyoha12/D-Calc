@@ -135,11 +135,17 @@ def _check_inputs(context):
 
 def run(args) -> dict:
     started = time.monotonic()
+    # __file__ belongs to the module defining this run(), including for an
+    # imported API call. Never attribute the host application's __main__.
+    producer = Path(__file__).resolve()
+    source_fingerprints(producer)  # Refuse a copied producer before context loading.
     context = load_fixed_context(args.config, args.design, output_dir_override=args.output_dir)
     cfg, air, direct, fir_settings = _settings(context, args)
     output = Path(context["output_dir"])
     check_output(output)
-    source_before = source_fingerprints()
+    # Include sources imported lazily while loading the FIXED context, also
+    # for a fresh-process dry-run.
+    source_before = source_fingerprints(producer)
     payload = {
         "schema_version": "dcalc.nonlinear_onset.v1", "ok": True, "status": "preflight_valid",
         "dry_run": args.dry_run, "design_id": context["design"].id,
@@ -150,7 +156,8 @@ def run(args) -> dict:
                        "pipeline_defaults_chosen": {}, "pending_pipeline_defaults": sorted(set(DimensionedLipParameters.__dataclass_fields__)-set(direct))},
         "fir_settings": fir_settings, "air": {"rho_kg_m3": air.rho, "c_m_s": air.c},
         "materials_used": context["materials_used"],
-        "provenance": {"inputs": _input_hashes(context), "software": context["provenance"]["software"], "sources_sha256": source_before},
+        "provenance": {"inputs": _input_hashes(context), "software": context["provenance"]["software"], "sources_sha256": source_before,
+                       "producer": {"source": "tools/nonlinear_onset_audit.py", "sha256": source_before["tools/nonlinear_onset_audit.py"]}},
         "budget": {"seconds": args.seconds, "memory_mib": args.memory_mib, "blas_threads": 1,
                    "max_evaluations_total": args.max_evaluations, "pressure_seeds": args.pressure_seeds,
                    "frequency_seeds": args.frequency_seeds, "max_iterations": args.max_iterations,
@@ -238,7 +245,7 @@ def run(args) -> dict:
         payload.update(ok=False, status="not_resolved", partial=True, error=type(exc).__name__ + ": " + str(exc))
     progress.save(payload, "calculation_complete" if payload["ok"] else "interrupted")
     _check_inputs(context)
-    sources_after = source_fingerprints()
+    sources_after = source_fingerprints(producer)
     if any(sources_after.get(path) != value for path, value in source_before.items()):
         raise ValueError("Loaded source changed during diagnostic")
     payload["provenance"]["sources_sha256"] = sources_after

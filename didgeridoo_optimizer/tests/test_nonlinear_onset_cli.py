@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import csv
+from dataclasses import replace
 import hashlib
+import importlib.util
 import json
+import math
 import os
 from pathlib import Path
 import subprocess
@@ -17,6 +20,8 @@ from didgeridoo_optimizer.tests.test_fixed_design_input import minimal_config, m
 from didgeridoo_optimizer.tests.test_onset_stability import P
 from didgeridoo_optimizer.reporting.nonlinear_onset import export_bundle, source_fingerprints, strict_json
 from tools import nonlinear_onset_audit as cli
+from didgeridoo_optimizer.reporting import nonlinear_onset as reporting
+from didgeridoo_optimizer.nonlinear.onset_stability import equilibria
 
 
 @pytest.fixture
@@ -214,3 +219,201 @@ def test_continuation_budget_failure_is_partial(inputs,tmp_path):
         result=cli.run(cli.parser().parse_args(argv(inputs,tmp_path/"out")))
     assert not result["ok"] and result["partial"]
     assert result["searches"][-1]["candidates"][0]["continuation"]["budget_exhausted"]
+
+
+# R28: additive regressions; historical tests and scientific tolerances above stay intact.
+@pytest.mark.parametrize("entry", ["module", "imported_run"])
+def test_r28_actual_producer_provenance(inputs, tmp_path, entry):
+    output = tmp_path / "out"
+    args = argv(inputs, output, "--dry-run")
+    if entry == "module":
+        completed = subprocess.run([sys.executable, "-B", "-m", "tools.nonlinear_onset_audit", *args],
+                                   capture_output=True, text=True, timeout=20)
+        assert completed.returncode == 0, completed.stdout + completed.stderr
+        result = json.loads(completed.stdout)
+    else:
+        # pytest's __main__ is not the module that defines the called run().
+        assert Path(sys.modules["__main__"].__file__).resolve() != Path(cli.__file__).resolve()
+        with patch.object(cli.LinearEvaluationPipeline, "evaluate", side_effect=AssertionError("acoustics")):
+            result = cli.run(cli.parser().parse_args(args))
+    key = "tools/nonlinear_onset_audit.py"
+    actual_hash = hashlib.sha256(Path(cli.__file__).read_bytes()).hexdigest()
+    assert result["provenance"]["producer"] == {"source": key, "sha256": actual_hash}
+    assert result["provenance"]["sources_sha256"][key] == actual_hash
+    assert not output.exists()
+
+
+@pytest.mark.parametrize("dry_run", [True, False])
+def test_r28_copied_cli_refused_before_acoustics_or_writes(inputs, tmp_path, dry_run):
+    copied = tmp_path / "copied_cli.py"
+    copied.write_bytes(Path(cli.__file__).read_bytes() + b"\n# distinct external producer\n")
+    assert hashlib.sha256(copied.read_bytes()).digest() != hashlib.sha256(Path(cli.__file__).read_bytes()).digest()
+    args = argv(inputs, tmp_path / "out", *(["--dry-run"] if dry_run else []))
+    spec = importlib.util.spec_from_file_location("r28_external_cli", copied)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    with patch.object(cli.LinearEvaluationPipeline, "evaluate", side_effect=AssertionError("acoustics")), \
+            pytest.raises(ValueError, match="[Pp]roducer"):
+        module.run(module.parser().parse_args(args))
+    root = Path(cli.__file__).resolve().parents[1]
+    completed = subprocess.run([sys.executable, "-B", str(copied), *args], cwd=tmp_path,
+                               env={**os.environ, "PYTHONPATH": str(root)},
+                               capture_output=True, text=True, timeout=20)
+    assert completed.returncode == 1, completed.stdout + completed.stderr
+    result = json.loads(completed.stdout)
+    assert not result["ok"] and "producer" in result["error"]["message"].lower()
+    assert not (tmp_path / "out").exists()
+
+
+@pytest.mark.parametrize("name", [*reporting.EXPORT_NAMES, *reporting.PROGRESS_NAMES,
+                                   *("." + n + ".tmp" for n in reporting.EXPORT_NAMES)])
+def test_r28_dangling_artifacts_refused_before_acoustics(inputs, tmp_path, name):
+    output = tmp_path / "out"
+    output.mkdir()
+    target = tmp_path / "absent_target"
+    link = output / name
+    link.symlink_to(target)
+    with patch.object(cli.LinearEvaluationPipeline, "evaluate", side_effect=AssertionError("acoustics")), \
+            pytest.raises(ValueError, match="overwrite"):
+        cli.run(cli.parser().parse_args(argv(inputs, output)))
+    assert not target.exists()
+    assert link.is_symlink()
+    assert list(output.iterdir()) == [link]
+
+
+@pytest.mark.parametrize("kind", ["file", "dangling_link", "existing_target_link"])
+def test_r28_checkpoint_temporary_exclusive_after_preflight(tmp_path, kind):
+    output = tmp_path / "out"
+    progress = reporting.Progress(output)
+    progress.save({"status": "not_resolved"}, "first")
+    partial = output / "onset_partial.json"
+    before = partial.read_bytes()
+    trace_before = (output / "onset_trace.jsonl").read_bytes()
+    temporary = output / ".onset_partial.tmp"
+    target = tmp_path / "target"
+    if kind == "file":
+        temporary.write_text("keep temporary")
+    else:
+        if kind == "existing_target_link":
+            target.write_text("keep target")
+        temporary.symlink_to(target)
+    with pytest.raises(FileExistsError):
+        progress.save({"status": "numerical_model_only"}, "second")
+    assert partial.read_bytes() == before
+    assert (output / "onset_trace.jsonl").read_bytes() == trace_before
+    if kind == "file":
+        assert temporary.read_text() == "keep temporary"
+    elif kind == "existing_target_link":
+        assert target.read_text() == "keep target" and temporary.is_symlink()
+    else:
+        assert not target.exists() and temporary.is_symlink()
+
+
+def test_r28_preexisting_checkpoint_temporary_file_refused(inputs, tmp_path):
+    output = tmp_path / "out"
+    output.mkdir()
+    temporary = output / ".onset_partial.tmp"
+    temporary.write_text("keep")
+    with patch.object(cli.LinearEvaluationPipeline, "evaluate", side_effect=AssertionError("acoustics")), \
+            pytest.raises(ValueError, match="overwrite"):
+        cli.run(cli.parser().parse_args(argv(inputs, output)))
+    assert temporary.read_text() == "keep"
+    assert list(output.iterdir()) == [temporary]
+
+
+def test_r28_normal_checkpoints_atomic_and_final_publication_exclusive(tmp_path):
+    output = tmp_path / "out"
+    progress = reporting.Progress(output)
+    progress.save({"status": "not_resolved"}, "first")
+    partial = output / "onset_partial.json"
+    before = partial.read_bytes()
+    with patch.object(Path, "replace", side_effect=OSError("interrupted replacement")), \
+            pytest.raises(OSError, match="interrupted replacement"):
+        progress.save({"status": "numerical_model_only"}, "second")
+    assert partial.read_bytes() == before
+    assert json.loads((output / ".onset_partial.tmp").read_text())["checkpoint_stage"] == "second"
+    # A separate ordinary output exercises repeat checkpoints and final exports.
+    normal = tmp_path / "normal"
+    normal_progress = reporting.Progress(normal)
+    for stage in ("first", "second"):
+        normal_progress.save({"status": "not_resolved"}, stage)
+        assert json.loads((normal / "onset_partial.json").read_text())["checkpoint_stage"] == stage
+        assert not (normal / ".onset_partial.tmp").exists()
+    original_link = os.link
+    def raced_link(source, destination):
+        Path(destination).write_text("concurrent final")
+        return original_link(source, destination)
+    with patch.object(reporting.os, "link", side_effect=raced_link), pytest.raises(FileExistsError):
+        export_bundle({"status": "not_resolved"}, normal, own_progress=True)
+    assert (normal / "onset_audit.json").read_text() == "concurrent final"
+
+
+def _r28_export_group(tmp_path, group):
+    payload = {"status": "numerical_model_only", "equilibria": {group["closure"]: [group]}}
+    before = strict_json(payload)
+    export_bundle(payload, tmp_path / "out")
+    assert strict_json(payload) == before
+    assert (tmp_path / "out/onset_audit.json").read_text() == before
+    with (tmp_path / "out/onset_equilibria.csv").open() as stream:
+        rows = list(csv.DictReader(stream))
+    return rows, (tmp_path / "out/onset_summary_fr.txt").read_text()
+
+
+def test_r28_double_root_reports_group_ambiguity_and_branch_residual(tmp_path):
+    params = replace(P, pressure_force_sign=1.)
+    b = .0008; c = 3e-6 / (1e-4 * (2 * math.pi * 80)**2); d = .72 * .012 * math.sqrt(2 / 1.204)
+    t = math.sqrt(3 * b / c)
+    group = equilibria(params, 1.204, t*t/5, closure="fir_dc", dc=-t/(5*d*b))
+    assert group["status"] == "not_resolved" and group["branch_count"] == 1
+    row = group["branches"][0]
+    assert row["status"] == "equilibrium_solved" and row["algebraic_multiplicity_t"] == 2
+    rows, summary = _r28_export_group(tmp_path, group)
+    assert len(rows) == 1 and rows[0]["record_type"] == "branch"
+    assert rows[0]["group_status"] == "not_resolved"
+    assert rows[0]["status"] == row["status"]
+    assert rows[0]["algebraic_multiplicity_t"] == "2"
+    assert rows[0]["scaled_residual"] == str(row["residuals"]["scaled_max"])
+    assert json.loads(rows[0]["ambiguous_roots"]) == group["ambiguous_roots"]
+    assert "near_multiple_algebraic_root" in summary and "multiplicité=2" in summary
+    assert "énumération=not_resolved" in summary and "état de branche=equilibrium_solved" in summary
+
+
+@pytest.mark.parametrize("with_rejection", [False, True])
+def test_r28_empty_group_is_explicit_without_invented_equilibrium(tmp_path, with_rejection):
+    group = equilibria(replace(P, pressure_force_sign=1.), 1.204, 1500., closure="fir_dc", dc=-1e9)
+    assert group["branches"] == [] and group["absence_in_algebraic_domain"]
+    if with_rejection:
+        # Reporting-only fixture: retain a full rejected record, never a branch.
+        rejected = equilibria(P, 1.204, 1500., closure="reference_pd_zero")["branches"][0]
+        group = {**group, "rejected": [{**rejected, "status": "not_resolved"}], "absence_in_algebraic_domain": False}
+    rows, summary = _r28_export_group(tmp_path, group)
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["record_type"] == "group" and row["group_status"] == "not_resolved"
+    assert row["branch_count"] == "0" and row["closure"] == "fir_dc"
+    assert row["absence_in_algebraic_domain"] == str(group["absence_in_algebraic_domain"])
+    assert all(row[key] == "" for key in ("branch_id", "status", "scaled_residual", "pressure_pa", "flow_m3_s"))
+    assert json.loads(row["rejected"]) == group["rejected"]
+    assert "aucune branche conservée" in summary and "énumération=not_resolved" in summary
+    assert "absence dans le domaine algébrique=" + str(group["absence_in_algebraic_domain"]) in summary
+    if with_rejection:
+        assert "Rejets" in summary and '"status": "not_resolved"' in summary
+
+
+@pytest.mark.parametrize("case", ["normal", "bernoulli", "contact", "flow_closure"])
+def test_r28_resolved_groups_and_boundaries_preserve_branch_values(tmp_path, case):
+    k = P.mass_kg * (2 * math.pi * P.resonance_hz)**2
+    pressure = {"normal": 1500., "bernoulli": 0.,
+                "contact": k*(P.rest_opening_m-P.min_opening_m)/P.effective_area_m2,
+                "flow_closure": (k*P.rest_opening_m+P.contact_stiffness_n_per_m*P.min_opening_m)/P.effective_area_m2}[case]
+    group = equilibria(P, 1.204, pressure, closure="reference_pd_zero")
+    rows, summary = _r28_export_group(tmp_path, group)
+    assert len(rows) == 1 and rows[0]["group_status"] == group["status"] == "equilibrium_solved"
+    branch = group["branches"][0]
+    for key in ("closure", "pressure_pa", "branch_id", "status", "downstream_pa", "delta_pa", "x_m", "h_m", "flow_m3_s", "regular_free"):
+        assert rows[0][key] == str(branch[key])
+    assert rows[0]["boundary_status"] == (branch["boundary_status"] or "")
+    assert rows[0]["non_regular_reasons"] == ";".join(branch["non_regular_reasons"])
+    assert "énumération=equilibrium_solved" in summary and "état de branche=equilibrium_solved" in summary
+    for reason in branch["non_regular_reasons"]:
+        assert reason in summary

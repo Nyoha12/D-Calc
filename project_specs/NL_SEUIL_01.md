@@ -200,9 +200,34 @@ Le bundle final comprend `onset_audit.json` strict (NaN/Inf interdits),
 final est publié avec ses octets complets, par création exclusive, sans
 écraser un résultat. Le checkpoint demeure explicitement partiel.
 
+Le préflight refuse aussi les liens symboliques pendants et les temporaires
+préexistants des checkpoints et exports. Chaque temporaire de checkpoint est
+créé exclusivement : un fichier ou lien introduit après le préflight est
+refusé sans être suivi ni écrasé. Le remplacement atomique conserve le dernier
+checkpoint complet si l'écriture ou le remplacement est interrompu.
+
+Dans le CSV des équilibres, `status` et `scaled_residual` restent ceux de la
+branche ; `group_status` décrit séparément l'énumération. `group_index` repère
+le groupe dans sa fermeture (index commençant à zéro), `branch_count` donne
+l'inventaire conservé, `algebraic_multiplicity_t` la multiplicité du représentant.
+`ambiguous_roots` et `rejected` contiennent les détails JSON, et
+`absence_in_algebraic_domain` reste distinct d'un groupe non résolu.
+`record_type=group` signale un groupe sans branche : ses champs de branche,
+pression et résidu restent vides, car le groupe scientifique ne fournit pas
+de pression autonome. La synthèse française expose ces mêmes distinctions,
+y compris les frontières et raisons non régulières. Aucun équilibre n'est
+inventé, et le JSON scientifique des groupes/branches reste inchangé.
+
 Les empreintes CONFIG/DESIGN/base/variantes viennent du contexte réel. Les
 sources Python effectivement chargées et l'entrée CLI sont hachées ; le SHA
 Git provient du mécanisme existant, avec état dirty ou indisponibilité explicite.
+`provenance.producer` identifie le fichier définissant l'API `run` et son SHA256.
+La commande `python -m tools.nonlinear_onset_audit` et l'appel à `run` importé
+depuis ce module sont acceptés. Une copie extérieure de la CLI utilisant le
+paquet du worktree est refusée avant lecture du contexte, acoustique ou écriture,
+même avec `--dry-run` : elle ne peut revendiquer la provenance du producteur du
+dépôt. Le programme hôte de l'appel API (par exemple pytest) n'est pas pris
+pour le producteur. Le helper de provenance FIXED reste inchangé.
 Les entrées et sources sont revérifiées avant publication finale. Les exports
 ne recopient pas les chemins d'entrée ; aucun journal privé n'est destiné à la PR.
 
@@ -258,6 +283,14 @@ Les assertions/tolérances historiques restent intactes. Les passages précommit
 et sur SHA committé sont enregistrés séparément, sans additionner les répétitions.
 La baseline R25 de 111 tests et 2 sous-tests est historique, distincte de cette
 validation. Les 179 fichiers de base doivent garder leurs empreintes.
+
+Les régressions R28 complètent ces tests : producteur normal/importé/copié,
+liens pendants et temporaires avant/après préflight, publication exclusive,
+checkpoints interrompus, racine double avec signe `+1`, groupes sans branche,
+rejets et frontières. La preuve rouge est exécutée sur la production
+`5b4ac429758d2baee8e480c976ca1e2fb1f3f36e`, puis les mêmes assertions sont
+rejouées après correction. Les équations, seuils, tolérances et deux fichiers
+du noyau d'équilibre et de ses tests restent gelés pendant cette retouche.
 
 Références bibliographiques fournies dans le mandat, sans nouvelle acquisition
 ni validation expérimentale revendiquée : Fletcher et al., JASA 2006,
