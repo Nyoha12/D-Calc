@@ -1,0 +1,174 @@
+{
+  "schema": "dcalc.td_pass_01.r29.v1",
+  "source_commit": "67a940a3fda5d43504aa029cddae276a7869f499",
+  "source_issue": "https://github.com/Nyoha12/D-Calc/issues/67",
+  "kind": "synthetic TMM numerical regression, not measurements",
+  "units": {
+    "frequency": "Hz",
+    "impedance": "Pa.s/m^3",
+    "a": "Pa/m^3",
+    "gamma": "1/s",
+    "omega": "rad/s",
+    "R0": "Pa.s/m^3"
+  },
+  "domain": "discrete_prewarped",
+  "sample_rate_hz": 12000,
+  "fit_grid": "linspace(40,3000,4096)",
+  "audit_grid": "40+(arange(1536)+0.618033988749895)*2960/1536",
+  "gates": {
+    "complex_nrmse": 0.005,
+    "relative_max": 0.08,
+    "phase_rms_deg": 0.3
+  },
+  "historical_dictionary": "Final R29 coefficients include two numerical out-of-band basis terms at 1.15 and 1.65 times fmax, gamma=0.08*omega after prewarping. These are not observed peaks or physical loss coefficients. Fixture regression reconstructs the dated coefficients; separate new-fit tests exercise explicit basis_completion=r29 and the observed-only comparison from fit/guard spectra.",
+  "cases": {
+    "cylinder_zk": {
+      "file": "cylinder_zk.npz",
+      "sha256": "886a6478c5678edd559e0d794f1bc4e60c1a08d05025029dffee507d2e1b914e",
+      "effective": {
+        "air": {
+          "rho": 1.2046925976462561,
+          "c": 343.3700171691432,
+          "mu": 1.807064e-05,
+          "kappa": 0.025735030880000002,
+          "cp": 1004.16,
+          "gamma": 1.402,
+          "temperature_c": 20.0,
+          "humidity_percent": 0.0,
+          "identifier": "CK_DRY_20C",
+          "provenance": "sourced nominal equations: Openwind Physics.Chaigne_Kergomard_expressions documentation; humidity/CO2 ignored; documentation SHA unspecified"
+        },
+        "original_air": {
+          "rho": 1.204,
+          "c": 343.0,
+          "temperature_c": 20.0,
+          "humidity_percent": 50.0
+        },
+        "air_substitution": "explicit CK diagnostic, in memory only",
+        "loss_model": "zwikker_kosten_circular",
+        "radiation": {
+          "name": "legacy",
+          "variant": "existing_low_frequency",
+          "version": "dcalc.legacy.v1",
+          "coefficients": null,
+          "source": "D-Calc acoustics/radiation.py unchanged",
+          "category": "low-frequency approximation; not measurement",
+          "reference_band": {
+            "abs_ka_max": null,
+            "description": "low-frequency asymptote; no quantified precision threshold"
+          },
+          "assumptions": [
+            "existing 0.613*a reactive term; no added length",
+            "historical helper radius floor 1e-9 m retained; ka_out describes the physical radius",
+            "exterior environment and wall thickness not established"
+          ]
+        }
+      },
+      "mesh_max_cm": 2.0,
+      "design_file": "project_specs/examples/design_pitch/cylinder.json",
+      "inputs": {
+        "config": {
+          "sha256": "6559202fe5ccc1a721f26b50f2e206996637fe9ce087513afc2a827ca907b988",
+          "read": true
+        },
+        "design": {
+          "sha256": "796d84737ff4851312ff051a0488378f4fd14548efc2a2880f6ed68700e2a47a",
+          "read": true
+        },
+        "materials": {
+          "sha256": "c3d5b5213470da8525124173fdfa65e8ec43d636bb761ed64db903a8bdd20934",
+          "read": true
+        },
+        "variant_rules": {
+          "sha256": "fd2f1cc631e3744768ac27758a3470177317be3e13d0f10e880e6201668a3e18",
+          "read": true
+        }
+      },
+      "expected": {
+        "complex_nrmse": 0.0036897129423861964,
+        "relative_rms": 0.004037553910951662,
+        "relative_max": 0.06756659974834502,
+        "relative_p95": 0.006551481252404556,
+        "phase_rms_deg": 0.18125407266468097,
+        "phase_max_deg": 2.6384573699904257,
+        "magnitude_nrmse": 0.0016843481030589449
+      },
+      "reference_active_terms": 154,
+      "R0_origin": "ZK rigid circular local 1D sum, linearized acoustic DC limit"
+    },
+    "exponential_zk": {
+      "file": "exponential_zk.npz",
+      "sha256": "e3f91b62a6f93a52a994b21a977a8d670f75d835fa9f1c77660d48b40e62ed67",
+      "effective": {
+        "air": {
+          "rho": 1.2046925976462561,
+          "c": 343.3700171691432,
+          "mu": 1.807064e-05,
+          "kappa": 0.025735030880000002,
+          "cp": 1004.16,
+          "gamma": 1.402,
+          "temperature_c": 20.0,
+          "humidity_percent": 0.0,
+          "identifier": "CK_DRY_20C",
+          "provenance": "sourced nominal equations: Openwind Physics.Chaigne_Kergomard_expressions documentation; humidity/CO2 ignored; documentation SHA unspecified"
+        },
+        "original_air": {
+          "rho": 1.204,
+          "c": 343.0,
+          "temperature_c": 20.0,
+          "humidity_percent": 50.0
+        },
+        "air_substitution": "explicit CK diagnostic, in memory only",
+        "loss_model": "zwikker_kosten_circular",
+        "radiation": {
+          "name": "legacy",
+          "variant": "existing_low_frequency",
+          "version": "dcalc.legacy.v1",
+          "coefficients": null,
+          "source": "D-Calc acoustics/radiation.py unchanged",
+          "category": "low-frequency approximation; not measurement",
+          "reference_band": {
+            "abs_ka_max": null,
+            "description": "low-frequency asymptote; no quantified precision threshold"
+          },
+          "assumptions": [
+            "existing 0.613*a reactive term; no added length",
+            "historical helper radius floor 1e-9 m retained; ka_out describes the physical radius",
+            "exterior environment and wall thickness not established"
+          ]
+        }
+      },
+      "mesh_max_cm": 0.5,
+      "design_file": "project_specs/examples/design_pitch/exponential.yaml",
+      "inputs": {
+        "config": {
+          "sha256": "b6bbb5eb18db5f924d145e4f702d51206e8f6be8dcd9f6c22f295c7879d5da65",
+          "read": true
+        },
+        "design": {
+          "sha256": "36d067d97cf2fe658f4c5a42f2f28d3c84e6a23043d78d2c4083e3219e3eab22",
+          "read": true
+        },
+        "materials": {
+          "sha256": "c3d5b5213470da8525124173fdfa65e8ec43d636bb761ed64db903a8bdd20934",
+          "read": true
+        },
+        "variant_rules": {
+          "sha256": "fd2f1cc631e3744768ac27758a3470177317be3e13d0f10e880e6201668a3e18",
+          "read": true
+        }
+      },
+      "expected": {
+        "complex_nrmse": 0.003630941076501726,
+        "relative_rms": 0.00361780241140665,
+        "relative_max": 0.06750712010229795,
+        "relative_p95": 0.00598713108030506,
+        "phase_rms_deg": 0.16967297636558956,
+        "phase_max_deg": 2.5875091861467885,
+        "magnitude_nrmse": 0.00186060183071724
+      },
+      "reference_active_terms": 161,
+      "R0_origin": "ZK rigid circular local 1D sum, linearized acoustic DC limit"
+    }
+  }
+}
