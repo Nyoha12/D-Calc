@@ -96,3 +96,13 @@ def test_allocation_guards_precede_array_coercion():
     t,z,p,plan=fixture();plan=replace(plan,max_shape_cells=130)
     out=analyze(t,z,p,sample_rate_hz=12000,plan=plan)
     assert all(c['reason']=='shape_allocation_or_work_budget_exceeded' for w in out['windows'] for c in w['candidates'])
+
+
+def test_maximum_native_state_duration_validation_stays_bounded():
+    # 192 terms, six seconds at 12 kHz. The scientific harness caps the entire
+    # process at 768 MiB, including validation/reconstruction temporaries.
+    t=np.arange(72001)/12000
+    z=np.zeros((72001,386));pressure=np.zeros(72000)
+    plan=ObservationPlan(windows=((0.,.01),),scales=(1.,)*386,section_index=0,section_level=0.)
+    result=analyze(t,z,pressure,sample_rate_hz=12000,plan=plan)
+    assert result['status']=='equilibrium_observed'

@@ -247,8 +247,14 @@ def analyze(times, states, midpoint_pressure, *, sample_rate_hz, plan):
     sc = np.array(plan.scales)
     with np.errstate(over='raise',invalid='raise',divide='raise'):
         try:
-            if not np.all(np.isfinite(z/sc)) or np.max(abs(z/sc))>1e100 or (len(pressure) and np.max(abs(pressure))>1e100):
-                raise ValueError('Unrepresentable observation scale')
+            # Avoid two full 72001 x 386 normalization temporaries under the
+            # 768 MiB child ceiling; validate complete state in small blocks.
+            for first in range(0,n,1024):
+                scaled=z[first:first+1024]/sc
+                if not np.all(np.isfinite(scaled)) or np.max(abs(scaled))>1e100:
+                    raise ValueError('Unrepresentable observation scale')
+            if len(pressure) and np.max(abs(pressure))>1e100:
+                raise ValueError('Unrepresentable pressure scale')
         except FloatingPointError as exc:
             raise ValueError('Unrepresentable observation normalization') from exc
     result = dict(schema='dcalc.regime_observations.v1',plan_sha256=digest(plan.as_dict()),
