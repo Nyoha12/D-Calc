@@ -1,8 +1,8 @@
 """Opt-in simultaneous V2 midpoint port with native-law segment contact.
 
-Only the passive subsystem is passive. No swept flow or new physical law is
-introduced. Contact/closure flags describe the discrete segment, not localized
-continuous events. See project_specs/TD_COUPLE_01.md.
+The default jet-only path is retained. Optional conjugate ports balance the
+declared lip/contact and resonator energy. Contact flags describe segments,
+not localized continuous events. See project_specs/NL_PORTS_01.md.
 """
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ import numpy as np
 from ..acoustics.air import AirProperties
 from .lips import DimensionedLipParameters, LipModelV2
 from .onset_stability import validate_parameters
+from .lip_ports import validate_port_model, solve_port, uniqueness_feedback, history_pressure, flows
 from .passive_resonator import PassiveResonator, integer, real, vector
 
 EPS = np.finfo(float).eps
@@ -72,7 +73,8 @@ class SimultaneousCoupling:
     A refused step leaves state, time, losses and last diagnostics untouched.
     """
     def __init__(self, model, *, params, rho, initial_state=None,
-                 max_extensions=32, max_iterations=80):
+                 max_extensions=32, max_iterations=80, v2_port_model='jet-only'):
+        self.v2_port_model = validate_port_model(v2_port_model)
         if not isinstance(model, PassiveResonator):
             raise ValueError('Simultaneous schedule requires PassiveResonator; no FIR fallback')
         validate_parameters(params, rho)
@@ -148,17 +150,14 @@ class SimultaneousCoupling:
         self.initialize(self._initial)
 
     def _port(self, vm, x0, ph):
-        opening = self.params.rest_opening_m+x0+self.tau*vm
-        B = self.Pu-ph
-        if B <= 0 or opening <= 0:
-            return ph, 0., max(B, 0.), opening
-        b = self.D*self.k*opening
-        if not math.isfinite(b):
-            raise ValueError('Unrepresentable Bernoulli coefficient')
-        # hypot avoids b*b overflow. The divided expression avoids 2*B overflow.
-        t = B/(math.hypot(b, 2*math.sqrt(B))/2+b/2)
-        u = self.k*opening*t
-        return ph+self.D*u, u, t*t, opening
+        return solve_port(vm, x0, ph, Pu=self.Pu, D=self.D, k=self.k,
+                          tau=self.tau, h0=self.params.rest_opening_m,
+                          Ad=self.Ad, port_model=self.v2_port_model)
+
+    def _feedback(self, x0, ph):
+        return uniqueness_feedback(x0, ph, Pu=self.Pu, D=self.D, k=self.k,
+            tau=self.tau, h0=self.params.rest_opening_m, Ad=self.Ad,
+            port_model=self.v2_port_model)
 
     def _boundaries(self, x0, x1, vm, delta, ph):
         # These guards affect labels only, never the force, opening or flow.
@@ -191,14 +190,14 @@ class SimultaneousCoupling:
                 return self._step()
         except (ValueError, ArithmeticError, FloatingPointError, OSError, MemoryError) as exc:
             return dict(ok=False, status='non_resolu', reason=type(exc).__name__+': '+str(exc),
-                        time_s=self.time_s, state_unchanged=True)
+                        time_s=self.time_s, state_unchanged=True, v2_port_model=self.v2_port_model)
 
     def _step(self):
         self._source.verify_file_unchanged()
         x0, v0 = self._lip_state
         q0, rv0 = self._backend.state
         ph = float(np.sum(self.a*(rv0-self.tau*self.omega**2*q0)/self.den))
-        feedback = self.tau**2*max(self.Ad, 0.)*self.D*self.k*math.sqrt(max(self.Pu-ph, 0.))
+        feedback = self._feedback(x0, ph)
         margin = self.M-feedback
         # Account for products/subtraction/sum rounding; conservative sufficient
         # certificate only. Failure says nothing about physical root existence.
@@ -247,31 +246,57 @@ class SimultaneousCoupling:
         lip1 = np.array([x1, v1])
         # Native backend commits only to a private candidate. No recurrence copy.
         trial = copy.copy(self._backend)
-        native_p = trial.step(u)
+        port = flows(u, vm, self.Au, self.Ad, self.v2_port_model)
+        ud, uu = port['downstream_flow_m3_s'], port['upstream_flow_m3_s']
+        native_p = trial.step(ud)
         er0, er1 = self._backend.energy(), trial.energy()
         el0, el1 = self.lip_energy(self._lip_state), self.lip_energy(lip1)
         pressure_work = self.dt*(self.Au*self.Pu+self.Ad*p)*vm
         lip_loss = self.dt*self.r*vm*vm
         contact_loss = -self.dt*fd*vm
-        resonator_work = self.dt*native_p*u
+        resonator_work = self.dt*native_p*ud
         resonator_loss = self.dt*trial.last_dissipation_w
         # Native flow is also evaluated. Near delta=0, its subtractive pressure
         # input is uncertain; the retained quadratic delta is the primary oracle.
         native_u = self.lip.flow([x0+self.tau*vm, vm], self.params, p, self.air)
+        ph_eff = history_pressure(ph, self.D, self.Ad, vm, self.v2_port_model)
         residuals = dict(
             mechanical=_residual(f, self.M*vm, self.tau*(fc+fd), rhs, self.m*v0, self.tau*self.K*x0, self.tau*self.Au*self.Pu, self.tau*self.Ad*p, self.m*1e-12),
-            pressure=_residual(p-native_p, p, native_p, ph, self.D*u, 1.),
-            bernoulli=_residual(delta+self.D*u-(self.Pu-ph), delta, self.D*u, self.Pu-ph, 1.) if self.Pu > ph and h > 0 else _residual(0., 1.),
-            flow=_residual(u-self.k*max(h, 0.)*math.sqrt(delta), u, 1e-30) if self.Pu > ph else _residual(u, 1e-30),
+            pressure=_residual(p-native_p, p, native_p, ph, self.D*ud, 1.),
+            bernoulli=_residual(delta+self.D*u-(self.Pu-ph_eff), delta, self.D*u, self.Pu-ph_eff, 1.) if self.Pu > ph_eff and h > 0 else _residual(0., 1.),
+            flow=_residual(u-self.k*max(h, 0.)*math.sqrt(delta), u, 1e-30) if self.Pu > ph_eff else _residual(u, 1e-30),
             lip_energy=_residual(el1-el0-pressure_work+lip_loss+contact_loss, el0, el1, pressure_work, lip_loss, contact_loss),
             resonator_energy=_residual(er1-er0-resonator_work+resonator_loss, er0, er1, resonator_work, resonator_loss))
+        # Extra diagnostics must not introduce new refusals in the frozen
+        # jet-only algorithm. Unrepresentable optional values remain unavailable.
+        with np.errstate(over='ignore', invalid='ignore'):
+            source_work = self.dt*self.Pu*uu
+            jet_loss = self.dt*(self.Pu-p)*u
+            total_energy = el1+er1
+            total_change = el1-el0+er1-er0
+        if self.v2_port_model == 'jet-only':
+            source_work, jet_loss, total_energy, total_change = (
+                float(value) if np.isfinite(value) else None
+                for value in (source_work, jet_loss, total_energy, total_change))
+        balance = None
+        if self.v2_port_model == 'conjugate':
+            power_defect = self.Pu*uu-p*ud-(self.Pu-p)*u-(self.Au*self.Pu+self.Ad*p)*vm
+            residuals['port_power'] = _residual(power_defect, self.Pu*uu, p*ud,
+                (self.Pu-p)*u, (self.Au*self.Pu+self.Ad*p)*vm, 1e-30)
+            balance = _residual(el1-el0+er1-er0-source_work+jet_loss+lip_loss+contact_loss+resonator_loss,
+                el0+er0, el1+er1, source_work, jet_loss, lip_loss, contact_loss, resonator_loss)
+            residuals['total_energy'] = balance
         if any(not np.isfinite(v['absolute']+v['normalized']) or v['normalized'] > 2e-10 for v in residuals.values()):
             raise ValueError('scaled_residual_check_failed: '+str(residuals))
         clock = self.time_s+self.dt
         diag = dict(ok=True, status='resolved', time_s=clock, midpoint_time_s=self.time_s+self.tau,
-            pressure_pa=p, flow_m3_s=u, delta_pa=delta, delta_clipped_pa=delta,
+            pressure_pa=p, flow_m3_s=ud, **port, v2_port_model=self.v2_port_model,
+            source_work_j=source_work, jet_loss_j=jet_loss, total_energy_j=total_energy,
+            total_energy_change_j=total_change, total_energy_residual=balance,
+            energy_balance_status=('conjugate_reduced_model' if balance is not None else 'unavailable_nonconjugate'),
+            delta_pa=delta, delta_clipped_pa=delta,
             signed_pressure_difference_pa=self.Pu-p,
-            bernoulli_branch='active' if self.Pu > ph and h > 0 else ('closed' if h <= 0 else 'nonpositive_pressure_difference'),
+            bernoulli_branch='active' if self.Pu > ph_eff and h > 0 else ('closed' if h <= 0 else 'nonpositive_pressure_difference'),
             opening_mid_m=h,
             opening_m=self.params.rest_opening_m+x1, velocity_m_s=v1, velocity_mid_m_s=vm,
             lip_energy_j=el1, resonator_energy_j=er1,
@@ -283,10 +308,10 @@ class SimultaneousCoupling:
             pressure_subtraction_uncertainty_pa=8*EPS*max(abs(self.Pu), abs(p), 1.),
             residuals=residuals, uniqueness_margin=margin, uniqueness_roundoff_guard=guard,
             bracket_extensions=extensions, iterations=iterations,
-            **self._boundaries(x0, x1, vm, delta, ph))
+            **self._boundaries(x0, x1, vm, delta, ph_eff))
         finite = [clock, *lip1, *trial.state[0], *trial.state[1], trial.last_dissipation_w]
         finite += [v for v in diag.values() if isinstance(v, (float, np.floating))]
-        if not np.all(np.isfinite(finite)) or min(lip_loss, contact_loss, resonator_loss) < 0 or clock <= self.time_s:
+        if not np.all(np.isfinite(finite)) or min(lip_loss, contact_loss, resonator_loss) < 0 or (self.v2_port_model == 'conjugate' and jet_loss < 0) or clock <= self.time_s:
             raise ValueError('Nonfinite/unrepresentable candidate state or diagnostics')
         self._source.verify_file_unchanged()
         result = copy.deepcopy(diag)
@@ -338,6 +363,13 @@ class SimultaneousCoupling:
             midpoint_time_s=[r['midpoint_time_s'] for r in rows],
             midpoint_pressure_pa=[r['pressure_pa'] for r in rows],
             flow_m3_s=[r['flow_m3_s'] for r in rows],
+            **{key: [r[key] for r in rows] for key in ('jet_m3_s', 'upstream_flow_m3_s',
+                'downstream_flow_m3_s', 'induced_upstream_m3_s', 'induced_downstream_m3_s')},
+            v2_port_model=self.v2_port_model, flow_m3_s_meaning='signed total downstream port',
+            energy_balance_status=('conjugate_reduced_model' if self.v2_port_model == 'conjugate' else 'unavailable_nonconjugate'),
+            energy_balance_available=self.v2_port_model == 'conjugate',
+            physical_validation='not_validated', parameters_calibration='to_calibrate',
+            units=dict(flow='m^3/s', pressure='Pa', energy='J', time='s'),
             opening_m=[self.params.rest_opening_m+s[0] for s in states],
             velocity_m_s=[s[1] for s in states],
             lip_energy_j=[self.lip_energy(s) for s in states],
