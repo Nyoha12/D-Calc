@@ -292,3 +292,66 @@ def test_french_summary_keeps_outside_band_and_effective_v2_contract(tmp_path):
     assert 'mouth_pressure_kpa' in text and 'non bandelimités' in text
     got=json.loads((tmp_path/'reference.json').read_text())['v2']['passive']
     assert got['parameters']['mouth_pressure_kpa']==0 and got['equilibrium']['branches'][0]['non_regular_reasons']
+
+
+@pytest.mark.parametrize('schedule',['historical','simultaneous'])
+def test_schedule_dry_run_does_not_execute_or_write(tmp_path,schedule):
+    with patch.object(workflow,'input_impedance',side_effect=AssertionError('acoustics')),patch.object(workflow,'simulate_v2',side_effect=AssertionError('simulation')):
+        result=workflow.run(CONFIG,DESIGN,tmp_path/'out',dry_run=True,v2_schedule=schedule,v2_pressure_pa=7000.)
+    assert result['ok'] and result['plan']['options']['v2_schedule']==schedule
+    assert not (tmp_path/'out').exists()
+
+
+@pytest.mark.parametrize('schedule',[True,{},'unknown'])
+def test_invalid_schedule_before_context_and_output(tmp_path,schedule):
+    with patch.object(workflow,'_context',side_effect=AssertionError('context')):
+        with pytest.raises(ValueError,match='schedule'):
+            workflow.preflight(CONFIG,DESIGN,tmp_path/'out',v2_schedule=schedule)
+    assert not (tmp_path/'out').exists()
+
+
+def test_simultaneous_real_backend_exports_and_fir_refusal(tmp_path):
+    from didgeridoo_optimizer.nonlinear.resonator_td import TimeDomainResonator
+    model=modal(12000);before=model.parameters()
+    value=workflow.simulate_v2(model,pressure_pa=7000.,duration_s=.02,v2_schedule='simultaneous')
+    assert value['ok'] and value['status']=='resolved'
+    assert value['v2_schedule']=='simultaneous' and len(value['steps'])==240
+    assert value['parameters']['mouth_pressure_kpa']==7.
+    assert value['requested_duration_s']==value['duration_s']==.02
+    assert value['contact_fraction']>0
+    assert model.parameters()==before and model.energy()==0
+    fir=object.__new__(TimeDomainResonator)
+    with pytest.raises(ValueError,match='FIR fallback'):
+        workflow.simulate_v2(fir,pressure_pa=7000,v2_schedule='simultaneous')
+    payload=dict(status='numerically_accepted',statuses=reporting.statuses(),v2=dict(passive=value))
+    reporting.export(tmp_path,payload)
+    summary=reporting.v2_summary(payload)
+    assert json.loads(list(csv.DictReader((tmp_path/'reference.csv').open()))[0]['v2_summary_json'])==summary
+    rows=list(csv.DictReader((tmp_path/'v2.csv').open()))
+    assert len(rows)==240 and all(r['schedule']=='simultaneous' for r in rows)
+    for i,row in enumerate(rows):
+        assert float(row['pressure_pa'])==value['steps'][i]['pressure_pa']
+        assert json.loads(row['residuals_json'])==value['steps'][i]['residuals']
+    text=(tmp_path/'summary.txt').read_text()
+    assert 'simultaneous ; statut : resolved' in text and 'contact_transitions' in text
+
+
+def test_explicit_historical_parity_and_simultaneous_partial_no_fallback():
+    from didgeridoo_optimizer.tests.test_simultaneous_coupling import resistor
+    implicit=workflow.simulate_v2(modal(4000),pressure_pa=1500,duration_s=.01)
+    explicit=workflow.simulate_v2(modal(4000),pressure_pa=1500,duration_s=.01,v2_schedule='historical')
+    assert implicit==explicit
+    result=workflow.simulate_v2(resistor(R0=1e12),pressure_pa=30000,duration_s=.01,v2_schedule='simultaneous')
+    assert not result['ok'] and result['status']=='non_resolu'
+    assert result['duration_s']==0 and result['steps']==[]
+    assert result['initial']==result['final']
+
+
+def test_real_cli_schedule_dry_run_and_refusal(tmp_path):
+    command=[sys.executable,'-B','-m','tools.time_domain_reference','--config',str(CONFIG),
+        '--design',str(DESIGN),'--output-dir',str(tmp_path/'out'),'--dry-run','--air-reference','ck_dry20']
+    result=subprocess.run(command+['--v2-schedule','simultaneous'],text=True,capture_output=True,timeout=20)
+    assert result.returncode==0,result.stdout+result.stderr
+    assert json.loads(result.stdout)['plan']['options']['v2_schedule']=='simultaneous'
+    result=subprocess.run(command+['--v2-schedule','other'],text=True,capture_output=True,timeout=20)
+    assert result.returncode==1 and not (tmp_path/'out').exists()

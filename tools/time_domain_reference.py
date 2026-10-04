@@ -33,6 +33,8 @@ def parser():
     p.add_argument('--basis-completion', choices=['observed-only','r29'], default='observed-only',
         help='Declared numerical basis (default: observed-only); r29 adds two numerical out-of-band terms, not observed modes')
     p.add_argument('--v2-pressure-pa',type=float)
+    p.add_argument('--v2-schedule', choices=['historical','simultaneous'], default='historical',
+        help='Explicit V2 schedule for passive backend; FIR comparator remains historical')
     p.add_argument('--nrmse-gate',type=float,default=.005)
     p.add_argument('--max-relative-gate',type=float,default=.08)
     p.add_argument('--phase-rms-gate-deg',type=float,default=.3)
