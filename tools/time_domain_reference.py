@@ -35,6 +35,8 @@ def parser():
     p.add_argument('--v2-pressure-pa',type=float)
     p.add_argument('--v2-schedule', choices=['historical','simultaneous'], default='historical',
         help='Explicit V2 schedule for passive backend; FIR comparator remains historical')
+    p.add_argument('--v2-port-model', choices=['jet-only','conjugate'], default='jet-only',
+        help='Conjugate ports require simultaneous passive coupling; FIR remains historical+jet-only')
     p.add_argument('--nrmse-gate',type=float,default=.005)
     p.add_argument('--max-relative-gate',type=float,default=.08)
     p.add_argument('--phase-rms-gate-deg',type=float,default=.3)

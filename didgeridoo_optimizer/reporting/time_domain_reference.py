@@ -5,6 +5,7 @@ import csv
 import hashlib
 import io
 import json
+import math
 from pathlib import Path
 import sys
 
@@ -21,6 +22,7 @@ LIMITS = [
     'R29 completion terms are numerical out-of-band bases, not observed peaks or acquired guard-to-Nyquist data.',
     'The chosen 70 Hz drive may be outside the fit band; impulse and start/stop transients are not bandlimited. No out-of-band fidelity is validated.',
     'Modal reference: continuous 3996.671891607 Pa; historical schedule 4062.676894137 Pa at 12 kHz and 4198.524055211 Pa at 4 kHz; historical reference values, not executions of the simultaneous CLI.',
+    'Conjugate ports (lambda=1) balance El+Er for declared mechanics; parameters remain to_calibrate and empirically unvalidated.',
     'Simultaneous contact uses segment averages of native V2 laws; no continuous event localization or global passivity claim.',
 ]
 
@@ -105,10 +107,17 @@ def export(output, payload):
         text += ['', 'Débit prescrit : fréquence choisie '+str(forced['frequency_hz'])+' Hz ; dans la bande de fit : '+
                  ('oui' if forced['sinusoid_within_fit_band'] else 'non')+'.',
                  'Pression passive au port milieu ; pression FIR au port natif FIR.']
+    if not payload.get('v2') and payload.get('options', {}).get('v2_pressure_pa') is not None:
+        opt = payload['options']
+        text += ['', 'V2 demandé : '+opt.get('v2_schedule','historical')+' ; ports '+opt.get('v2_port_model','jet-only')+' ; calcul non exécuté.',
+                 'Bilan numérique : '+json.dumps(v2_summary(payload),ensure_ascii=False,sort_keys=True)]
     for backend, value in payload.get('v2', {}).items():
         if not isinstance(value, dict):
             continue
         text += ['', 'Calendrier V2 '+backend+' : '+value.get('v2_schedule','historical')+' ; statut : '+value['status'],
+                 'Ports : '+value.get('v2_port_model','jet-only')+' ; flow_m3_s = débit total aval signé (m³/s).',
+                 'Jet, amont, aval et débits induits distincts ; indisponible = null JSON / cellule CSV vide.',
+                 'Bilan El+Er : '+value.get('energy_balance_status','unavailable')+' ; paramètres non calibrés, validation empirique non obtenue.',
                  'Contact (fraction des segments si simultané) : '+str(value.get('contact_fraction')),
                  'Bilan numérique : '+json.dumps(v2_summary(payload).get(backend,{}),ensure_ascii=False,sort_keys=True),
                  'V2 '+backend+' : pression demandée/effective '+str(value['pressure_pa'])+' Pa ; fs effectif '+str(value['sample_rate_hz'])+' Hz.',
@@ -125,6 +134,17 @@ def export(output, payload):
         stream.write('\n'.join(text)+'\n')
 
 
+def _available_sum(values):
+    values = list(values)
+    if any(v is None for v in values):
+        return None
+    try:
+        total = math.fsum(values)
+    except OverflowError:
+        return None
+    return total if math.isfinite(total) else None
+
+
 def v2_summary(payload):
     result = {}
     for backend, value in payload.get('v2', {}).items():
@@ -132,7 +152,18 @@ def v2_summary(payload):
             continue
         rows = value.get('steps', [])
         summary = {k:value.get(k) for k in ('status','ok','v2_schedule','requested_duration_s',
-            'duration_s','sample_rate_hz','pressure_pa','contact_fraction','reason')}
+            'duration_s','sample_rate_hz','pressure_pa','contact_fraction','reason',
+            'v2_port_model','flow_m3_s_meaning','energy_balance_status','energy_balance_available')}
+        summary.update(total_energy_residual_max=None, source_work_j=None, jet_loss_j=None,
+            losses_j=None, residual_max=None, pressure_work_j=None,
+            mechanical_pressure_term_work_j=None)
+        jet = value.get('jet_m3_s', [])
+        induced = value.get('induced_downstream_m3_s', [])
+        ratio = math.hypot(*induced)/math.hypot(*jet) if jet and math.hypot(*jet) > 0 else None
+        summary.update(induced_to_jet_rms_ratio=ratio,
+            rms_window=dict(samples=len(jet), start_s=value.get('time_s',[0.])[0],
+                duration_s=value.get('duration_s'), includes_mean=True, includes_transient=True,
+                zero_jet_policy='null; undefined ratio', definition='RMS(induced downstream)/RMS(jet) over all accepted samples'))
         if rows:
             summary.update(lip_energy_final_j=rows[-1]['lip_energy_j'],
                 resonator_energy_final_j=rows[-1]['resonator_energy_j'],
@@ -141,10 +172,23 @@ def v2_summary(payload):
                 event_localization=value['event_localization'],
                 residual_max={name:{scale:max(r['residuals'][name][scale] for r in rows)
                     for scale in ('absolute','normalized')} for name in rows[0]['residuals']},
-                losses_j={name:sum(r[name] for r in rows) for name in ('lip_loss_j','contact_loss_j','resonator_loss_j')},
-                pressure_work_j=sum(r['pressure_work_j'] for r in rows),
-                mechanical_pressure_term_work_j=sum(r['mechanical_pressure_term_w']/value['sample_rate_hz'] for r in rows))
+                losses_j={name:math.fsum(r[name] for r in rows) for name in ('lip_loss_j','contact_loss_j','resonator_loss_j')},
+                pressure_work_j=math.fsum(r['pressure_work_j'] for r in rows),
+                mechanical_pressure_term_work_j=math.fsum(float(r['mechanical_pressure_term_w'])/value['sample_rate_hz'] for r in rows))
+            summary.update(source_work_j=_available_sum(r['source_work_j'] for r in rows),
+                jet_loss_j=_available_sum(r['jet_loss_j'] for r in rows))
+            if rows[0].get('total_energy_residual') is not None:
+                summary['total_energy_residual_max'] = {key:max(r['total_energy_residual'][key] for r in rows)
+                    for key in ('absolute','normalized')}
         result[backend] = summary
+    opt = payload.get('options', {})
+    if not result and opt.get('v2_pressure_pa') is not None:
+        result['passive'] = dict(status='not_executed', ok=False,
+            requested_v2_schedule=opt.get('v2_schedule','historical'),
+            requested_v2_port_model=opt.get('v2_port_model','jet-only'),
+            v2_schedule=None, v2_port_model=None, duration_s=None,
+            requested_duration_s=opt.get('v2_duration_s'), reason=payload.get('error'),
+            total_energy_residual_max=None, source_work_j=None, jet_loss_j=None)
     return result
 
 
@@ -152,7 +196,10 @@ def export_v2(output, payload):
     """One row per accepted step; zero-step refusal is explicit in summary CSV."""
     if not payload.get('v2'):
         return
-    fields = ['backend','schedule','step','status','midpoint_time_s','pressure_pa','flow_m3_s',
+    fields = ['backend','schedule','v2_port_model','step','status','state_time_s','midpoint_time_s','time_s','pressure_pa','flow_m3_s',
+        'jet_m3_s','upstream_flow_m3_s','downstream_flow_m3_s','induced_upstream_m3_s','induced_downstream_m3_s',
+        'source_work_j','jet_loss_j','total_energy_j','total_energy_change_j','total_energy_residual_json',
+        'energy_balance_status','opening_mid_m','velocity_mid_m_s',
         'opening_m','velocity_m_s','lip_energy_j','resonator_energy_j','lip_loss_j','contact_loss_j',
         'resonator_loss_j','pressure_work_j','mechanical_pressure_term_w','contact_segment_fraction',
         'residuals_json','non_regular_reasons_json']
@@ -164,12 +211,18 @@ def export_v2(output, payload):
             rows=value.get('steps')
             if rows is None:
                 pressures=value.get('midpoint_pressure_pa',value.get('fir_pressure_pa',[]))
-                rows=[dict(status=value['status'],pressure_pa=p,flow_m3_s=u)
+                rows=[dict(status=value['status'],pressure_pa=p,flow_m3_s=u,
+                    jet_m3_s=u,upstream_flow_m3_s=u,downstream_flow_m3_s=u,
+                    induced_upstream_m3_s=0.,induced_downstream_m3_s=0.,
+                    energy_balance_status=value.get('energy_balance_status'))
                       for p,u in zip(pressures,value['flow_m3_s'])]
             for i,row in enumerate(rows):
                 record={key:row.get(key) for key in fields if key not in
-                    ('backend','schedule','step','residuals_json','non_regular_reasons_json')}
-                record.update(backend=backend,schedule=value.get('v2_schedule','historical'),step=i,
+                    ('backend','schedule','v2_port_model','step','residuals_json','non_regular_reasons_json','total_energy_residual_json')}
+                record['state_time_s'] = value['time_s'][i] if 'time_s' in value else None
+                record.update(v2_port_model=value.get('v2_port_model','jet-only'),
+                    total_energy_residual_json=json.dumps(row.get('total_energy_residual'),allow_nan=False,sort_keys=True),
+                    backend=backend,schedule=value.get('v2_schedule','historical'),step=i,
                     residuals_json=json.dumps(row.get('residuals'),allow_nan=False,sort_keys=True),
                     non_regular_reasons_json=json.dumps(row.get('non_regular_reasons'),allow_nan=False))
                 writer.writerow(record)

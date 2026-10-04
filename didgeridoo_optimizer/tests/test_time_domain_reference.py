@@ -355,3 +355,148 @@ def test_real_cli_schedule_dry_run_and_refusal(tmp_path):
     assert json.loads(result.stdout)['plan']['options']['v2_schedule']=='simultaneous'
     result=subprocess.run(command+['--v2-schedule','other'],text=True,capture_output=True,timeout=20)
     assert result.returncode==1 and not (tmp_path/'out').exists()
+
+
+@pytest.mark.parametrize('port,schedule',[('conjugate','historical'),('other','simultaneous'),(True,'simultaneous'),({},'simultaneous')])
+def test_port_incompatibilities_before_context_acoustics_or_writes(tmp_path,port,schedule):
+    with patch.object(workflow,'_context',side_effect=AssertionError('context')),patch.object(workflow,'input_impedance',side_effect=AssertionError('acoustics')):
+        with pytest.raises(ValueError):
+            workflow.run(CONFIG,DESIGN,tmp_path/'out',v2_schedule=schedule,v2_port_model=port)
+    assert not (tmp_path/'out').exists()
+
+
+def test_conjugate_fir_refused_before_any_backend_or_equilibrium():
+    from didgeridoo_optimizer.nonlinear.resonator_td import TimeDomainResonator
+    fir=object.__new__(TimeDomainResonator)
+    with patch.object(workflow,'equilibria',side_effect=AssertionError('equilibrium')):
+        for schedule in ('historical','simultaneous'):
+            with pytest.raises(ValueError):
+                workflow.simulate_v2(fir,pressure_pa=1500,v2_schedule=schedule,v2_port_model='conjugate')
+
+
+@pytest.mark.parametrize('schedule,port',[('historical','jet-only'),('simultaneous','jet-only'),('simultaneous','conjugate')])
+def test_ports_dry_run_real_cli_no_acoustics_or_output(tmp_path,schedule,port):
+    with patch.object(workflow,'input_impedance',side_effect=AssertionError('acoustics')),patch.object(workflow,'simulate_v2',side_effect=AssertionError('simulation')):
+        result=workflow.run(CONFIG,DESIGN,tmp_path/'api',dry_run=True,v2_schedule=schedule,v2_port_model=port)
+    assert result['plan']['options']['v2_port_model']==port
+    command=[sys.executable,'-B','-m','tools.time_domain_reference','--config',str(CONFIG),
+        '--design',str(DESIGN),'--output-dir',str(tmp_path/'cli'),'--dry-run','--air-reference','ck_dry20',
+        '--v2-port-model',port,'--v2-schedule',schedule]
+    proc=subprocess.run(command,text=True,capture_output=True,timeout=20)
+    assert proc.returncode==0,proc.stdout+proc.stderr
+    assert json.loads(proc.stdout)['plan']['options']['v2_port_model']==port
+    assert not (tmp_path/'api').exists() and not (tmp_path/'cli').exists()
+
+
+@pytest.mark.parametrize('port',['jet-only','conjugate'])
+def test_ports_json_csv_summary_and_rms_window(tmp_path,port):
+    value=workflow.simulate_v2(modal(),pressure_pa=7000,duration_s=.02,v2_schedule='simultaneous',v2_port_model=port)
+    assert value['ok'],value['reason']
+    payload=dict(status='numerically_accepted',statuses=reporting.statuses(),v2=dict(passive=value))
+    reporting.export(tmp_path,payload)
+    parsed=json.loads((tmp_path/'reference.json').read_text())
+    summary=reporting.v2_summary(parsed)['passive'];csvsummary=json.loads(list(csv.DictReader((tmp_path/'reference.csv').open()))[0]['v2_summary_json'])['passive']
+    assert csvsummary==summary
+    assert summary['rms_window']['includes_mean'] and summary['rms_window']['includes_transient']
+    assert summary['rms_window']['samples']==240
+    expected=np.linalg.norm(value['induced_downstream_m3_s'])/np.linalg.norm(value['jet_m3_s'])
+    assert summary['induced_to_jet_rms_ratio']==pytest.approx(expected,rel=1e-14)
+    rows=list(csv.DictReader((tmp_path/'v2.csv').open()))
+    for i,row in enumerate(rows):
+        assert row['v2_port_model']==port
+        assert float(row['state_time_s'])==value['time_s'][i]
+        for key in ('jet_m3_s','flow_m3_s','upstream_flow_m3_s','downstream_flow_m3_s',
+                    'induced_upstream_m3_s','induced_downstream_m3_s','source_work_j','jet_loss_j','time_s'):
+            assert float(row[key])==value['steps'][i][key]
+        assert json.loads(row['total_energy_residual_json'])==value['steps'][i]['total_energy_residual']
+    text=(tmp_path/'summary.txt').read_text()
+    assert 'Ports : '+port in text and 'paramètres non calibrés' in text and 'débit total aval signé' in text
+    if port=='jet-only':assert summary['total_energy_residual_max'] is None
+    else:assert summary['total_energy_residual_max']['normalized']<2e-10
+
+
+def test_ports_zero_step_failure_keeps_selection_and_unavailable_null(tmp_path):
+    from didgeridoo_optimizer.tests.test_simultaneous_coupling import resistor
+    value=workflow.simulate_v2(resistor(R0=1e12),pressure_pa=3e13,duration_s=.001,
+        v2_schedule='simultaneous',v2_port_model='conjugate')
+    assert not value['ok'] and value['steps']==[]
+    payload=dict(status='not_accepted',statuses=reporting.statuses(),v2=dict(passive=value))
+    reporting.export(tmp_path,payload)
+    summary=json.loads(list(csv.DictReader((tmp_path/'reference.csv').open()))[0]['v2_summary_json'])['passive']
+    assert summary['v2_port_model']=='conjugate' and summary['reason']
+    assert summary['total_energy_residual_max'] is None and summary['losses_j'] is None
+    assert summary['induced_to_jet_rms_ratio'] is None
+    assert list(csv.DictReader((tmp_path/'v2.csv').open()))==[]
+    assert value['initial']==value['final'] and len(value['states'])==1
+
+
+def test_new_ports_and_late_loaded_sources_are_fingerprinted():
+    import hashlib
+    import didgeridoo_optimizer.nonlinear.lip_ports as ports
+    paths=reporting.sources()
+    relative=Path(ports.__file__).relative_to(ROOT).as_posix()
+    assert paths[relative]==hashlib.sha256(Path(ports.__file__).read_bytes()).hexdigest()
+    import didgeridoo_optimizer.tests.test_lip_ports as late
+    relative=Path(late.__file__).relative_to(ROOT).as_posix()
+    assert reporting.sources()[relative]==hashlib.sha256(Path(late.__file__).read_bytes()).hexdigest()
+
+
+def test_fir_failure_after_passive_checkpoint_keeps_full_result_and_provenance(tmp_path):
+    import hashlib
+    plan,context=workflow.preflight(CONFIG,DESIGN,tmp_path/'out',v2_schedule='simultaneous',
+        v2_port_model='conjugate',v2_pressure_pa=1500.,v2_duration_s=.001)
+    output=Path(plan['output']);output.mkdir()
+    with patch.object(workflow,'input_impedance',side_effect=lambda f,*a,**kw:np.ones(len(f),complex)),\
+         patch.object(workflow,'fit_passive',return_value=(modal(),dict(status='converged'))),\
+         patch.object(workflow,'audit',return_value=dict(status='accepted')),\
+         patch.object(workflow,'metrics',return_value=dict(complex_nrmse=0.)),\
+         patch.object(workflow.LinearEvaluationPipeline,'evaluate',side_effect=ValueError('historical comparator failed')):
+        payload=workflow.calculate(plan,context)
+    partial=json.loads((output/'partial.json').read_text())
+    assert not payload['ok'] and payload['status']=='failed' and 'historical comparator failed' in payload['error']
+    assert partial['v2']['passive']==payload['v2']['passive']
+    assert partial['v2']['passive']['ok'] and len(partial['v2']['passive']['steps'])==12
+    assert 'native_fir' not in partial['v2']
+    assert partial['v2']['passive']['v2_port_model']=='conjugate'
+    assert partial['provenance']['executed_model_sha256']==hashlib.sha256((output/'model.json').read_bytes()).hexdigest()
+    assert 'didgeridoo_optimizer/nonlinear/lip_ports.py' in partial['provenance']['sources_sha256']
+    reporting.export(output,payload)
+    assert json.loads((output/'reference.json').read_text())['v2']['passive']['final']==partial['v2']['passive']['final']
+    assert 'historical comparator failed' in (output/'summary.txt').read_text()
+
+
+@pytest.mark.parametrize('exception',[KeyboardInterrupt(),OSError('source unreadable')])
+def test_checkpoint_provenance_failure_cannot_be_reported_as_success(tmp_path,exception):
+    plan,context=workflow.preflight(CONFIG,DESIGN,tmp_path/'out')
+    output=Path(plan['output']);output.mkdir();before=reporting.sources()
+    with patch.object(reporting,'sources',side_effect=[before,exception,before]),\
+         patch.object(workflow,'input_impedance',side_effect=AssertionError('must stop before acoustics')):
+        value=workflow.calculate(plan,context)
+    assert not value['ok'] and value['status']==('interrupted' if isinstance(exception,KeyboardInterrupt) else 'failed')
+    assert 'sources_read_error' in value['provenance']
+    assert not json.loads((output/'partial.json').read_text())['ok']
+
+
+def test_optional_cumulative_work_overflow_exports_null(tmp_path):
+    value=workflow.simulate_v2(modal(),pressure_pa=1500,duration_s=.001,v2_schedule='simultaneous')
+    for row in value['steps']:
+        row['source_work_j']=1e308;row['jet_loss_j']=1e308
+    payload=dict(status='numerically_accepted',statuses=reporting.statuses(),v2=dict(passive=value))
+    reporting.export(tmp_path,payload)
+    summary=json.loads(list(csv.DictReader((tmp_path/'reference.csv').open()))[0]['v2_summary_json'])['passive']
+    assert summary['source_work_j'] is None and summary['jet_loss_j'] is None
+
+
+def test_timeout_before_worker_checkpoint_keeps_requested_ports_and_null_effective(tmp_path):
+    options=dict(v2_schedule='simultaneous',v2_port_model='conjugate',v2_pressure_pa=7000.)
+    plan,context=workflow.preflight(CONFIG,DESIGN,tmp_path/'out',**options)
+    with patch.object(workflow,'preflight',return_value=(plan,context)),\
+         patch.object(workflow.subprocess,'run',side_effect=subprocess.TimeoutExpired('worker',.01)):
+        out=workflow.run(CONFIG,DESIGN,tmp_path/'out',**options)
+    assert not out['ok'] and out['status']=='interrupted'
+    value=json.loads((tmp_path/'out/reference.json').read_text())
+    assert value['options']['v2_port_model']=='conjugate'
+    summary=json.loads(list(csv.DictReader((tmp_path/'out/reference.csv').open()))[0]['v2_summary_json'])['passive']
+    assert summary['requested_v2_port_model']=='conjugate' and summary['v2_port_model'] is None
+    assert summary['duration_s'] is None and summary['total_energy_residual_max'] is None
+    assert 'ports conjugate ; calcul non exécuté' in (tmp_path/'out/summary.txt').read_text()

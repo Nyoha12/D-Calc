@@ -338,3 +338,87 @@ def test_prewarped_uses_its_native_frequency_and_source_state_is_not_shared():
     d=c.simulate(.001);assert d['ok'] and len(d['steps'])==12
     for actual,expected in zip(model.state,old):np.testing.assert_array_equal(actual,expected)
     assert d['steps'][0]['delta_clipped_pa']>=0
+
+
+@pytest.mark.parametrize('mode',['jet-only','conjugate'])
+def test_ports_native_backend_called_once_and_independent(mode,monkeypatch):
+    model=modal();model.step(1e-6);original=model.state;parameters_before=model.parameters()
+    calls=[];native=PassiveResonator.step
+    def counted(backend,flow):
+        calls.append((flow,backend.sample_rate_hz))
+        return native(backend,flow)
+    monkeypatch.setattr(PassiveResonator,'step',counted)
+    c=SimultaneousCoupling(model,params=P,rho=RHO,v2_port_model=mode)
+    assert not np.any(c.state[2:]);before=c.snapshot();d=c.step();assert d['ok'],d
+    assert calls==[(d['downstream_flow_m3_s'],12000)]
+    assert d['flow_m3_s']==d['downstream_flow_m3_s']
+    assert model.parameters()==parameters_before
+    for actual,expected in zip(model.state,original):np.testing.assert_array_equal(actual,expected)
+    state=c.state;state[:]=0;diag=c.diagnostics;diag['flow_m3_s']=999
+    assert c.diagnostics['flow_m3_s']!=999
+    c.reset();assert c.snapshot()==before
+    if mode=='jet-only':
+        assert d['jet_m3_s']==d['flow_m3_s']
+        assert d['induced_downstream_m3_s']==0 and d['total_energy_residual'] is None
+    else:assert d['total_energy_residual']['normalized']<2e-10
+
+
+@pytest.mark.parametrize('kind',['certificate','bracket','iterations','overflow','zero_iterations'])
+def test_conjugate_refusals_are_atomic_without_limit_relaxation(kind):
+    model=modal();params=replace(P,mouth_pressure_kpa=30.);state=[0.,.001,0.,0.];kw={}
+    if kind=='certificate':model=resistor(R0=1e12);state=[-.0008,0.]
+    if kind=='bracket':model=resistor();state=[-.01,0.];kw['max_extensions']=0
+    if kind=='iterations':kw['max_iterations']=1
+    if kind=='overflow':
+        model=resistor(R0=1e308);state=[0.,0.]
+        params=replace(P,flow_coefficient=200.,pressure_force_sign=1.)
+    if kind=='zero_iterations':
+        with pytest.raises(ValueError):SimultaneousCoupling(model,params=params,rho=RHO,v2_port_model='conjugate',max_iterations=0)
+        return
+    c=SimultaneousCoupling(model,params=params,rho=RHO,v2_port_model='conjugate',initial_state=state,**kw)
+    before=c.snapshot();d=c.step()
+    assert not d['ok'] and d['status']=='non_resolu' and d['v2_port_model']=='conjugate'
+    assert c.snapshot()==before
+    if kind=='certificate':assert 'certificate_not_established' in d['reason']
+    if kind=='bracket':assert 'bracket_budget' in d['reason']
+    if kind=='iterations':assert 'iteration_budget' in d['reason']
+
+
+@pytest.mark.parametrize('failure',[ValueError('native candidate'),MemoryError(),KeyboardInterrupt()])
+def test_conjugate_candidate_interruptions_and_zero_step_serialization(monkeypatch,failure):
+    import json
+    c=SimultaneousCoupling(modal(),params=P,rho=RHO,v2_port_model='conjugate')
+    assert c.step()['ok'];before=c.snapshot()
+    def fail(backend,flow):
+        backend._q=np.ones_like(backend._q);backend.last_dissipation_w=999
+        raise failure
+    monkeypatch.setattr(PassiveResonator,'step',fail)
+    out=c.simulate(.001)
+    assert not out['ok'] and out['initial']==out['final']==before
+    assert out['states']==[before['state']] and out['duration_s']==0
+    assert out['v2_port_model']=='conjugate' and out['jet_m3_s']==[]
+    assert json.loads(json.dumps(out,allow_nan=False))==out
+
+
+def test_conjugate_partial_time_indexing_and_zero_budget():
+    c=SimultaneousCoupling(modal(),params=P,rho=RHO,v2_port_model='conjugate')
+    zero=c.simulate(.001,max_steps=0)
+    assert not zero['ok'] and zero['duration_s']==0 and zero['initial']==zero['final']
+    out=c.simulate(.01,max_steps=2)
+    assert not out['ok'] and len(out['states'])==len(out['time_s'])==3
+    assert len(out['jet_m3_s'])==len(out['steps'])==len(out['midpoint_time_s'])==2
+    for i,row in enumerate(out['steps']):
+        assert row['time_s']==out['time_s'][i+1]
+        assert row['midpoint_time_s']==pytest.approx((out['time_s'][i]+out['time_s'][i+1])/2)
+    assert out['requested_duration_s']==.01 and out['duration_s']==2/12000
+
+
+def test_jet_only_optional_overflow_cannot_add_a_historical_refusal():
+    params=replace(P,mouth_pressure_kpa=1e297,effective_area_m2=1e-300)
+    c=SimultaneousCoupling(resistor(),params=params,rho=RHO,initial_state=[0.,0.])
+    d=c.step();assert d['ok'],d
+    assert np.isfinite(d['flow_m3_s']) and d['flow_m3_s']>0
+    assert d['source_work_j'] is None and d['jet_loss_j'] is None
+    assert d['total_energy_residual'] is None
+    vm=c.tau*c.Au*c.Pu/c.M
+    np.testing.assert_allclose(c.state,[c.dt*vm,2*vm],rtol=2e-14,atol=1e-16)

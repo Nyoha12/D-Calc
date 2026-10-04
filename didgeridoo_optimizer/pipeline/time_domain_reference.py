@@ -30,6 +30,7 @@ from ..nonlinear.resonator_td import TimeDomainResonator
 from ..nonlinear.thresholds import OscillationThresholdEstimator
 from ..nonlinear.lips import DimensionedLipParameters
 from ..nonlinear.simultaneous_coupling import SimultaneousCoupling
+from ..nonlinear.lip_ports import validate_port_model
 from ..nonlinear.onset_stability import validate_parameters, equilibria
 from ..reporting import time_domain_reference as report
 
@@ -96,12 +97,13 @@ def preflight(config, design, output_dir, **options):
         R0=None, dc_origin=None, gates=DEFAULT_GATES.copy(), mesh_gate=.005,
         seconds=175., fit_seconds=110., max_passes=10, model_in=None,
         flow_peak_m3_s=1e-6, signal_samples=2048, v2_pressure_pa=None, v2_duration_s=.05,
-        basis_completion='observed-only', v2_schedule='historical')
+        basis_completion='observed-only', v2_schedule='historical', v2_port_model='jet-only')
     if set(options)-set(defaults):
         raise ValueError('Unknown options: '+','.join(sorted(set(options)-set(defaults))))
     opt = {**defaults, **options}
     if not isinstance(opt['v2_schedule'], str) or opt['v2_schedule'] not in ('historical', 'simultaneous'):
         raise ValueError('v2_schedule must be historical or simultaneous')
+    validate_port_model(opt['v2_port_model'], schedule=opt['v2_schedule'])
     fs = integer(opt['sample_rate_hz'], 'sample_rate_hz', 1000, 12000)
     for key, lo, hi in [('fit_points',32,8192), ('guard_points',32,2048), ('audit_points',32,4096),
                         ('signal_samples',32,12000), ('max_passes',1,10)]:
@@ -167,10 +169,12 @@ def _dtft(kernel, f, fs):
     return out
 
 
-def simulate_v2(model, *, pressure_pa, duration_s=.05, params=None, air=None, v2_schedule='historical'):
+def simulate_v2(model, *, pressure_pa, duration_s=.05, params=None, air=None, v2_schedule='historical',
+                v2_port_model='jet-only'):
     """Explicit schedule; historical calls remain native and unchanged."""
     if not isinstance(v2_schedule, str) or v2_schedule not in ('historical', 'simultaneous'):
         raise ValueError('v2_schedule must be historical or simultaneous')
+    validate_port_model(v2_port_model, schedule=v2_schedule)
     if v2_schedule == 'simultaneous' and not isinstance(model, PassiveResonator):
         raise ValueError('Simultaneous schedule requires PassiveResonator; no FIR fallback')
     if not isinstance(model,(PassiveResonator,TimeDomainResonator)):
@@ -189,7 +193,7 @@ def simulate_v2(model, *, pressure_pa, duration_s=.05, params=None, air=None, v2
     dc = model.R0 if isinstance(model,PassiveResonator) else float(sum(model.impulse_kernel))
     branches = equilibria(params,air.rho,pressure,closure='fir_dc',dc=dc)
     if v2_schedule == 'simultaneous':
-        coupling = SimultaneousCoupling(model, params=params, rho=air.rho)
+        coupling = SimultaneousCoupling(model, params=params, rho=air.rho, v2_port_model=v2_port_model)
         result = coupling.simulate(duration)
         result.update(equilibrium=branches, v2_schedule=v2_schedule,
             dc_closure='native DC algebra; passive R0; no stability inference')
@@ -207,10 +211,16 @@ def simulate_v2(model, *, pressure_pa, duration_s=.05, params=None, air=None, v2
             raise ValueError('Nonfinite V2 experiment')
     verify()
     return dict(status='experimental_not_coupled_energy_validated', sample_rate_hz=fs,
-        v2_schedule='historical', requested_sample_rate_hz=fs, requested_pressure_pa=pressure,
+        v2_schedule='historical', v2_port_model='jet-only', requested_sample_rate_hz=fs, requested_pressure_pa=pressure,
         pressure_pa=pressure, requested_duration_s=duration, duration_s=len(sim['flow_signal'])/fs, parameters=params.as_dict(),
         equilibrium=branches, dc_closure='native DC algebra; passive R0 or native FIR sum; no stability inference',
-        flow_m3_s=sim['flow_signal'].tolist(),
+        flow_m3_s=sim['flow_signal'].tolist(), jet_m3_s=sim['flow_signal'].tolist(),
+        upstream_flow_m3_s=sim['flow_signal'].tolist(), downstream_flow_m3_s=sim['flow_signal'].tolist(),
+        induced_upstream_m3_s=[0.]*len(sim['flow_signal']), induced_downstream_m3_s=[0.]*len(sim['flow_signal']),
+        flow_m3_s_meaning='signed total downstream port',
+        energy_balance_available=False, energy_balance_status='unavailable_historical_schedule',
+        total_energy_residual=None, rho_kg_m3=air.rho,
+        units=dict(flow='m^3/s', pressure='Pa', energy='J', time='s'),
         pressure_port='midpoint' if isinstance(model,PassiveResonator) else 'native FIR sample',
         **({'midpoint_pressure_pa':sim['pressure_signal'].tolist()} if isinstance(model,PassiveResonator) else {'fir_pressure_pa':sim['pressure_signal'].tolist()}),
         surrogate_excitation_used=False, contact_fraction=sim.get('contact_fraction'),
@@ -273,17 +283,45 @@ def _reload_certificate(model, f, z, fg, zg, *, basis_completion=None):
 
 def calculate(plan, context):
     opt = plan['options']; output = Path(plan['output']); started = time.monotonic()
+    validate_port_model(opt['v2_port_model'], schedule=opt['v2_schedule'])
     payload = dict(schema='dcalc.time_domain_reference.v1', status='partial', ok=False,
         statuses=report.statuses(), limits=report.LIMITS, options=opt,
         basis_completion=plan['basis_completion'],
         provenance=dict(inputs=_inputs(context), software=context['provenance']['software']),
         materials_used=context['materials_used'], effective=plan['effective'], budgets=plan['budgets'])
     before = report.sources()
+    payload['provenance']['sources_sha256_initial'] = before
     def checkpoint(stage):
         payload['elapsed_seconds'] = time.monotonic()-started
+        # Partial results also identify the actual loaded coupling, including
+        # imports performed after the first checkpoint. Read failures stay visible.
+        failure = None
+        try:
+            current = report.sources()
+            payload['provenance']['sources_sha256'] = current
+            payload['provenance']['sources_unchanged_at_checkpoint'] = all(
+                current.get(k) == v for k, v in before.items())
+            if not payload['provenance']['sources_unchanged_at_checkpoint']:
+                raise ValueError('Loaded source changed at checkpoint')
+        except (Exception, KeyboardInterrupt) as exc:
+            payload['provenance']['sources_read_error'] = type(exc).__name__+': '+str(exc)
+            failure = exc
+        try:
+            if (output/'model.json').is_file():
+                payload['provenance']['executed_model_sha256'] = hashlib.sha256((output/'model.json').read_bytes()).hexdigest()
+        except (Exception, KeyboardInterrupt) as exc:
+            payload['provenance']['model_read_error'] = type(exc).__name__+': '+str(exc)
+            failure = failure or exc
+        if failure is not None:
+            payload['ok'] = False
+            if payload['status'] not in ('failed', 'interrupted'):
+                payload['status'] = 'interrupted' if isinstance(failure, KeyboardInterrupt) else 'failed'
+            payload.setdefault('error', type(failure).__name__+': '+str(failure))
         report.checkpoint(output,payload,stage)
-    checkpoint('started')
+        if failure is not None and stage != 'failed':
+            raise failure
     try:
+        checkpoint('started')
         if _inputs(context) != plan['input_files']:
             raise ValueError('Inputs changed since preflight')
         completion = completion_spec(opt['basis_completion'], fit_max_hz=opt['fit_max_hz'],
@@ -321,8 +359,10 @@ def calculate(plan, context):
             if model.parameters()['provenance'].get('context_identity') != identity or model.parameters()['domain'] != 'discrete_prewarped' or model.R0 != R0 or model.sample_rate_hz != opt['sample_rate_hz']:
                 raise ValueError('Model/context mismatch; mixed sources refused')
             fit = model.parameters()['quality']
-            fit['certificate'] = _reload_certificate(model,f,z,fg,zg,basis_completion=opt['basis_completion'])
-            fit['status'] = 'converged' if fit['certificate']['converged'] else 'not_converged'
+            reload_certificate = _reload_certificate(model,f,z,fg,zg,basis_completion=opt['basis_completion'])
+            fit_status = 'converged' if reload_certificate['converged'] else 'not_converged'
+            payload['reload_verification'] = dict(status=fit_status, certificate=reload_certificate,
+                scope='current algebraic reload check; saved fit certificate remains historical')
             if fit.get('guard_spectrum_sha256') != spectrum_identity(fg,zg):
                 raise ValueError('Loaded guard identity differs')
         else:
@@ -332,10 +372,14 @@ def calculate(plan, context):
                 seconds=opt['fit_seconds'],max_passes=opt['max_passes'],
                 progress=lambda value: report.write_json(output/'fit_progress.json',value,replace=True),
                 provenance=dict(context_identity=identity,inputs=_inputs(context),sources_sha256=before))
+            fit_status = fit['status']
         payload['fit'] = fit
-        payload['statuses'].update(passivity='structural',fitter=fit['status'])
+        payload['statuses'].update(passivity='structural',fitter=fit_status)
         parameters = model.parameters()
-        parameters['quality'] = fit
+        if not opt['model_in']:
+            parameters['quality'] = fit
+        payload['fit_certificate_scope'] = ('historical_saved_fit; current reload algebra checked separately'
+            if opt['model_in'] else 'current_fit; no validation of lip coupling')
         model = PassiveResonator.from_parameters(parameters)
         model.save(output/'model.json')
         model = PassiveResonator.load(output/'model.json')
@@ -351,6 +395,12 @@ def calculate(plan, context):
         np.savez_compressed(output/'spectra.npz',fit_f=f,fit_z=z,guard_f=fg,guard_z=zg,
                             audit_f=fv,audit_z=zv,fine_z=fine_z,model_z=model.discrete_response(fv))
         checkpoint('audited')
+        if opt['v2_pressure_pa'] is not None:
+            payload['v2'] = dict(scope='Same effective fs, air, pressure and V2 parameters; FIR comparator always historical+jet-only')
+            payload['v2']['passive'] = simulate_v2(model, pressure_pa=opt['v2_pressure_pa'],
+                duration_s=opt['v2_duration_s'], air=air, v2_schedule=opt['v2_schedule'],
+                v2_port_model=opt['v2_port_model'])
+            checkpoint('v2_passive_returned')
         # Real native legacy evaluation and native metadata, including actual peaks.
         cfg = copy.deepcopy(context['config'])
         cfg.setdefault('frequency_analysis',{}).update(f_min_hz=opt['fit_min_hz'],f_max_hz=opt['fit_max_hz'],n_points=opt['fit_points'],discretization_max_segment_cm=opt['h_cm'])
@@ -381,12 +431,8 @@ def calculate(plan, context):
             transient_scope='Start from rest, finite sinusoid and impulse are not bandlimited; no validated fidelity outside the fit band',
             units=dict(flow='m^3/s',pressure='Pa'),pressure_port='midpoint',frequency_hz=70.,flow_peak_m3_s=opt['flow_peak_m3_s'])
         if opt['v2_pressure_pa'] is not None:
-            payload['v2'] = dict(scope='Same effective fs, air, supplied pressure and V2 parameters; different resonator models and port conventions; FIR comparator always historical')
-            payload['v2']['passive'] = simulate_v2(model,pressure_pa=opt['v2_pressure_pa'],
-                duration_s=opt['v2_duration_s'],air=air,v2_schedule=opt['v2_schedule'])
-            checkpoint('v2_passive_returned')
             payload['v2']['native_fir'] = simulate_v2(fir,pressure_pa=opt['v2_pressure_pa'],
-                duration_s=opt['v2_duration_s'],air=air,v2_schedule='historical')
+                duration_s=opt['v2_duration_s'],air=air,v2_schedule='historical',v2_port_model='jet-only')
         model.verify_file_unchanged()
         if opt['model_in']:
             PassiveResonator.load(opt['model_in'],expected_sha256=plan['model_sha256'])
@@ -415,6 +461,7 @@ def calculate(plan, context):
 def worker():
     plan = json.load(sys.stdin)
     try:
+        validate_port_model(plan['options']['v2_port_model'], schedule=plan['options']['v2_schedule'])
         context = _context(plan['config'],plan['design'])
         value = calculate(plan,context)
     except Exception as exc:
@@ -466,10 +513,12 @@ def run(config, design, output_dir, *, dry_run=False, **options):
     value['child'] = dict(exit_code=child.returncode if child else None,wall_seconds=time.monotonic()-started,
                           reaped=True,limit_seconds=plan['options']['seconds'],memory_mib=768,blas_threads=1)
     value.setdefault('basis_completion', plan['basis_completion'])
+    value.setdefault('options', plan['options'])
     after = report.sources()
     if any(after.get(k) != v for k,v in initial_sources.items()):
         value.update(ok=False,status='failed',error='Parent source changed during processing')
         value['statuses']['fidelity'] = 'not_accepted'
+    value.setdefault('provenance', {})['parent_sources_sha256'] = after
     report.export(output,value)
     return dict(ok=value['ok'],status=value['status'],statuses=value['statuses'],
                 basis_completion=value['basis_completion'],child=value['child'],output_dir=str(output))
