@@ -29,6 +29,7 @@ from ..nonlinear.passive_fit import (fit_passive, audit, metrics, quality_gates,
 from ..nonlinear.resonator_td import TimeDomainResonator
 from ..nonlinear.thresholds import OscillationThresholdEstimator
 from ..nonlinear.lips import DimensionedLipParameters
+from ..nonlinear.simultaneous_coupling import SimultaneousCoupling
 from ..nonlinear.onset_stability import validate_parameters, equilibria
 from ..reporting import time_domain_reference as report
 
@@ -95,10 +96,12 @@ def preflight(config, design, output_dir, **options):
         R0=None, dc_origin=None, gates=DEFAULT_GATES.copy(), mesh_gate=.005,
         seconds=175., fit_seconds=110., max_passes=10, model_in=None,
         flow_peak_m3_s=1e-6, signal_samples=2048, v2_pressure_pa=None, v2_duration_s=.05,
-        basis_completion='observed-only')
+        basis_completion='observed-only', v2_schedule='historical')
     if set(options)-set(defaults):
         raise ValueError('Unknown options: '+','.join(sorted(set(options)-set(defaults))))
     opt = {**defaults, **options}
+    if not isinstance(opt['v2_schedule'], str) or opt['v2_schedule'] not in ('historical', 'simultaneous'):
+        raise ValueError('v2_schedule must be historical or simultaneous')
     fs = integer(opt['sample_rate_hz'], 'sample_rate_hz', 1000, 12000)
     for key, lo, hi in [('fit_points',32,8192), ('guard_points',32,2048), ('audit_points',32,4096),
                         ('signal_samples',32,12000), ('max_passes',1,10)]:
@@ -164,8 +167,12 @@ def _dtft(kernel, f, fs):
     return out
 
 
-def simulate_v2(model, *, pressure_pa, duration_s=.05, params=None, air=None):
-    """Run the historical simulator without copying RK4 or replacing its factory."""
+def simulate_v2(model, *, pressure_pa, duration_s=.05, params=None, air=None, v2_schedule='historical'):
+    """Explicit schedule; historical calls remain native and unchanged."""
+    if not isinstance(v2_schedule, str) or v2_schedule not in ('historical', 'simultaneous'):
+        raise ValueError('v2_schedule must be historical or simultaneous')
+    if v2_schedule == 'simultaneous' and not isinstance(model, PassiveResonator):
+        raise ValueError('Simultaneous schedule requires PassiveResonator; no FIR fallback')
     if not isinstance(model,(PassiveResonator,TimeDomainResonator)):
         raise ValueError('Explicit native FIR or passive backend required')
     fs = integer(model.sample_rate_hz, 'effective fs', 1000, 12000)
@@ -181,6 +188,12 @@ def simulate_v2(model, *, pressure_pa, duration_s=.05, params=None, air=None):
     validate_parameters(params,air.rho)
     dc = model.R0 if isinstance(model,PassiveResonator) else float(sum(model.impulse_kernel))
     branches = equilibria(params,air.rho,pressure,closure='fir_dc',dc=dc)
+    if v2_schedule == 'simultaneous':
+        coupling = SimultaneousCoupling(model, params=params, rho=air.rho)
+        result = coupling.simulate(duration)
+        result.update(equilibrium=branches, v2_schedule=v2_schedule,
+            dc_closure='native DC algebra; passive R0; no stability inference')
+        return result
     config = dict(nonlinear_simulation=dict(lip_model_type='dimensioned_v2',
         sample_rate_hz=fs, simulation_duration_s=duration, warmup_duration_s=0.))
     verify = model.verify_file_unchanged if isinstance(model,PassiveResonator) else lambda: None
@@ -194,6 +207,7 @@ def simulate_v2(model, *, pressure_pa, duration_s=.05, params=None, air=None):
             raise ValueError('Nonfinite V2 experiment')
     verify()
     return dict(status='experimental_not_coupled_energy_validated', sample_rate_hz=fs,
+        v2_schedule='historical', requested_sample_rate_hz=fs, requested_pressure_pa=pressure,
         pressure_pa=pressure, requested_duration_s=duration, duration_s=len(sim['flow_signal'])/fs, parameters=params.as_dict(),
         equilibrium=branches, dc_closure='native DC algebra; passive R0 or native FIR sum; no stability inference',
         flow_m3_s=sim['flow_signal'].tolist(),
@@ -367,9 +381,12 @@ def calculate(plan, context):
             transient_scope='Start from rest, finite sinusoid and impulse are not bandlimited; no validated fidelity outside the fit band',
             units=dict(flow='m^3/s',pressure='Pa'),pressure_port='midpoint',frequency_hz=70.,flow_peak_m3_s=opt['flow_peak_m3_s'])
         if opt['v2_pressure_pa'] is not None:
-            payload['v2'] = dict(passive=simulate_v2(model,pressure_pa=opt['v2_pressure_pa'],duration_s=opt['v2_duration_s'],air=air),
-                native_fir=simulate_v2(fir,pressure_pa=opt['v2_pressure_pa'],duration_s=opt['v2_duration_s'],air=air),
-                scope='Same effective fs, air, supplied pressure and V2 parameters; different resonator models and port conventions')
+            payload['v2'] = dict(scope='Same effective fs, air, supplied pressure and V2 parameters; different resonator models and port conventions; FIR comparator always historical')
+            payload['v2']['passive'] = simulate_v2(model,pressure_pa=opt['v2_pressure_pa'],
+                duration_s=opt['v2_duration_s'],air=air,v2_schedule=opt['v2_schedule'])
+            checkpoint('v2_passive_returned')
+            payload['v2']['native_fir'] = simulate_v2(fir,pressure_pa=opt['v2_pressure_pa'],
+                duration_s=opt['v2_duration_s'],air=air,v2_schedule='historical')
         model.verify_file_unchanged()
         if opt['model_in']:
             PassiveResonator.load(opt['model_in'],expected_sha256=plan['model_sha256'])
@@ -381,6 +398,10 @@ def calculate(plan, context):
             executed_model_sha256=hashlib.sha256((output/'model.json').read_bytes()).hexdigest())
         accepted = all(payload['statuses'][k] == expected for k,expected in
                        [('passivity','structural'),('fitter','converged'),('fidelity','accepted'),('mesh','accepted')])
+        simulation = payload.get('v2', {}).get('passive', {})
+        if simulation.get('ok') is False:
+            accepted = False
+            payload['simulation_error'] = simulation.get('reason')
         payload.update(ok=accepted,status='numerically_accepted' if accepted else 'not_accepted')
         checkpoint('complete')
     except (Exception, KeyboardInterrupt) as exc:
