@@ -272,11 +272,16 @@ def analyze(times, states, midpoint_pressure, *, sample_rate_hz, plan):
             reason='declared_window_not_covered',fft_auxiliary_hz=None,passage_frequency_hz=None,candidates=[])
         if start < t[0]-1e-12 or end > t[-1]+1e-10:
             result['windows'].append(row);continue
-        mask=(t>=start)&(t<end);pmask=(pt>=start)&(pt<end)
-        tw,zw,pw=t[mask],z[mask],ps[mask]
-        if len(tw)<32 or not np.any(pmask):
+        # The validated increasing grid makes [start,end) a contiguous slice.
+        # Keep native C arrays as views. For strided inputs, retain the C-order
+        # layout of the former boolean gather and hence its reduction order.
+        left,right=np.searchsorted(t,[start,end],side='left')
+        ml,mr=np.searchsorted(pt,[start,end],side='left')
+        tw=np.ascontiguousarray(t[left:right])
+        zw=np.ascontiguousarray(z[left:right]);pw=ps[left:right]
+        if len(tw)<32 or ml==mr:
             result['windows'].append(dict(row,reason='too_few_native_samples'));continue
-        native=pressure[pmask];ac=float(np.std(native));ss=float(np.max(np.ptp(zw,axis=0)/sc))
+        native=np.ascontiguousarray(pressure[ml:mr]);ac=float(np.std(native));ss=float(np.max(np.ptp(zw,axis=0)/sc))
         row.update(native_midpoint_pressure_mean_pa=float(np.mean(native)),pressure_ac_rms_pa=ac,
             state_scaled_span=ss,fft_auxiliary_hz=fft_peak(native,fs,plan.ac_floor_pa),
             section_index=plan.section_index,section_level=plan.section_level,
@@ -307,7 +312,11 @@ def analyze(times, states, midpoint_pressure, *, sample_rate_hz, plan):
             reason='same_group_all_disjoint_windows' if common else 'one_or_more_windows_or_persistence_checks_fail',checks=checks))
     if all(w['status']=='equilibrium_observed' for w in result['windows']):
         # Cross-window offsets matter even if each individual window is constant.
-        means=[np.mean(z[(t>=a)&(t<b)]/sc,axis=0) for a,b in plan.windows]
+        # Preserve normalization before the mean (including rounding), without
+        # gathering a second full native-state copy alongside the last window.
+        means=[np.mean(np.ascontiguousarray(z[np.searchsorted(t,a,side='left'):
+                                             np.searchsorted(t,b,side='left')])/sc,axis=0)
+               for a,b in plan.windows]
         result['status']='equilibrium_observed' if np.max(np.ptp(means,axis=0))<=plan.equilibrium_span else 'unresolved'
     elif any(g['status']=='recurrence_observed' for g in result['groups']):
         result['status']='recurrence_observed'

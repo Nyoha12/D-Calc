@@ -209,3 +209,42 @@ et groupement/retours/erreurs/critères. `record_json` reste la copie exacte san
 perte de chaque ancien enregistrement. La synthèse française présente les
 **DONNÉES**, renvoie l'issue de **COMMANDE** au lecteur normatif, expose fenêtres,
 groupements, raisons et limites, et lie les détails sans recopier tout le JSON.
+
+## Allocations des fenêtres maximales (correction C4)
+
+Le posttraitement prescrit `t=arange(72001)/12000`, 386 états constants nuls,
+72000 pressions nulles et une fenêtre `[0,6)` échouait sous 768 Mio : les
+extractions par masques conservaient plusieurs copies de 212 Mio avant la
+moyenne entre fenêtres. Le test historique de durée maximale ne couvrait qu'une
+fenêtre de 0,01 s. La régression ajoutée reproduit cet échec avant correction
+avec le même plafond d'espace virtuel dans un processus Linux indépendant.
+
+La grille validée croissante permet deux recherches `searchsorted(...,
+side='left')` pour conserver exactement le demi-intervalle `[début,fin)`.
+Les états contigus en ordre C sont maintenant consultés par vues. Les entrées
+avec strides conservent au besoin une copie contiguë en ordre C, comme
+l'ancienne extraction par masque, afin de conserver l'ordre des réductions.
+La normalisation précède toujours la moyenne : aucune réassociation de calcul,
+aucun changement de critère, d'échelle ou de budget. Les entrées restent intactes.
+
+Le cas maximal complet passe après correction sous 768 Mio (RSS observée environ
+274 Mio). Deux fenêtres disjointes `[0,2)` et `[3,6)`, avec 386 états constants
+non nuls sur la même grille, passent aussi (environ 381 Mio). Ce sont des données
+prescrites de posttraitement, aucune nouvelle simulation de six secondes. Ces
+mesures portent sur ces entrées et cet environnement ; elles ne sont pas une
+borne universelle de RSS pour tous les layouts ou reconstructions.
+
+Les 42 régressions ajoutées couvrent ces deux cas mémoire, les bornes natives,
+les milieux et les voisins flottants immédiats des bornes, ainsi que les tableaux
+C, Fortran, avec strides de lignes/colonnes et colonnes inversées. Les échantillons
+sont comparés exactement aux anciens masques ; les résultats complets avec
+strides sont comparés sans tolérance supplémentaire à ceux en ordre C. Les
+écarts constants entre fenêtres restent détectés. Les assertions historiques
+sont conservées.
+
+La relecture hors ligne des trois NPZ R35, avec les plans, échelles et groupes
+figés, conserve chaque bit des flottants et les octets JSON de référence :
+modal stable entre 1 et 3 s, modal C12 entre 2 et 4 s, chargé C12 prolongé entre
+4 et 6 s. Aucune variation d'arrondi n'est observée sur ces comparaisons.
+Le groupe 2 n'identifie toujours pas une note à 33 Hz ; le chargé reste
+`unresolved`. Cette correction d'allocation n'ajoute aucune validation physique.
