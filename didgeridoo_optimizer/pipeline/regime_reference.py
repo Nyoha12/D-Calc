@@ -31,6 +31,68 @@ COLUMNS=('pressure_pa','flow_m3_s','jet_m3_s','upstream_flow_m3_s','downstream_f
          'pressure_work_j','lip_energy_j','resonator_energy_j','midpoint_time_s')
 
 
+def request_provenance(params, observation, request_sources=None):
+    """Validate file bytes AND their parsed values; inline has no file identity.
+
+    The returned request/effective records are audit provenance, deliberately
+    excluded from numerical compatibility. File descriptors come from
+    report.read_json_source, never from hashing an unrelated second read.
+    """
+    effective=dict(parameters=params.as_dict(),observation=observation.as_dict())
+    if request_sources is None:
+        request_sources={k:dict(mode='inline',requested=v) for k,v in effective.items()}
+    if type(request_sources) is not dict or set(request_sources)!=set(effective):
+        raise ValueError('Both request sources required')
+    result={}
+    for key,expected in effective.items():
+        source=request_sources[key]
+        if type(source) is not dict:raise ValueError('Request source mapping required')
+        fields={'mode','requested'}
+        if source.get('mode')=='file':fields|={'path','sha256','format'}
+        elif source.get('mode')!='inline':raise ValueError('Unknown request source mode')
+        if set(source) not in (fields,fields|{'effective'}):
+            raise ValueError('Invalid request provenance fields')
+        requested=source['requested']
+        if source['mode']=='file':
+            if source['format']!='json' or type(source['path']) is not str or not Path(source['path']).is_absolute():
+                raise ValueError('Absolute regular JSON source required')
+            parsed,current=report.read_json_source(source['path'])
+            if current['sha256']!=source['sha256'] or digest(parsed)!=digest(requested):
+                raise ValueError('Request source bytes/parsed values changed')
+        if key=='parameters':
+            if type(requested) is not dict or set(requested)!=set(expected):
+                raise ValueError('All dimensioned lip parameters must be declared')
+            resolved=DimensionedLipParameters(**requested).as_dict()
+        else:resolved=ObservationPlan.from_dict(requested).as_dict()
+        if digest(resolved)!=digest(expected) or ('effective' in source and digest(source['effective'])!=digest(expected)):
+            raise ValueError('Request source values differ from effective plan')
+        result[key]=dict(source,effective=resolved)
+    return json.loads(json.dumps(result,allow_nan=False,sort_keys=True))
+
+
+def _check_request(p):
+    c=p['compatibility']
+    return request_provenance(DimensionedLipParameters(**c['parameters']),
+        ObservationPlan.from_dict(c['observation']),p.get('request_sources'))
+
+
+def _request_ancestry(resume):
+    rows=[]
+    while resume is not None:
+        directory=Path(resume).parent
+        if os.path.lexists(directory/'plan.json'):
+            plan,source=report.read_json_source(directory/'plan.json')
+            rows.append(dict(plan_path=source['path'],plan_sha256=source['sha256'],
+                             request_sources=plan.get('request_sources')))
+        else:
+            # Historical direct calculate() bundles could omit plan.json.
+            rows.append(dict(plan_path=None,plan_sha256=None,request_sources=None))
+        parent=report.read_json(directory/'checkpoint-000000.json')['payload']['parent']
+        resume=parent['path'] if parent else None
+        if len(rows)>64:raise ValueError('Request ancestry budget')
+    return rows
+
+
 @dataclass(frozen=True)
 class RunPlan:
     document: str
@@ -38,16 +100,19 @@ class RunPlan:
     def as_dict(self):
         if type(self.document) is not str or len(self.document)>report.MAX_JSON_BYTES:
             raise ValueError('Bounded serialized run plan required')
-        p=json.loads(self.document)
+        p=json.loads(self.document,object_pairs_hook=report._pairs,parse_constant=report._constant)
+        json.dumps(p,allow_nan=False)
         required={'schema','config','design','output','model_in','model_sha256','recipe','compatibility',
             'plan_identity','producer_sources','software','fit_certificate_scope','fit_certificate_sha256',
             'fit_producer_sources','fit_air','bernoulli_air','target_steps','accepted_steps','origin_time_s',
-            'seconds','checkpoint_steps','resume','parent','budgets'}
+            'seconds','checkpoint_steps','resume','parent','budgets','request_sources','request_ancestry'}
         if type(p) is not dict or set(p)!=required or p['schema']!='dcalc.regime_plan.v1':
             raise ValueError('Run plan schema mismatch')
         c=p['compatibility']
         if type(c) is not dict or p['plan_identity']!=digest(c):
             raise ValueError('Run plan identity mismatch')
+        if type(p['request_sources']) is not dict:
+            raise ValueError('Serialized request provenance is mandatory')
         fs=integer(c['fs'],'fs',1000,12000)
         target=integer(p['target_steps'],'target',1,min(72000,6*fs))
         integer(p['accepted_steps'],'accepted',0,target-1)
@@ -59,6 +124,7 @@ class RunPlan:
         if math.ceil(target/cp)>1000:raise ValueError('Checkpoint count budget')
         ObservationPlan.from_dict(c['observation'])
         params=DimensionedLipParameters(**c['parameters']);validate_parameters(params,c['rho_kg_m3'])
+        _check_request(p)
         for name,hashed in p['producer_sources'].items():
             path=Path(name)
             if (path.is_absolute() or '..' in path.parts or path.suffix!='.py'
@@ -71,7 +137,7 @@ class RunPlan:
 def preflight(config,design,output_dir,*,model_in,params,rho,observation,
               target_steps,sample_rate_hz=12000,v2_port_model='jet-only',
               max_extensions=32,max_iterations=80,seconds=170.,checkpoint_steps=1200,
-              resume=None,**recipe):
+              resume=None,request_sources=None,**recipe):
     """Read-only: reuse native preflight/helpers; no acoustics, fit or step."""
     integer(target_steps,'target_steps',1,72000)
     fs=integer(sample_rate_hz,'sample_rate_hz',1000,12000)
@@ -90,6 +156,7 @@ def preflight(config,design,output_dir,*,model_in,params,rho,observation,
     validate_parameters(params,rho)
     if not isinstance(observation,ObservationPlan):
         raise ValueError('Explicit immutable observation plan required')
+    requested=request_provenance(params,observation,request_sources)
     # Refuse links BEFORE the frozen native helpers resolve paths.
     for p in (config,design,model_in):report.safe_path(p)
     cfg=td.strict_input(config)
@@ -168,9 +235,11 @@ def preflight(config,design,output_dir,*,model_in,params,rho,observation,
         fit_air=base['effective']['air'],bernoulli_air=dict(rho_kg_m3=float(rho),choice='explicit'),
         target_steps=target_steps,accepted_steps=accepted,origin_time_s=origin,
         seconds=seconds,checkpoint_steps=checkpoint_steps,resume=str(Path(resume).absolute()) if resume else None,
+        request_sources=requested,request_ancestry=_request_ancestry(resume),
         parent=parent,budgets=dict(chain_seconds=6,chain_steps=72000,terms=192,memory_mib=768,
                                   child_seconds=180,total_scientific_seconds=600,blas_threads=1,result_bytes=report.MAX_RESULTS_BYTES,inherited_result_bytes=inherited_bytes))
     td._unchanged(context);model.verify_file_unchanged()
+    request_provenance(params,observation,requested)
     return RunPlan(json.dumps(plan,allow_nan=False,sort_keys=True)),context
 
 
@@ -273,10 +342,12 @@ def calculate(plan,*,stop=lambda:False):
         rho=cinfo['rho_kg_m3'],observation=ObservationPlan.from_dict(cinfo['observation']),
         target_steps=p['target_steps'],sample_rate_hz=cinfo['fs'],v2_port_model=cinfo['v2_port_model'],
         max_extensions=cinfo['max_extensions'],max_iterations=cinfo['max_iterations'],
-        seconds=p['seconds'],checkpoint_steps=p['checkpoint_steps'],resume=p['resume'],**p['recipe'])
+        seconds=p['seconds'],checkpoint_steps=p['checkpoint_steps'],resume=p['resume'],
+        request_sources=p['request_sources'],**p['recipe'])
     checked=verified.as_dict()
     for key in ('compatibility','accepted_steps','origin_time_s','parent','model_sha256',
-                'fit_air','bernoulli_air','fit_certificate_sha256','fit_certificate_scope','budgets'):
+                'fit_air','bernoulli_air','fit_certificate_sha256','fit_certificate_scope','budgets',
+                'request_sources','request_ancestry'):
         if digest(p[key])!=digest(checked[key]):raise ValueError('Serialized plan differs from native preflight')
     context=td._context(p['config'],p['design'])
     if td._inputs(context)!=cinfo['inputs']:raise ValueError('Inputs changed after preflight')
@@ -294,6 +365,7 @@ def calculate(plan,*,stop=lambda:False):
         if actual!=parent:raise ValueError('Resume source changed after preflight')
         c.import_checkpoint(parent['payload']['checkpoint'])
     initial=c.export_checkpoint();origin=p['origin_time_s'];chain_id=parent['payload']['chain_id'] if parent else digest(initial)
+    _check_request(p)
     sequence=0;previous=None;last_saved=accepted;chunks=[];reason=None
     def save(series=None):
         nonlocal sequence,previous,last_saved
@@ -348,6 +420,7 @@ def calculate(plan,*,stop=lambda:False):
                 candidate['energy']=report.energy_intervals(times[:done+1]-origin,states[:done+1],data[:done],list(COLUMNS),candidate['crossings_s'],
                     params=params,model=model,port_model=c.v2_port_model,start=window['start_s'],end=window['end_s'])
     td._unchanged(context);model.verify_file_unchanged()
+    _check_request(p)
     if time.monotonic()-started>=p['seconds'] and reason is None:reason='timeout_after_observation'
     if report.sources()!=executed_sources:reason='producer_changed'
     if stop() and reason is None:reason='signal_before_export'
@@ -355,30 +428,34 @@ def calculate(plan,*,stop=lambda:False):
         target_steps=p['target_steps'],accepted_chain_steps=accepted,accepted_segment_steps=done-segment_start,
         last_complete_checkpoint_steps=last_saved,last_checkpoint=f'checkpoint-{sequence-1:06d}.json',
         chain_id=chain_id,plan_identity=p['plan_identity'],compatibility=cinfo,producer_sources=executed_sources,
+        request_sources=p['request_sources'],request_ancestry=p['request_ancestry'],
         fit_certificate_scope=p['fit_certificate_scope'],fit_certificate_sha256=p['fit_certificate_sha256'],
         fit_air=p['fit_air'],bernoulli_air=p['bernoulli_air'],initial=initial,final=c.export_checkpoint(),
         observations=observations,series=chunks,prior_series=prior_series,units=dict(time='s',pressure='Pa',flow='m^3/s',energy='J'),
         time_convention='state at n/n+1; native pressure, flow and powers at midpoint; work over [n,n+1]',
-        completion_authority='execution.json required for CLI success; data completion alone is not process success',
+        completion_authority='read_execution(output) after command termination; data completion is separate',
         physical_validation='not_validated',parameters_calibration='to_calibrate',
         observation_scope='complete verified native chain; fixed disjoint windows; no duplicated evidence',elapsed_seconds=time.monotonic()-started)
     report.export(out,result,budget_bytes=budget)
+    _check_request(p)
     return result
 
 
 def worker():
-    raw=sys.stdin.read(report.MAX_JSON_BYTES+1)
-    if len(raw)>report.MAX_JSON_BYTES:raise ValueError('Worker input budget')
-    p=json.loads(raw);flag=[False]
+    flag=[False];handlers={}
     def handler(signum,frame):flag[0]=True
-    for sig in (signal.SIGINT,signal.SIGTERM):signal.signal(sig,handler)
+    for sig in (signal.SIGINT,signal.SIGTERM):handlers[sig]=signal.signal(sig,handler)
     try:
-        value=calculate(RunPlan(json.dumps(p,allow_nan=False)),stop=lambda:flag[0])
+        raw=sys.stdin.read(report.MAX_JSON_BYTES+1)
+        if len(raw)>report.MAX_JSON_BYTES:raise ValueError('Worker input budget')
+        value=calculate(RunPlan(raw),stop=lambda:flag[0])
         if flag[0]:value.update(ok=False,status='partial',reason='signal')
         print(json.dumps(dict(ok=value['ok'],status=value['status'],reason=value['reason']),allow_nan=False))
-        return 0 if value['ok'] else 2
+        return 0 if value['ok'] and not flag[0] else 2
     except (Exception,KeyboardInterrupt) as exc:
         print(json.dumps(dict(ok=False,status='failed',reason=type(exc).__name__+': '+str(exc)),allow_nan=False));return 2
+    finally:
+        for sig,h in handlers.items():signal.signal(sig,h)
 
 
 def run(config,design,output_dir,*,dry_run=False,**options):
@@ -404,12 +481,51 @@ def run(config,design,output_dir,*,dry_run=False,**options):
             time.sleep(.02)
         stdout,stderr=child.communicate(timeout=5)
         value=json.loads(stdout) if stdout.strip() else dict(ok=False,status='failed',reason='child_without_result')
-        if child.returncode!=0 or reason is not None:value.update(ok=False,status='partial',reason=reason or value.get('reason'))
+        if time.monotonic()-started>=p['seconds']+2:reason='parent_timeout'
+        if flag[0]:reason='signal'
+        try:_check_request(p)
+        except (ValueError,OSError,TypeError) as exc:reason='request_source_changed: '+str(exc)
+        if child.returncode!=0 or reason is not None:value.update(ok=False,status='partial',reason=reason or value.get('reason') or 'child_failed')
         value['child']=dict(pid=child.pid,exit_code=child.returncode,reaped=True,wall_seconds=time.monotonic()-started,memory_mib=768,blas_threads=1)
         value['output_dir']=str(out)
-        value['completion_authority']='execution.json: actual child exit and supervisor outcome'
-        report.write_json(out/'execution.json',value,budget_bytes=report.MAX_RESULTS_BYTES-p['budgets']['inherited_result_bytes'])
-        return value
+        value['completion_authority']='read_execution(output) after termination; execution.cancelled.json overrides execution.json'
+        budget=report.MAX_RESULTS_BYTES-p['budgets']['inherited_result_bytes']
+        report.write_json(out/'execution.json',value,budget_bytes=budget)
+        # Check file provenance even across receipt serialization/publication.
+        closing_error=None
+        try:_check_request(p)
+        except (ValueError,OSError,TypeError) as exc:closing_error='request_source_changed: '+str(exc)
+        signals={signal.SIGINT,signal.SIGTERM}
+        old_mask=signal.pthread_sigmask(signal.SIG_BLOCK,signals)
+        try:
+            pending=signal.sigpending()
+            # LINEARIZATION POINT: pending snapshot with both signals blocked.
+            # All earlier delivered/queued signals are included. Later ones do
+            # not reopen this command; no guarantee beyond this finite point.
+            interrupted=flag[0] or bool(pending & signals)
+            if interrupted or closing_error is not None:
+                value=dict(value,ok=False,status='partial',reason='signal' if interrupted else closing_error,
+                           execution_sha256=report.file_sha256(out/'execution.json'))
+                report.write_json(out/'execution.cancelled.json',value,budget_bytes=budget)
+            # Commit the already-linearized decision. Without this seal even a
+            # complete candidate receipt cannot be read as command success.
+            try:
+                report.write_json(out/'execution.closed.json',
+                    dict(execution_sha256=report.file_sha256(out/'execution.json'),
+                         cancelled=interrupted or closing_error is not None),budget_bytes=budget)
+            except (Exception,KeyboardInterrupt) as exc:
+                # A publication may have succeeded before its final fsync
+                # raised. Invalidate that visible seal without overwriting it.
+                if not os.path.lexists(out/'execution.cancelled.json'):
+                    report.write_json(out/'execution.cancelled.json',
+                        dict(value,ok=False,status='failed',reason='closure_failed: '+str(exc),
+                             execution_sha256=report.file_sha256(out/'execution.json')),budget_bytes=budget)
+                raise
+        finally:
+            # Deliver pending flags while our handler is still installed; the
+            # outer finally then restores the original handlers exactly.
+            signal.pthread_sigmask(signal.SIG_SETMASK,old_mask)
+        return report.read_execution(out)
     finally:
         if child is not None and child.poll() is None:
             child.terminate()

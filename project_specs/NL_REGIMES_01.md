@@ -127,11 +127,12 @@ de pickle. États aux temps n/n+1, ports au milieu et travaux sur [n,n+1] resten
 distincts. Les éventuels diagnostics natifs optionnels non représentables sont
 null en JSON et NaN dans les colonnes numériques NPZ, sans masquer un état invalide.
 
-`execution.json` est le reçu terminal **obligatoire pour une réussite CLI** :
-PID, code réel, récolte et statut du superviseur. Une complétude de données dans
-`result.json` seule n'atteste pas la réussite du processus ; un signal tardif ou
-un timeout du superviseur y reste distingué. L'absence de ce reçu n'est jamais
-un succès. Les sorties d'API directe ne revendiquent pas ce reçu CLI.
+`read_execution(output)` résout l’issue terminale après terminaison : reçu
+`execution.json`, sceau `execution.closed.json` et éventuelle annulation durable
+prioritaire. PID, code réel, récolte et statut du superviseur restent séparés
+de la complétude de données dans `result.json`. L’absence de clôture valide
+n’est jamais un succès. Voir la frontière précise ci-dessous. Les sorties
+d’API directe ne revendiquent pas ce reçu CLI.
 
 Les bilans utilisent les travaux et stockages natifs : El+Er en conjugué,
 terme mécanique conservé en jet-only. Fractions initiale/finale, changement de
@@ -139,3 +140,72 @@ stockage et écart énergie interpolée / énergie de l'état interpolé sont ex
 Le prorata identique des travaux et énergies est un bilan algébrique, aucune
 preuve indépendante de récurrence. Les paramètres physiques proviennent du plan.
 Aucune validation empirique, promotion de matériau, son rayonné ou toot acquis.
+
+## Provenance des deux entrées de commande (correction R36)
+
+`reporting.regime_reference.read_json_source(path)` retourne `(valeurs, source)`.
+Le hash SHA256 et le parse strict portent sur **le même buffer d'octets** borné,
+issu d'un fichier régulier sans lien ; doubles clés, non-finis (y compris
+`1e400`) et fichiers surdimensionnés sont refusés. La source contient `mode=file`,
+`format=json`, chemin absolu, hash et valeurs `requested`. Aucun chemin privé
+n'est nécessaire aux exemples publics.
+
+L'API `preflight` / `run` accepte `request_sources={parameters: source,
+observation: source}`. `request_provenance(params, observation, request_sources)`
+contrôle les octets et leur concordance avec les objets demandés, puis ajoute
+les valeurs `effective` après résolution des défauts du plan. Sans cet argument,
+un appel API natif est explicitement `mode=inline`, avec valeurs demandées et
+effectives, sans chemin ni hash de fichier inventé. Un descripteur inline ne peut
+contenir de métadonnées fichier. Le worker exige la provenance sérialisée et
+revalide les valeurs avant toute écriture de données ou progression.
+
+Contrôles répétés : entrée et sortie du préflight, reconstruction worker,
+avant le premier checkpoint, avant/après export et avant clôture du superviseur.
+Un changement de source est un refus/échec de commande. Les données déjà
+publiées restent immuables. Comme tout contrôle de fichiers, ces vérifications
+observent des instants, sans verrouiller les écritures d'un processus extérieur.
+Le garde de producteur CLI précède aussi `--worker`, le parsing et les écritures.
+
+`request_sources` et `request_ancestry` sont distincts de `compatibility` et de
+`plan_identity`. Une reprise avec paramètres/plan identiques, autre chemin,
+autre mise en forme JSON ou API inline est compatible si les autres identités
+numériques le sont. L'ascendance conserve chemin et hash des plans parents et
+leur provenance demandée/effective ; une ancienne provenance non enregistrée
+reste `null`. Les quatre entrées acoustiques et le certificat historique de fit
+restent des identités distinctes. Aucune modification du checkpoint natif.
+
+## Autorité de commande et frontière de complétion (correction R36)
+
+Le lecteur normatif est `reporting.regime_reference.read_execution(output)`,
+à utiliser après terminaison de `run`. Un lecteur pendant l'exécution ne doit
+pas utiliser les fichiers comme notification de fin. Il exige le reçu candidat
+`execution.json` **et** son sceau `execution.closed.json` lié par SHA256.
+`execution.cancelled.json`, s'il existe, est prioritaire et lié au même reçu.
+Un reçu/sceau absent, invalide ou une publication échouée ne donne jamais succès.
+Le retour de `run` est exactement ce résultat normatif. Les anciennes commandes
+sans sceau restent non confirmées par ce nouveau lecteur ; leurs données et
+checkpoints restent reprenables.
+
+La frontière finie est l'instant du **snapshot `sigpending()`**, SIGINT et
+SIGTERM temporairement bloqués, après sérialisation, publication atomique et
+fsync du reçu candidat, ainsi qu'après le dernier contrôle des sources.
+Tous signaux déjà livrés (drapeau) ou en attente à cet instant rendent la commande
+non réussie, y compris enfant déjà terminé, sérialisation, `os.link`, `fsync`
+et retour de l'écriture du reçu. Sous le masque, la décision est alors engagée
+par l'éventuelle annulation et le sceau immuables. Une erreur de cette dernière
+publication laisse la commande non confirmée, jamais réussie.
+
+Les signaux postérieurs au snapshot, notamment pendant l'engagement de cette
+décision déjà fixée, sont **après** la frontière : ils ne rouvrent pas la commande.
+Cette limite explicite ne promet pas l'impossible après retour/fin du processus.
+Le masque et les handlers originaux sont restaurés ; seul l'enfant créé est
+récolté. Les tests couvrent les deux côtés du snapshot. Les probes avec faux
+enfant déjà fini et vrais signaux sont des tests de plomberie, distincts des
+vraies CLI avec progression scientifique.
+
+Les CSV fournissent colonnes scalaires typées et cellules vides pour les valeurs
+indisponibles : statut/raison/identité/durée/pas, fenêtres/section/AC/FFT/passages,
+et groupement/retours/erreurs/critères. `record_json` reste la copie exacte sans
+perte de chaque ancien enregistrement. La synthèse française présente les
+**DONNÉES**, renvoie l'issue de **COMMANDE** au lecteur normatif, expose fenêtres,
+groupements, raisons et limites, et lie les détails sans recopier tout le JSON.

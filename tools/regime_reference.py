@@ -8,10 +8,14 @@ import sys
 from didgeridoo_optimizer.pipeline import regime_reference as workflow
 from didgeridoo_optimizer.nonlinear.lips import DimensionedLipParameters
 from didgeridoo_optimizer.nonlinear.regime_observables import ObservationPlan
-from didgeridoo_optimizer.reporting.regime_reference import read_json
+from didgeridoo_optimizer.reporting.regime_reference import read_json_source
 
 
 def main(argv=None):
+    # This guard also covers --worker and malformed arguments, before any IO.
+    if Path(__file__).resolve()!=workflow.ROOT/'tools/regime_reference.py':
+        print(json.dumps(dict(ok=False,status='refused',reason='Mixed CLI producer roots')))
+        return 2
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--worker',action='store_true',help=argparse.SUPPRESS)
     parser.add_argument('--config');parser.add_argument('--design');parser.add_argument('--output')
@@ -34,16 +38,16 @@ def main(argv=None):
     for key in ('config','design','output','model_in','lip_parameters','rho','observation_plan','target_steps'):
         if getattr(args,key) is None:parser.error('--'+key.replace('_','-')+' required')
     try:
-        if Path(__file__).resolve()!=workflow.ROOT/'tools/regime_reference.py':
-            raise ValueError('Mixed CLI producer roots')
-        fields=read_json(args.lip_parameters)
+        fields,parameter_source=read_json_source(args.lip_parameters)
         if type(fields) is not dict or set(fields)!=set(DimensionedLipParameters().as_dict()):
             raise ValueError('All dimensioned lip parameters must be declared')
         params=DimensionedLipParameters(**fields)
-        obs=ObservationPlan.from_dict(read_json(args.observation_plan))
+        observation_fields,observation_source=read_json_source(args.observation_plan)
+        obs=ObservationPlan.from_dict(observation_fields)
         options=vars(args).copy()
         for k in ('worker','config','design','output','lip_parameters','observation_plan'):options.pop(k)
-        value=workflow.run(args.config,args.design,args.output,params=params,observation=obs,**options)
+        value=workflow.run(args.config,args.design,args.output,params=params,observation=obs,
+            request_sources=dict(parameters=parameter_source,observation=observation_source),**options)
     except (Exception,KeyboardInterrupt) as exc:
         value=dict(ok=False,status='refused',reason=type(exc).__name__+': '+str(exc))
     print(json.dumps(value,allow_nan=False,sort_keys=True))

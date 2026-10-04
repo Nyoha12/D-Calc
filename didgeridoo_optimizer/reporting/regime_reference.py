@@ -44,19 +44,66 @@ def compatibility_sources(manifest):
     return {n:manifest['didgeridoo_optimizer/'+n] for n in names}
 
 
-def read_json(path):
+def read_json_source(path):
+    """Parse and fingerprint the SAME bounded bytes, retaining the request."""
     path=safe_path(path)
     if not path.is_file() or path.stat().st_size>MAX_JSON_BYTES:
         raise ValueError('Bounded regular JSON file required')
     # O_NOFOLLOW closes the final-component race after checking ancestors.
-    fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW)
+    fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
     with os.fdopen(fd,'rb') as f:
-        if not stat.S_ISREG(os.fstat(f.fileno()).st_mode):
+        before=os.fstat(f.fileno())
+        if not stat.S_ISREG(before.st_mode):
             raise ValueError('Regular JSON required')
         raw=f.read(MAX_JSON_BYTES+1)
+        after=os.fstat(f.fileno())
+    current=safe_path(path).stat()
+    if ((before.st_dev,before.st_ino,before.st_size,before.st_mtime_ns,before.st_ctime_ns)
+            !=(after.st_dev,after.st_ino,after.st_size,after.st_mtime_ns,after.st_ctime_ns)
+            or (after.st_dev,after.st_ino,after.st_size,after.st_mtime_ns,after.st_ctime_ns)
+            !=(current.st_dev,current.st_ino,current.st_size,current.st_mtime_ns,current.st_ctime_ns)):
+        raise ValueError('JSON source changed during read')
     if len(raw)>MAX_JSON_BYTES:
         raise ValueError('JSON size budget')
-    return json.loads(raw,object_pairs_hook=_pairs,parse_constant=_constant)
+    value=json.loads(raw,object_pairs_hook=_pairs,parse_constant=_constant)
+    json.dumps(value,allow_nan=False)  # also rejects overflow such as 1e400
+    return value,dict(mode='file',format='json',path=str(path),
+                      sha256=hashlib.sha256(raw).hexdigest(),requested=value)
+
+
+def read_json(path):
+    return read_json_source(path)[0]
+
+
+def read_execution(output):
+    """Normative command outcome AFTER run has closed; cancellation wins.
+
+    A live writer's candidate is not a completion notification. Neither data
+    completion nor a missing/malformed receipt is a command success.
+    """
+    out=Path(output)
+    try:
+        value=read_json(out/'execution.json')
+        if type(value) is not dict or type(value.get('ok')) is not bool:
+            raise ValueError('Invalid execution receipt')
+        cancel=out/'execution.cancelled.json'
+        if os.path.lexists(cancel):
+            cancelled=read_json(cancel)
+            if (type(cancelled) is not dict or cancelled.get('ok') is not False
+                    or cancelled.get('execution_sha256')!=file_sha256(out/'execution.json')):
+                raise ValueError('Invalid terminal cancellation')
+            return cancelled
+        closed=read_json(out/'execution.closed.json')
+        if closed!={'execution_sha256':file_sha256(out/'execution.json'),'cancelled':False}:
+            raise ValueError('Missing or inconsistent command closure')
+        if type(value.get('child')) is not dict:
+            raise ValueError('Child receipt required')
+        if value['ok'] and (value.get('child',{}).get('exit_code')!=0
+                            or value.get('child',{}).get('reaped') is not True):
+            raise ValueError('Successful reaped child required')
+        return value
+    except (OSError,ValueError,TypeError) as exc:
+        return dict(ok=False,status='unconfirmed',reason='terminal_receipt_unavailable: '+str(exc))
 
 
 def directory_size(path):
@@ -147,7 +194,7 @@ def verify_chain(path, _seen=None, _budget=None):
     _budget['checkpoints']+=index+1
     if index>1000 or _budget['checkpoints']>2048:
         raise ValueError('Checkpoint chain budget')
-    allowed={'plan.json','result.json','summary.csv','windows.csv','returns.csv','summary.md','execution.json'}
+    allowed={'plan.json','result.json','summary.csv','windows.csv','returns.csv','summary.md','execution.json','execution.cancelled.json','execution.closed.json'}
     for number,p in enumerate(path.parent.iterdir()):
         if number>=5000:
             raise ValueError('Bundle file budget')
@@ -249,17 +296,80 @@ def energy_intervals(times,states,data,columns,crossings,*,params,model,port_mod
 def export(output,result, *, budget_bytes=MAX_RESULTS_BYTES):
     out=Path(output)
     write_json(out/'result.json',result,budget_bytes=budget_bytes)
-    # JSON cells preserve nulls, groups, failed criteria and identities exactly.
-    def table(name,rows):
-        buf=io.StringIO(newline='');w=csv.writer(buf);w.writerow(['index','record_json'])
-        for i,row in enumerate(rows):w.writerow([i,json.dumps(row,allow_nan=False,sort_keys=True)])
+    observations=result.get('observations',{})
+    windows=observations.get('windows',[])
+    criteria=result.get('compatibility',{}).get('observation',{})
+    errors=('period_relative_span','amplitude_relative_span','envelope_log_drift',
+            'return_scaled_max','return_relative_ac_max','shape_scaled_span',
+            'state_mean_scaled_span','interpolation_sensitivity_scaled_max',
+            'cubic_return_scaled_max','crossing_time_sensitivity_max_s',
+            'section_state_sensitivity_scaled_max')
+    # Scalar columns are numeric/text/bool; empty means unavailable, never zero.
+    # Complex secondary cells and the exact original row retain strict JSON.
+    def table(name,rows,fields,extra=lambda i,r:{}):
+        buf=io.StringIO(newline='');w=csv.writer(buf)
+        w.writerow(['index',*fields,'record_json'])
+        for i,row in enumerate(rows):
+            values=dict(row,**extra(i,row))
+            w.writerow([i,*[values.get(k) for k in fields],
+                        json.dumps(row,allow_nan=False,sort_keys=True)])
         atomic_bytes(out/name,buf.getvalue().encode(),budget_bytes=budget_bytes)
-    table('summary.csv',[result])
-    windows=result.get('observations',{}).get('windows',[])
-    table('windows.csv',windows)
-    table('returns.csv',[dict(window=i,**c) for i,w in enumerate(windows) for c in w['candidates']])
-    text='NL-REGIMES-01 — observation numérique expérimentale\n\nStatut : '+result['status']+'\n'
-    text+='Fréquence FFT auxiliaire, passages et retours sont distincts. Période minimale non identifiée ; stabilité orbitale non évaluée. Aucun son joué ni toot validé.\n'
-    text+='Le certificat de fit est historique. Le prorata des bilans est algébrique.\n\nStatuts, raisons, groupes, ambiguïtés et identités (identiques au JSON) :\n\n'
-    text+=json.dumps(result,ensure_ascii=False,allow_nan=False,sort_keys=True,indent=2)+'\n'
-    atomic_bytes(out/'summary.md',text.encode(),budget_bytes=budget_bytes)
+    compact=lambda v:json.dumps(v,allow_nan=False,sort_keys=True)
+    fs=result.get('compatibility',{}).get('fs')
+    steps=result.get('accepted_chain_steps')
+    duration=steps/fs if type(steps) is int and type(fs) in (int,float) and fs>0 else None
+    table('summary.csv',[result],['status','reason','ok','chain_id','plan_identity',
+        'elapsed_seconds','duration_s','target_steps','accepted_chain_steps','accepted_segment_steps',
+        'last_complete_checkpoint_steps','observation_status','completion_authority'],
+        lambda i,r:dict(observation_status=observations.get('status'),duration_s=duration,
+            completion_authority='read_execution(output) after command termination'))
+    table('windows.csv',windows,['start_s','end_s','effective_start_s','effective_end_s',
+        'section_index','section_level','status','reason','samples','native_midpoint_pressure_mean_pa',
+        'pressure_ac_rms_pa','fft_auxiliary_hz','passages','passage_frequency_hz'],
+        lambda i,r:dict(section_index=r.get('section_index',criteria.get('section_index')),
+                       section_level=r.get('section_level',criteria.get('section_level'))))
+    returns=[dict(window=i,**c) for i,w in enumerate(windows) for c in w.get('candidates',[])]
+    table('returns.csv',returns,['window','group','status','reason','returns','return_frequency_hz',
+        'covered_s','phase_points',*errors,'checks_json','failed_checks_json','criteria_json'],
+        lambda i,r:dict(checks_json=compact(r.get('checks')),failed_checks_json=compact(r.get('failed_checks')),
+                       criteria_json=compact(criteria)))
+    def cell(v):
+        if v is None:return '—'
+        return str(v).replace('|',' / ').replace('\n',' ')
+    lines=['# NL-REGIMES-01 — observation numérique expérimentale','',
+        '**DONNÉES** : '+cell(result.get('status'))+' ; raison : '+cell(result.get('reason'))+'.',
+        '**COMMANDE** : consulter `read_execution(output)` après terminaison. '
+        '[execution.json](execution.json) est le reçu candidat ; '
+        '`execution.cancelled.json`, si présent, prime. `execution.closed.json` confirme la clôture. '
+        'Absence de clôture valide : succès non confirmé.',
+        '', '| Résultat clé | Valeur |','|---|---|']
+    for label,value in [('Pas acceptés / cible',str(result.get('accepted_chain_steps','—'))+' / '+str(result.get('target_steps','—'))),
+                        ('Durée du calcul observée (s)',result.get('elapsed_seconds')),
+                        ('Durée native couverte (s)',duration),
+                        ('Observation',observations.get('status')),('Chaîne',result.get('chain_id')),
+                        ('Identité du plan',result.get('plan_identity'))]:
+        lines.append('| '+label+' | '+cell(value)+' |')
+    lines+=['','| Fenêtre (s) | Statut / raison | AC RMS (Pa) | FFT auxiliaire (Hz) | Passages (Hz) |',
+            '|---|---|---|---|---|']
+    for w in windows:
+        lines.append('| '+' | '.join(map(cell,[str(w.get('start_s','—'))+'–'+str(w.get('end_s','—')),
+            str(w.get('status','—'))+' / '+str(w.get('reason','—')),w.get('pressure_ac_rms_pa'),
+            w.get('fft_auxiliary_hz'),w.get('passage_frequency_hz')]))+' |')
+    lines+=['','| Groupement | Persistance / raison |','|---|---|']
+    for g in observations.get('groups',[]):
+        lines.append('| '+cell(g.get('group'))+' | '+cell(g.get('status'))+' / '+cell(g.get('reason'))+' |')
+    # Bound the synthesis independently of the number of candidate metrics.
+    for group in sorted({r.get('group') for r in returns if type(r.get('group')) is int}):
+        rows=[r for r in returns if r.get('group')==group]
+        frequencies=[r['return_frequency_hz'] for r in rows if r.get('return_frequency_hz') is not None]
+        reasons=sorted({r['reason'] for r in rows if r.get('reason')})
+        failed=sorted({k for r in rows for k in r.get('failed_checks',[])})
+        lines.append('Groupe '+str(group)+' : retours (Hz) '+
+            (cell(min(frequencies))+' à '+cell(max(frequencies)) if frequencies else 'non observés')+
+            ' ; raisons : '+', '.join(reasons)+' ; critères échoués : '+(', '.join(failed) or '—')+'.')
+    lines+=['','[Détails JSON](result.json) · [Résumé CSV](summary.csv) · [Fenêtres](windows.csv) · [Retours et critères](returns.csv)',
+        '', 'Fréquence FFT auxiliaire, passages et retours sont distincts. Période minimale non identifiée ; '
+        'stabilité orbitale non évaluée. Aucun son joué ni toot validé. Le certificat de fit est historique. '
+        'Le prorata des bilans est algébrique. Les candidats partagent les mêmes observations ; '
+        'un groupe 2 ne désigne pas une note à la fréquence de retour.']
+    atomic_bytes(out/'summary.md',('\n'.join(lines)+'\n').encode(),budget_bytes=budget_bytes)
