@@ -422,3 +422,51 @@ def test_jet_only_optional_overflow_cannot_add_a_historical_refusal():
     assert d['total_energy_residual'] is None
     vm=c.tau*c.Au*c.Pu/c.M
     np.testing.assert_allclose(c.state,[c.dt*vm,2*vm],rtol=2e-14,atol=1e-16)
+
+
+@pytest.mark.parametrize('port',['jet-only','conjugate'])
+@pytest.mark.parametrize('before',[0,1,17])
+def test_checkpoint_complete_roundtrip_and_reset_bitwise(port,before):
+    import json
+    a=SimultaneousCoupling(modal(),params=P,rho=RHO,v2_port_model=port)
+    for _ in range(before):assert a.step()['ok']
+    saved=json.loads(json.dumps(a.export_checkpoint(),allow_nan=False))
+    b=SimultaneousCoupling(modal(),params=P,rho=RHO,v2_port_model=port,initial_state=[0.,0.,0.,0.])
+    b.import_checkpoint(saved)
+    assert b.export_checkpoint()==saved
+    for _ in range(12):
+        assert a.step()==b.step()
+        assert a.snapshot()==b.snapshot()
+    a.reset();b.reset();assert a.export_checkpoint()==b.export_checkpoint()
+
+
+@pytest.mark.parametrize('mutation',['checksum','identity','state','nan','bool','extra','diag_missing','residual','negative','initial','root'])
+def test_checkpoint_hostile_import_is_transactional(mutation):
+    import copy
+    from didgeridoo_optimizer.nonlinear.passive_resonator import digest
+    c=SimultaneousCoupling(modal(),params=P,rho=RHO);assert c.step()['ok']
+    before=c.export_checkpoint();bad=copy.deepcopy(before);p=bad['payload']
+    if mutation=='checksum':bad['sha256']='bad'
+    if mutation=='identity':p['identity']['rho_kg_m3']=2.
+    if mutation=='state':p['snapshot']['state'].append(0.)
+    if mutation=='nan':p['snapshot']['state'][0]=float('nan')
+    if mutation=='bool':p['snapshot']['diagnostics']['pressure_pa']=True
+    if mutation=='extra':p['unknown']=1
+    if mutation=='diag_missing':p['snapshot']['diagnostics'].pop('pressure_pa')
+    if mutation=='residual':p['snapshot']['diagnostics']['residuals']={}
+    if mutation=='negative':p['snapshot']['diagnostics']['lip_energy_j']=-1.
+    if mutation=='initial':p['initial_state']=[0.,0.]
+    if mutation not in ('checksum','nan'):bad['sha256']=digest(p)
+    if mutation=='root':bad=None
+    with pytest.raises(ValueError):c.import_checkpoint(bad)
+    assert c.export_checkpoint()==before
+    c.reset();assert c.state.tolist()==before['payload']['initial_state']
+
+
+def test_checkpoint_explicit_initialize_clock_and_loss():
+    c=SimultaneousCoupling(modal(),params=P,rho=RHO)
+    c.initialize([1e-5,.001,1e-9,1e-8],time_s=1.25,last_dissipation_w=.2)
+    saved=c.export_checkpoint()
+    b=SimultaneousCoupling(modal(),params=P,rho=RHO);b.import_checkpoint(saved)
+    assert b.snapshot()==c.snapshot()
+    assert b.step()==c.step()

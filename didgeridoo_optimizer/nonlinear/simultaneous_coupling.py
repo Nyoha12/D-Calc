@@ -127,6 +127,149 @@ class SimultaneousCoupling:
                     last_dissipation_w=self.last_dissipation_w,
                     diagnostics=self.diagnostics)
 
+    def checkpoint_identity(self):
+        """Numerical compatibility, separate from a producer's source manifest."""
+        from .passive_resonator import digest
+        return dict(schema='dcalc.simultaneous.identity.v1',
+                    model_sha256=digest(self._source.parameters()),
+                    parameters=self.params.as_dict(), rho_kg_m3=self.rho,
+                    sample_rate_hz=self.sample_rate_hz,
+                    v2_port_model=self.v2_port_model, schedule='simultaneous',
+                    max_extensions=self.max_extensions, max_iterations=self.max_iterations)
+
+    def export_checkpoint(self):
+        """Complete, independent JSON state, including reset and diagnostics."""
+        from .passive_resonator import digest, json_copy
+        self._source.verify_file_unchanged()
+        payload = dict(schema='dcalc.simultaneous.checkpoint.v1',
+                       identity=self.checkpoint_identity(),
+                       initial_state=self._initial.tolist(), snapshot=self.snapshot())
+        payload = json_copy(payload)
+        return dict(payload=payload, sha256=digest(payload))
+
+    def import_checkpoint(self, checkpoint):
+        """Validate a bounded hostile input completely, then commit once.
+
+        A checksum detects corruption, not malicious authorship. The workflow
+        additionally checks the chain, input identities and producer manifests.
+        No step is executed and a failure leaves reset history intact too.
+        """
+        from .passive_resonator import digest, json_copy
+        # Bound traversal before JSON copying or NumPy conversion. No custom
+        # mappings, iterators, array coercions, cycles or executable objects.
+        nodes = [0]
+        def bounded(value, depth=0):
+            nodes[0] += 1
+            if depth > 10 or nodes[0] > 12000:
+                raise ValueError('Checkpoint structure budget exceeded')
+            if type(value) is dict:
+                if len(value) > 128 or any(type(k) is not str or len(k) > 128 for k in value):
+                    raise ValueError('Checkpoint mapping outside budget')
+                for item in value.values():
+                    bounded(item, depth+1)
+            elif type(value) is list:
+                if len(value) > 514:
+                    raise ValueError('Checkpoint vector outside budget')
+                for item in value:
+                    bounded(item, depth+1)
+            elif type(value) is str:
+                if len(value) > 1024:
+                    raise ValueError('Checkpoint text outside budget')
+            elif value is not None and type(value) not in (bool, int, float):
+                raise ValueError('Checkpoint JSON scalars required')
+            elif type(value) in (int, float):
+                real(value, 'checkpoint scalar')
+        bounded(checkpoint)
+        if type(checkpoint) is not dict or set(checkpoint) != {'payload', 'sha256'}:
+            raise ValueError('Checkpoint envelope mismatch')
+        data = json_copy(checkpoint['payload'])
+        if checkpoint['sha256'] != digest(data):
+            raise ValueError('Checkpoint checksum mismatch')
+        if (type(data) is not dict or set(data) != {'schema', 'identity', 'initial_state', 'snapshot'}
+                or data['schema'] != 'dcalc.simultaneous.checkpoint.v1'
+                or digest(data['identity']) != digest(self.checkpoint_identity())):
+            raise ValueError('Checkpoint identity/schema mismatch')
+        snap = data['snapshot']
+        if type(snap) is not dict or set(snap) != {'state', 'time_s', 'last_dissipation_w', 'diagnostics'}:
+            raise ValueError('Checkpoint snapshot mismatch')
+        for state in (data['initial_state'], snap['state']):
+            if type(state) is not list or len(state) != 2+2*self.n:
+                raise ValueError('Complete checkpoint state required')
+        # initialize operates on independent candidate state, never on self.
+        candidate = copy.copy(self)
+        candidate.initialize(data['initial_state'])
+        initial = candidate.state
+        candidate.initialize(snap['state'], time_s=snap['time_s'],
+                             last_dissipation_w=snap['last_dissipation_w'])
+        diag = snap['diagnostics']
+        if diag is not None:
+            if (type(diag) is not dict or diag.get('ok') is not True
+                    or diag.get('status') != 'resolved'
+                    or diag.get('v2_port_model') != self.v2_port_model
+                    or type(diag.get('time_s')) not in (int, float)
+                    or diag['time_s'] != candidate.time_s
+                    or diag.get('velocity_m_s') != candidate.state[1]
+                    or diag.get('opening_m') != self.params.rest_opening_m+candidate.state[0]
+                    or type(diag.get('residuals')) is not dict):
+                raise ValueError('Checkpoint diagnostics inconsistent with state')
+            for residual in diag['residuals'].values():
+                if type(residual) is not dict or set(residual) != {'absolute', 'normalized'}:
+                    raise ValueError('Invalid checkpoint residual')
+                for value in residual.values():
+                    real(value, 'residual', minimum=0.)
+                if residual['normalized'] > 2e-10:
+                    raise ValueError('Resolved checkpoint residual outside native guard')
+        if diag is not None:
+            text_fields = {'status', 'v2_port_model', 'energy_balance_status',
+                           'bernoulli_branch', 'contact_transition', 'event_localization'}
+            numeric_fields = set("time_s midpoint_time_s pressure_pa flow_m3_s jet_m3_s upstream_flow_m3_s downstream_flow_m3_s induced_upstream_m3_s induced_downstream_m3_s source_work_j jet_loss_j total_energy_j total_energy_change_j delta_pa delta_clipped_pa signed_pressure_difference_pa opening_mid_m opening_m velocity_m_s velocity_mid_m_s lip_energy_j resonator_energy_j lip_energy_change_j resonator_energy_change_j pressure_work_j mechanical_pressure_term_w lip_loss_j contact_loss_j resonator_work_j resonator_loss_j native_flow_difference_m3_s pressure_subtraction_uncertainty_pa uniqueness_margin uniqueness_roundoff_guard opening_roundoff_m contact_segment_fraction".split())
+            other_fields = {'ok', 'total_energy_residual', 'residuals',
+                            'bracket_extensions', 'iterations', 'non_regular_reasons'}
+            if set(diag) != text_fields | numeric_fields | other_fields:
+                raise ValueError('Incomplete or unexpected checkpoint diagnostics')
+            optional = {'source_work_j', 'jet_loss_j', 'total_energy_j', 'total_energy_change_j'}
+            for key in numeric_fields:
+                if diag[key] is None and key in optional and self.v2_port_model == 'jet-only':
+                    continue
+                real(diag[key], key)
+            for key in text_fields:
+                if type(diag[key]) is not str:
+                    raise ValueError('Diagnostic text required')
+            for key in ('lip_energy_j', 'resonator_energy_j', 'lip_loss_j',
+                        'contact_loss_j', 'resonator_loss_j', 'delta_pa'):
+                real(diag[key], key, minimum=0.)
+            integer(diag['iterations'], 'iterations', 1, self.max_iterations)
+            integer(diag['bracket_extensions'], 'extensions', 0, self.max_extensions)
+            if type(diag['non_regular_reasons']) is not list or any(type(v) is not str for v in diag['non_regular_reasons']):
+                raise ValueError('Diagnostic reason list required')
+            names = {'mechanical', 'pressure', 'bernoulli', 'flow', 'lip_energy', 'resonator_energy'}
+            if self.v2_port_model == 'conjugate':
+                names |= {'port_power', 'total_energy'}
+            if not 0<=diag['contact_segment_fraction']<=1 or diag['uniqueness_margin']<=diag['uniqueness_roundoff_guard']:
+                raise ValueError('Invalid contact fraction/uniqueness diagnostics')
+            if diag['bernoulli_branch'] not in ('active','closed','nonpositive_pressure_difference'):
+                raise ValueError('Invalid Bernoulli branch')
+            if diag['contact_transition'] not in ('free->free','free->contact','contact->free','contact->contact'):
+                raise ValueError('Invalid contact transition')
+            expected_balance='conjugate_reduced_model' if self.v2_port_model=='conjugate' else 'unavailable_nonconjugate'
+            if diag['energy_balance_status']!=expected_balance:
+                raise ValueError('Invalid balance status')
+            if set(diag['residuals']) != names:
+                raise ValueError('Incomplete residual diagnostics')
+            if self.v2_port_model == 'jet-only' and diag['total_energy_residual'] is not None:
+                raise ValueError('Nonconjugate balance unavailable')
+            if self.v2_port_model == 'conjugate' and diag['total_energy_residual'] != diag['residuals']['total_energy']:
+                raise ValueError('Inconsistent conjugate residual')
+            if (diag['resonator_loss_j'] != self.dt*candidate.last_dissipation_w
+                    or diag['lip_energy_j'] != candidate.lip_energy(candidate.state)
+                    or diag['resonator_energy_j'] != candidate._backend.energy()
+                    or abs(diag['midpoint_time_s']-(candidate.time_s-self.tau)) > 4*EPS*max(1.,candidate.time_s)):
+                raise ValueError('Inconsistent checkpoint energy/time diagnostics')
+        self._source.verify_file_unchanged()
+        self._backend, self._lip_state = candidate._backend, candidate._lip_state
+        self.time_s, self._diagnostics = candidate.time_s, diag
+        self._initial = initial
+
     def potential(self, x):
         return .5*self.params.contact_stiffness_n_per_m*max(self.xt-x, 0.)**2
 
