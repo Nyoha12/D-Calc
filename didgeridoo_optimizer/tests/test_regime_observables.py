@@ -223,3 +223,53 @@ def test_strided_observations_preserve_complete_results(layout,kind):
     if kind=='offsets':
         assert actual['status']=='unresolved'
         assert all(w['status']=='equilibrium_observed' for w in actual['windows'])
+
+
+def test_maximum_nonzero_fortran_window_under_768_mib():
+    # Exercise the C-order window copy and cross-window normalization together.
+    # Prescribed nonzero data faults in the complete input allocation.
+    import os
+    import subprocess
+    import sys
+    if sys.platform != 'linux':
+        pytest.skip('Linux RLIMIT_AS regression')
+    script = r'''
+import json, os, resource, time
+resource.setrlimit(resource.RLIMIT_AS, (768*1024**2, 768*1024**2))
+resource.setrlimit(resource.RLIMIT_CPU, (30, 35))
+import numpy as np
+from didgeridoo_optimizer.nonlinear.regime_observables import ObservationPlan, analyze
+start = time.monotonic()
+t = np.arange(72001)/12000
+z = np.ones((72001,386), order='F'); p = np.zeros(72000)
+assert z.flags.f_contiguous and not z.flags.c_contiguous
+z.flags.writeable = False
+plan = ObservationPlan(windows=((0.,6.),), scales=(1.,)*386,
+                       section_index=0, section_level=0.)
+result = analyze(t,z,p,sample_rate_hz=12000,plan=plan)
+assert result['status'] == 'equilibrium_observed'
+assert len(result['windows']) == 1
+window = result['windows'][0]
+assert window['samples'] == 72000
+assert window['effective_start_s'] == 0.
+assert window['effective_end_s'] == t[71999]
+assert window['state_scaled_span'] == 0. and window['pressure_ac_rms_pa'] == 0.
+assert window['native_midpoint_pressure_mean_pa'] == 0.
+assert window['fft_auxiliary_hz'] is None and window['passage_frequency_hz'] is None
+assert result['fundamental_hz'] is None and result['orbital_stability'] is None
+assert np.all(z == 1.)
+print(json.dumps(dict(layout='F', nonzero=True, memory_limit_mib=768,
+                     max_rss_kib=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
+                     pid=os.getpid(), seconds=time.monotonic()-start,
+                     status=result['status'])))
+'''
+    env=dict(os.environ,OPENBLAS_NUM_THREADS='1',OMP_NUM_THREADS='1',
+             MKL_NUM_THREADS='1',NUMEXPR_NUM_THREADS='1',VECLIB_MAXIMUM_THREADS='1',
+             PYTHONDONTWRITEBYTECODE='1')
+    child=subprocess.run([sys.executable,'-B','-c',script],
+                         env=env,capture_output=True,text=True,timeout=40)
+    assert child.returncode == 0, child.stdout+child.stderr
+    result=json.loads(child.stdout)
+    assert result['layout']=='F' and result['nonzero']
+    assert result['memory_limit_mib']==768
+    print(child.stdout.strip())

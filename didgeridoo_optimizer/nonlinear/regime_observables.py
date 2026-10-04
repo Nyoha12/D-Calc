@@ -311,6 +311,9 @@ def analyze(times, states, midpoint_pressure, *, sample_rate_hz, plan):
         result['groups'].append(dict(group=k,status='recurrence_observed' if common else 'not_established',
             reason='same_group_all_disjoint_windows' if common else 'one_or_more_windows_or_persistence_checks_fail',checks=checks))
     if all(w['status']=='equilibrium_observed' for w in result['windows']):
+        # Every window reached the equilibrium path, so zw is defined. Release
+        # its possible C-order copy before copying/normalizing windows again.
+        del zw
         # Cross-window offsets matter even if each individual window is constant.
         # Preserve normalization before the mean (including rounding), without
         # gathering a second full native-state copy alongside the last window.

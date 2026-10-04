@@ -248,3 +248,21 @@ modal stable entre 1 et 3 s, modal C12 entre 2 et 4 s, chargé C12 prolongé ent
 4 et 6 s. Aucune variation d'arrondi n'est observée sur ces comparaisons.
 Le groupe 2 n'identifie toujours pas une note à 33 Hz ; le chargé reste
 `unresolved`. Cette correction d'allocation n'ajoute aucune validation physique.
+
+Le dernier retour de revue C4 complète cette couverture par une matrice maximale
+**Fortran non nulle** `ones((72001,386), order='F')`, pression nulle, échelles
+unitaires et fenêtre unique `[0,6)`. Sur la base `fd5e6be`, le nouveau test natif
+reproduit encore un `MemoryError` de 212 Mio sous le même plafond de 768 Mio.
+La copie contiguë `zw` de la dernière fenêtre restait vivante pendant la copie
+contiguë et la normalisation nécessaires à la moyenne entre fenêtres.
+
+Dans la branche où toutes les fenêtres sont des équilibres, cette référence est
+désormais libérée avant les moyennes. Les deux temporaires nécessaires à chaque
+moyenne gardent leur ordre de calcul ; aucun résultat ne conserve la matrice de
+fenêtre. Les autres références de fenêtre portent seulement sur les vecteurs
+temps/pression. La sélection, les valeurs, les échelles et les critères restent
+inchangés. Le nouveau test passe avec une RSS mesurée d'environ **674 Mio**,
+distincte des mesures C ci-dessus ; les assertions historiques et comparaisons
+JSON exactes des layouts usuels, signes zéro compris, restent conservées.
+Cette régression supplémentaire porte le module à 68 cas et la suite ciblée à
+558 cas ; ces nombres incluent les 67 et 557 cas de la remise C4 précédente.
