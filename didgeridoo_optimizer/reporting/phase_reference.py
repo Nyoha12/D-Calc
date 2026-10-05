@@ -72,9 +72,9 @@ def export(output,result):
 
 
 def read_completion(output):
-    """Only a matching closure is authoritative, through its finite seal boundary.
+    """Require the final authority, not just a synchronized candidate closure.
 
-    No guarantee is made about a signal arriving after the final seal/exit check,
+    No guarantee is made about a signal arriving after the final decision sample,
     hardware failure, or subsequent modification by another process.
     """
     out=Path(output)
@@ -90,6 +90,10 @@ def read_completion(output):
         closed=native.read_json(out/'analysis.closed.json')
         if closed != dict(schema='dcalc.phase_closure.v1',result_sha256=native.file_sha256(out/'result.json'),ok=result['ok']):
             raise ValueError('Closure differs from result')
+        completed=native.read_json(out/'analysis.completed.json')
+        if completed != dict(schema='dcalc.phase_completion.v1',result_sha256=closed['result_sha256'],
+                closure_sha256=native.file_sha256(out/'analysis.closed.json'),ok=result['ok']):
+            raise ValueError('Completion differs from candidate')
         return dict(ok=result['ok'],status=result['status'],reason=result.get('reason'))
     except (OSError,ValueError,KeyError,TypeError) as exc:
         return dict(ok=False,status='unconfirmed',reason=str(exc))

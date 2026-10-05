@@ -147,7 +147,12 @@ La pression est celle du port d'entrée, pas le son rayonné. L'API reçoit
 `signals={nom: {times: ndarray, values: ndarray, unit: chaîne, scale: nombre ou None}}`.
 Sans échelle, seules les erreurs SI sont interprétables et les erreurs
 normalisées restent nulles. Auxiliaire absent/non fini : indisponible avec
-raison ; états/temps/échelles invalides : refus.
+raison ; états/temps/échelles invalides : refus. Les tableaux auxiliaires sont
+bornés à un vecteur réel de 64 bits au plus et au budget du plan. Une erreur
+arithmétique auxiliaire (norme, moyenne ou normalisation non représentable)
+rend cet auxiliaire indisponible avec raison et métriques nulles, sans retirer
+les résultats des états. Aucun débordement n’est ignoré. Les calculs usuels
+restent identiques ; les normes extrêmes ne sont pas promises représentables.
 
 ## Archives, provenance et dépendances gelées
 
@@ -200,14 +205,35 @@ combinaisons groupes × fenêtres × composantes trop grandes.
 Le plafond JSON natif est 4 Mio par document ; dépassement explicite, jamais
 NaN/Inf ou sortie tronquée annoncée réussie.
 
-`reporting.phase_reference.read_completion(output)` exige une clôture
-`analysis.closed.json` correspondant au hash du résultat. Une annulation
-`analysis.cancelled.json` prime ; fermeture absente = succès non confirmé.
-Erreur, interruption ou budget temps donnent un code CLI non nul. Les résultats
-partiels existants restent conservés. Le dernier recontrôle après le sceau,
-avec les gestionnaires encore actifs, est la frontière finie de clôture :
-aucune promesse n'est faite contre un signal ou une modification après cette
-frontière ou après la fin du processus. Aucun superviseur de simulation copié.
+`reporting.phase_reference.read_completion(output)` exige l’autorité finale
+`analysis.completed.json`, liée aux hashes de `result.json` et du candidat
+`analysis.closed.json`. Le candidat seul ne confirme plus un succès, y compris
+pour les sorties antérieures dépourvues d’autorité finale. Une annulation
+`analysis.cancelled.json` prime ; autorité absente, corrompue ou discordante =
+succès non confirmé. Erreur, interruption ou budget temps avant complétion
+donnent un code CLI non nul, même si l’écriture d’annulation échoue. Les données
+partielles restent conservées.
+
+Protocole fini : publier et synchroniser les exports et le sceau candidat ;
+préparer et synchroniser l’inode de l’autorité sous un nom `.pending-*` sans
+valeur normative ; masquer SIGINT/SIGTERM sur les plateformes POSIX qui le
+permettent ; recontrôler les sources ; échantillonner le stop, le budget et les
+signaux livrés/en attente. **Ce dernier échantillonnage est la frontière de
+complétion de l’analyse.** Un signal pendant ou après le sceau candidat reste
+avant cette frontière et invalide l’analyse. Les handlers restent actifs ;
+masque et handlers antérieurs sont restaurés dans tous les cas. Sans masque
+POSIX, le même échantillonnage utilise les flags des handlers.
+
+Après cette frontière, seul un lien atomique sans écrasement publie l’autorité
+préparée. Un échec du lien laisse la commande non réussie ; aucun contrôle de
+stop ni opération de données susceptible d’échouer ne suit un lien réussi.
+Les signaux ultérieurs ne rouvrent pas l’analyse, y compris pendant la
+publication de ce lien ou la restauration des handlers. Aucune garantie de
+durabilité après crash matériel n’est revendiquée pour cette dernière entrée
+de répertoire (pas de fsync après publication de l’autorité), ni de garantie
+universelle après sortie ou modification extérieure ultérieure. Le reçu CLI
+et le lecteur normatif concordent après terminaison normale. Aucun superviseur
+de simulation copié.
 
 ## Références et validation
 

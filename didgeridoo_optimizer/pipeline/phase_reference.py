@@ -148,10 +148,11 @@ def load_bundle(info, *, stop=lambda:False):
 def run(input_bundle,plan_source,output,*,dry_run=False,stop=lambda:False,callback=None):
     """Analysis command, with signal flags and bounded cooperative closure.
 
-    Success seals a rechecked result. A later caught signal/error publishes an
-    overriding cancellation. There is no simulation supervisor or child process.
+    The initial seal is only a candidate. After synchronized preparation and
+    source checks, sample stops/pending signals once, then publish the prepared
+    authority with one atomic link. Later stops do not reopen that decision.
     """
-    started=time.monotonic();flags=[];old={};out=None;result=None;sealed=False;created=False
+    started=time.monotonic();flags=[];old={};old_mask=None;out=None;result=None;sealed=False;created=False
     def halted(): return bool(flags) or stop() or time.monotonic()-started>=plan.seconds
     try:
         if isinstance(plan_source,PhasePlan):
@@ -195,10 +196,26 @@ def run(input_bundle,plan_source,output,*,dry_run=False,stop=lambda:False,callba
         if halted(): raise AnalysisStopped('stop_or_timeout_before_closure')
         native.write_json(out/'analysis.closed.json',dict(schema='dcalc.phase_closure.v1',result_sha256=native.file_sha256(out/'result.json'),ok=result['ok']))
         sealed=True
-        # Finite linearization boundary: recheck after the seal, while handlers
-        # still record cancellations. Past this check no asynchronous guarantee.
+        # This prepared, synchronized inode is NOT authoritative. In particular,
+        # any failure after the candidate seal needs no cancellation write.
+        prepared=out/'.pending-analysis-completion.json'
+        native.write_json(prepared,dict(schema='dcalc.phase_completion.v1',
+            result_sha256=native.file_sha256(out/'result.json'),
+            closure_sha256=native.file_sha256(out/'analysis.closed.json'),ok=result['ok']))
+        watched={signal.SIGINT,signal.SIGTERM}
+        if hasattr(signal,'pthread_sigmask'):
+            old_mask=signal.pthread_sigmask(signal.SIG_BLOCK,watched)
         _unchanged(info,request,producer)
         if halted(): raise AnalysisStopped('stop_or_timeout_at_closure')
+        if old_mask is not None and signal.sigpending() & watched:
+            raise AnalysisStopped('pending_signal_at_closure')
+        # Finite decision boundary: all candidate data are already fsynced and
+        # all checks have finished. Signals after this sample are post-analysis.
+        # A failing link publishes no authority. No fallible data operation or
+        # stop check follows a successful link (no crash-durability promise for
+        # this final directory entry). Native atomic_bytes cannot be used here:
+        # its post-link directory fsync could fail after publishing success.
+        os.link(prepared,out/'analysis.completed.json',follow_symlinks=False)
         return result
     except (Exception,KeyboardInterrupt) as exc:
         failure=dict(schema='dcalc.phase_reference.v1',ok=False,status='partial' if result else 'refused',reason=type(exc).__name__+': '+str(exc))
@@ -209,4 +226,9 @@ def run(input_bundle,plan_source,output,*,dry_run=False,stop=lambda:False,callba
             except (OSError,ValueError): pass
         return failure
     finally:
-        for sig,handler in old.items(): signal.signal(sig,handler)
+        try:
+            # Deliver queued post-boundary signals to our flag handlers before
+            # restoring the caller's handlers; preserve an inherited mask.
+            if old_mask is not None: signal.pthread_sigmask(signal.SIG_SETMASK,old_mask)
+        finally:
+            for sig,handler in old.items(): signal.signal(sig,handler)

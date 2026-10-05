@@ -379,13 +379,16 @@ def analyze(times, states, *, plan, signals=None, stop=lambda:False, callback=No
     return result
 
 
+@np.errstate(over='raise',invalid='raise',divide='raise')
 def _signal(signal,plan,fit,control):
     try:
         if type(signal) is not dict or set(signal)!={'times','values','unit','scale'}: raise ValueError('explicit signal fields required')
         t,v=signal['times'],signal['values'];unit=signal['unit'];scale=signal['scale']
         if type(t) is not np.ndarray or type(v) is not np.ndarray or t.ndim!=1 or v.shape!=t.shape or not 2<=len(t)<=plan.max_points:
             raise ValueError('bounded signal arrays required')
-        if any(x.dtype.kind not in 'fiu' or not np.all(np.isfinite(x)) for x in (t,v)) or np.any(np.diff(t)<=0): raise ValueError('nonfinite/invalid auxiliary')
+        if any(x.dtype.kind not in 'fiu' or x.dtype.itemsize>8 for x in (t,v)) or t.nbytes+v.nbytes>plan.max_chain_bytes:
+            raise ValueError('bounded real auxiliary arrays required')
+        if any(not np.all(np.isfinite(x)) for x in (t,v)) or np.any(np.diff(t)<=0): raise ValueError('nonfinite/invalid auxiliary')
         if type(unit) is not str or not 1<=len(unit)<=64: raise ValueError('signal SI unit required')
         if scale is not None and real(scale,'signal scale',minimum=0)<=0: raise ValueError('positive signal scale required')
         def signal_window(window):
@@ -413,4 +416,8 @@ def _signal(signal,plan,fit,control):
         return dict(status='evaluated' if values else 'unavailable',reason=coverage.get('reason'),unit=unit,scale=scale,
                     time_convention='native midpoint times; support bounded by adjacent half intervals',train_samples=b-a,coverage=coverage,windows=values)
     except (ValueError,IndexError,FloatingPointError) as exc:
-        return dict(status='unavailable',reason=str(exc),windows=[])
+        # Auxiliary arithmetic has its own failure boundary. Keep the complete
+        # state analysis and never export Inf, silence overflow, or invent zero.
+        reason='unrepresentable_auxiliary_numeric_analysis' if isinstance(exc,FloatingPointError) else str(exc)
+        return dict(status='unavailable',reason=reason,windows=[],maximum_si=None,rms_si=None,
+                    maximum_scaled=None,rms_scaled=None)

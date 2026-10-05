@@ -247,3 +247,127 @@ def test_auxiliary_si_errors_are_scalar_csv_columns(tmp_path):
     with (tmp_path/'signals.csv').open() as stream:rows=list(csv.DictReader(stream))
     assert float(rows[0]['maximum_si'])==pytest.approx(2.,abs=1e-8)
     assert rows[0]['maximum_scaled']=='' and rows[0]['unit']=='Pa'
+
+
+@pytest.mark.parametrize('fault',['verification','stop','timeout','SIGINT','SIGTERM','seal_write'])
+def test_candidate_failure_without_cancellation_write_is_not_success(tmp_path,monkeypatch,fault):
+    source=bundle(tmp_path/'source');out=tmp_path/'out';real=native.write_json
+    unchanged=workflow._unchanged;clock=workflow.time.monotonic;trigger=[False]
+    handlers={s:signal.getsignal(s) for s in (signal.SIGINT,signal.SIGTERM)}
+    mask=signal.pthread_sigmask(signal.SIG_BLOCK,[]) if hasattr(signal,'pthread_sigmask') else None
+    def write(path,value,**kw):
+        if Path(path).name=='analysis.cancelled.json':raise OSError('cancellation unavailable')
+        answer=real(path,value,**kw)
+        if Path(path).name=='analysis.closed.json':
+            trigger[0]=True
+            if fault in ('SIGINT','SIGTERM'):os.kill(os.getpid(),getattr(signal,fault))
+            if fault=='seal_write':raise OSError('candidate synchronization failed')
+        return answer
+    def verify(*a):
+        unchanged(*a)
+        if trigger[0] and fault=='verification':raise ValueError('postcandidate source failure')
+    monkeypatch.setattr(native,'write_json',write);monkeypatch.setattr(workflow,'_unchanged',verify)
+    monkeypatch.setattr(workflow.time,'monotonic',lambda:clock()+(1000 if trigger[0] and fault=='timeout' else 0))
+    r=workflow.run(source,phase_plan(),out,stop=lambda:trigger[0] and fault=='stop')
+    assert trigger[0] and not r['ok'] and not report.read_completion(out)['ok']
+    assert (out/'result.json').exists() and not (out/'analysis.cancelled.json').exists()
+    assert all(signal.getsignal(s)==h for s,h in handlers.items())
+    if mask is not None:assert signal.pthread_sigmask(signal.SIG_BLOCK,[])==mask
+
+
+@pytest.mark.parametrize('fault',['prepare','link','pending_SIGINT','pending_SIGTERM'])
+def test_final_authority_failure_and_pending_signals(tmp_path,monkeypatch,fault):
+    source=bundle(tmp_path/'source');out=tmp_path/'out';real_write=native.write_json
+    real_link=os.link;real_verify=workflow._unchanged;trigger=[False]
+    previous=signal.pthread_sigmask(signal.SIG_BLOCK,[]) if hasattr(signal,'pthread_sigmask') else None
+    def write(path,value,**kw):
+        if Path(path).name=='analysis.cancelled.json':raise OSError('no cancellation storage')
+        answer=real_write(path,value,**kw)
+        if Path(path).name=='.pending-analysis-completion.json' and fault=='prepare':
+            trigger[0]=True;raise OSError('prepared inode synchronization failed')
+        return answer
+    def link(src,dst,**kw):
+        if Path(dst).name=='analysis.completed.json' and fault=='link':
+            trigger[0]=True;raise OSError('final publication failed')
+        return real_link(src,dst,**kw)
+    def verify(*args):
+        real_verify(*args)
+        if (out/'.pending-analysis-completion.json').exists() and fault.startswith('pending_'):
+            trigger[0]=True;os.kill(os.getpid(),getattr(signal,fault.removeprefix('pending_')))
+            if previous is not None:assert signal.sigpending()
+    monkeypatch.setattr(native,'write_json',write);monkeypatch.setattr(os,'link',link)
+    monkeypatch.setattr(workflow,'_unchanged',verify)
+    r=workflow.run(source,phase_plan(),out)
+    assert trigger[0] and not r['ok'] and not report.read_completion(out)['ok']
+    assert not (out/'analysis.completed.json').exists()
+    if previous is not None:assert signal.pthread_sigmask(signal.SIG_BLOCK,[])==previous
+
+
+@pytest.mark.parametrize('marker',['analysis.closed.json','analysis.completed.json'])
+@pytest.mark.parametrize('damage',['absent','corrupt','mismatched_hash'])
+def test_authority_requires_both_intact_hash_bound_markers(tmp_path,marker,damage):
+    source=bundle(tmp_path/'source');out=tmp_path/'out'
+    assert workflow.run(source,phase_plan(),out)['ok'] and report.read_completion(out)['ok']
+    path=out/marker
+    if damage=='absent':path.rename(tmp_path/'saved-marker.json')
+    elif damage=='corrupt':path.write_text('{')
+    else:
+        value=json.loads(path.read_text());value['result_sha256']='0'*64;path.write_text(json.dumps(value))
+    assert not report.read_completion(out)['ok']
+
+
+@pytest.mark.parametrize('sig',[signal.SIGINT,signal.SIGTERM])
+@pytest.mark.parametrize('side',['candidate','completed'])
+def test_cli_receipt_agrees_with_reader_on_both_sides_of_boundary(tmp_path,sig,side):
+    source=bundle(tmp_path/'source');p=tmp_path/'plan.json';p.write_text(json.dumps(phase_plan().as_dict()))
+    out=tmp_path/'out'
+    # Execute the canonical CLI main in a targeted child; inject only its IO.
+    code='''
+import json, os, signal, sys
+from pathlib import Path
+from tools.phase_reference import main
+from didgeridoo_optimizer.reporting import regime_reference as native
+from didgeridoo_optimizer.reporting.phase_reference import read_completion
+before={s:signal.getsignal(s) for s in (signal.SIGINT,signal.SIGTERM)}
+mask=signal.pthread_sigmask(signal.SIG_BLOCK,[]) if hasattr(signal,'pthread_sigmask') else None
+real_write=native.write_json;real_link=os.link
+side=sys.argv[1];sig=int(sys.argv[2]);out=Path(sys.argv[5]);trigger=[]
+def write(path,value,**kw):
+ if Path(path).name=='analysis.cancelled.json':raise OSError('injected cancellation failure')
+ result=real_write(path,value,**kw)
+ if side=='candidate' and Path(path).name=='analysis.closed.json':
+  trigger.append(True);os.kill(os.getpid(),sig)
+ return result
+def link(src,dst,**kw):
+ result=real_link(src,dst,**kw)
+ if side=='completed' and Path(dst).name=='analysis.completed.json':
+  trigger.append(True);os.kill(os.getpid(),sig)
+ return result
+native.write_json=write;os.link=link
+code=main(['--input-bundle',sys.argv[3],'--plan',sys.argv[4],'--output',sys.argv[5]])
+assert trigger and all(signal.getsignal(s)==h for s,h in before.items())
+if mask is not None:assert signal.pthread_sigmask(signal.SIG_BLOCK,[])==mask
+assert (code==0)==read_completion(out)['ok']==(side=='completed')
+sys.exit(code)
+'''
+    r=subprocess.run([sys.executable,'-B','-c',code,side,str(int(sig)),str(source),str(p),str(out)],capture_output=True,text=True,timeout=25)
+    assert (r.returncode==0)==(side=='completed'),r.stdout+r.stderr
+    receipt=json.loads(r.stdout)
+    assert receipt['ok']==report.read_completion(out)['ok']==(side=='completed')
+    assert 'Traceback' not in r.stderr
+
+
+@pytest.mark.parametrize('value',[np.nan,np.inf])
+def test_native_nonfinite_pressure_is_explicitly_outside_cli_format(tmp_path,value):
+    source=bundle(tmp_path/'source');path=source/'samples-000001.npz'
+    with np.load(path) as data:arrays={k:data[k] for k in data.files}
+    arrays['data'][5,history.COLUMNS.index('pressure_pa')]=value
+    with path.open('wb') as f:np.savez_compressed(f,**arrays)
+    checkpoint=source/'checkpoint-000001.json';c=native.read_json(checkpoint)
+    c['payload']['series']['sha256']=native.file_sha256(path);c['sha256']=digest(c['payload']);checkpoint.write_text(json.dumps(c))
+    (source/'result.json').rename(tmp_path/'historical-result.json')
+    p=tmp_path/'plan.json';p.write_text(json.dumps(phase_plan().as_dict()))
+    out=tmp_path/'out';r=run_cli(source,p,out)
+    assert r.returncode!=0 and not json.loads(r.stdout)['ok']
+    assert 'Nonfinite native state/pressure' in json.loads(r.stdout)['reason']
+    assert not report.read_completion(out)['ok']

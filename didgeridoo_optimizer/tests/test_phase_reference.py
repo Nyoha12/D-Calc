@@ -257,3 +257,51 @@ def test_r37_ordinal_sensitivity_against_independent_regression():
 def test_numpy_scalar_plan_is_serializable():
     p=plan(groups=(np.int64(1),),section_index=np.int64(0),scales=(np.float64(1.),)*4)
     json.dumps(p.as_dict(),allow_nan=False)
+
+
+@pytest.mark.parametrize('value,scale',[(1e200,None),(1e308,None),(np.nan,None),(np.inf,None),
+    (2.,1e-310),(2.,1e200),(2.,np.inf),(2.,np.nan)])
+def test_extreme_auxiliary_preserves_states_and_strict_exports(tmp_path,value,scale):
+    import warnings
+    from didgeridoo_optimizer.reporting.phase_reference import export
+    t=np.arange(2201,dtype=float)/1000;angle=2*np.pi*61.25*t
+    z=np.column_stack((np.sin(angle),np.cos(angle)));mid=(t[:-1]+t[1:])/2
+    p=plan(train=(.2,1.2),validations=((1.2,2.2),),scales=(1.,1.),state_units=(),groups=(1,))
+    baseline=analyze(t,z,plan=p);v=np.cos(2*np.pi*61.25*mid);v[mid>=1.2]=value
+    with warnings.catch_warnings():
+        warnings.simplefilter('error',RuntimeWarning)
+        r=analyze(t,z,plan=p,signals={'pressure':dict(times=mid,values=v,unit='Pa',scale=scale)})
+    assert r['ok']
+    for old,new in zip(baseline['groups'],r['groups']):
+        for a,b in [(old['central'],new['central']),*[(x['result'],y['result']) for x,y in zip(old['sensitivities'],new['sensitivities'])]]:
+            assert {k:v for k,v in a.items() if k!='signals'}=={k:v for k,v in b.items() if k!='signals'}
+            s=b['signals']['pressure']
+            if s['status']=='unavailable':
+                assert s['reason'] and not s['windows']
+                assert s['maximum_si'] is s['rms_si'] is s['maximum_scaled'] is s['rms_scaled'] is None
+            else:
+                assert np.isfinite(s['windows'][0]['rms_si'])
+    json.dumps(r,allow_nan=False);export(tmp_path,r)
+    assert json.loads((tmp_path/'result.json').read_text())['ok']
+
+
+@pytest.mark.parametrize('value',[np.nan,np.inf,-np.inf])
+def test_nonfinite_states_remain_refused_with_auxiliary(value):
+    t=np.arange(2201,dtype=float)/1000;z=np.column_stack((np.sin(100*t),np.cos(100*t)));z[300,1]=value
+    p=plan(train=(.2,1.2),validations=((1.2,2.2),),scales=(1.,1.),state_units=(),groups=(1,))
+    with pytest.raises(ValueError,match='Nonfinite states'):
+        analyze(t,z,plan=p,signals={'pressure':dict(times=t,values=np.ones(len(t)),unit='Pa',scale=None)})
+
+
+@pytest.mark.parametrize('kind',['matrix','oversize','complex'])
+def test_auxiliary_dimensions_are_bounded_without_losing_states(kind):
+    t=np.arange(2201,dtype=float)/1000;z=np.column_stack((np.sin(2*np.pi*61.25*t),np.cos(2*np.pi*61.25*t)))
+    p=plan(train=(.2,1.2),validations=((1.2,2.2),),scales=(1.,1.),state_units=(),groups=(1,))
+    times=t;values=np.ones(len(t))
+    if kind=='matrix':values=values[:,None]
+    if kind=='oversize':times=np.arange(p.max_points+1,dtype=float);values=np.ones(len(times))
+    if kind=='complex':values=values.astype(complex)
+    r=analyze(t,z,plan=p,signals={'pressure':dict(times=times,values=values,unit='Pa',scale=None)})
+    assert r['ok'] and maximum(r)<1e-4
+    assert central(r)['signals']['pressure']['status']=='unavailable'
+    json.dumps(r,allow_nan=False)
