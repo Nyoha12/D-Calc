@@ -379,7 +379,7 @@ def analyze(times, states, *, plan, signals=None, stop=lambda:False, callback=No
     return result
 
 
-@np.errstate(over='raise',invalid='raise',divide='raise')
+@np.errstate(over='raise',invalid='raise',divide='raise',under='raise')
 def _signal(signal,plan,fit,control):
     try:
         if type(signal) is not dict or set(signal)!={'times','values','unit','scale'}: raise ValueError('explicit signal fields required')

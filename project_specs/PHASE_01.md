@@ -151,7 +151,8 @@ raison ; états/temps/échelles invalides : refus. Les tableaux auxiliaires sont
 bornés à un vecteur réel de 64 bits au plus et au budget du plan. Une erreur
 arithmétique auxiliaire (norme, moyenne ou normalisation non représentable)
 rend cet auxiliaire indisponible avec raison et métriques nulles, sans retirer
-les résultats des états. Aucun débordement n’est ignoré. Les calculs usuels
+les résultats des états. Aucun débordement ni sous-flux arithmétique n’est ignoré dans ce diagnostic
+auxiliaire ; un carré trop petit ne devient pas un RMS nul inventé. Les calculs usuels
 restent identiques ; les normes extrêmes ne sont pas promises représentables.
 
 ## Archives, provenance et dépendances gelées

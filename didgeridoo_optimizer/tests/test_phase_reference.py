@@ -305,3 +305,17 @@ def test_auxiliary_dimensions_are_bounded_without_losing_states(kind):
     assert r['ok'] and maximum(r)<1e-4
     assert central(r)['signals']['pressure']['status']=='unavailable'
     json.dumps(r,allow_nan=False)
+
+
+def test_tiny_auxiliary_never_invents_zero_rms(tmp_path):
+    from didgeridoo_optimizer.reporting.phase_reference import export
+    t=np.arange(2201,dtype=float)/1000;angle=2*np.pi*61.25*t
+    z=np.column_stack((np.sin(angle),np.cos(angle)));mid=(t[:-1]+t[1:])/2
+    v=1e-200*np.sin(2*np.pi*61.25*mid);v[mid>=1.2]+=1e-200
+    p=plan(train=(.2,1.2),validations=((1.2,2.2),),scales=(1.,1.),state_units=(),groups=(1,))
+    r=analyze(t,z,plan=p,signals={'pressure':dict(times=mid,values=v,unit='Pa',scale=None)})
+    assert r['ok'] and maximum(r)<1e-4
+    s=central(r)['signals']['pressure']
+    if s['status']=='evaluated':assert 0<s['windows'][0]['rms_si']<=s['windows'][0]['maximum_si']
+    else:assert s['reason']=='unrepresentable_auxiliary_numeric_analysis' and s['rms_si'] is None
+    json.dumps(r,allow_nan=False);export(tmp_path,r)
