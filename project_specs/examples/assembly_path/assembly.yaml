@@ -1,0 +1,42 @@
+schema_version: dcalc.assembly.v1
+id: octave_passive
+pieces:
+  prefix:
+    kind: fixed
+    material_id: pvc_pressure
+    segments:
+      - id: bore
+        kind: cylinder
+        length: {value: 30, unit: mm}
+        diameter_in: {value: 30, unit: mm}
+        diameter_out: {value: 30, unit: mm}
+    annotations: {purpose: préfixe fixe entier}
+  inner:
+    kind: tube
+    material_id: pvc_pressure
+    length: {value: 0.56, unit: m}
+    inner_diameter: {value: 30, unit: mm}
+    outer_diameter: {value: 32, unit: mm}
+  outer:
+    kind: tube
+    material_id: pvc_pressure
+    length: {value: 0.5, unit: m}
+    inner_diameter: {value: 40, unit: mm}
+    wall: {value: 1.5, unit: mm}
+blocks:
+  - {id: mouth, kind: fixed, piece: prefix}
+  - id: slide
+    kind: telescope
+    inner: inner
+    outer: outer
+    orientation: outer_first
+    seal: inner_tip_isolated
+    min_overlap: {value: 80, unit: mm}
+configurations:
+  short: {q: {slide: {value: 0.01, unit: m}}}
+  long: {q: {slide: {value: 0.40, unit: m}}}
+paths:
+  - {id: travel, kind: affine, from: short, to: long}
+annotations:
+  status: scénario prescrit, aucune calibration ni promesse de note jouée
+  initial_dimensions: volontairement décalées du témoin R42

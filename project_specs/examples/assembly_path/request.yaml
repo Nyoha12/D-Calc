@@ -1,0 +1,133 @@
+schema_version: dcalc.assembly_request.v1
+variables:
+- id: inner_length
+  fields:
+  - pieces.inner.length
+  unit: m
+  bounds:
+  - 0.52
+  - 0.59
+- id: long_position
+  fields:
+  - configurations.long.q.slide
+  unit: m
+  bounds:
+  - 0.35
+  - 0.42
+coverage:
+  kind: discrete
+budgets:
+  candidates: 3
+  evaluations: 70
+  projections: 150
+  spectral_calls: 1500
+  segments: 10000
+  frequencies: 500000
+  frequency_segment_product: 20000000
+  seconds: 140
+  memory_mib: 650
+  output_mib: 60
+catalogue:
+- id: collision_31mm
+  values:
+    pieces.outer.inner_diameter:
+      value: 31
+      unit: mm
+- id: overlap_short_stock
+  values:
+    pieces.outer.length:
+      value: 0.6
+      unit: m
+- id: outer40
+  values: {}
+projections:
+- id: short
+  configuration: short
+  request:
+    schema_version: dcalc.design_request.v1
+    variables: []
+    criteria:
+    - id: f1
+      observable: resonance_frequency
+      mode: m1
+      target:
+        value: 140.0
+        unit: Hz
+      unit: Hz
+      tolerance:
+        value: 0.2
+        unit: cent
+      level: passive
+      scope: {}
+      role: hard
+    modes:
+    - id: m1
+      order: 1
+      window_hz:
+      - 45.0
+      - 160.0
+    spectrum:
+      min_hz: 10.0
+      max_hz: 700.0
+      step_hz: 2.0
+      final_step_hz: 0.5
+      refinement_hz: 1.0e-05
+      h_cm: 2.0
+    budgets:
+      evaluations: 70
+      iterations: 12
+      variables: 8
+      frequencies: 4000
+      segments: 512
+      history: 70
+      seconds: 150
+      frequency_segment_product: 1000000
+    models:
+      loss_model: zk
+      air_reference: ck_dry20
+      radiation_model: legacy
+- id: long
+  configuration: long
+  request:
+    schema_version: dcalc.design_request.v1
+    variables: []
+    criteria:
+    - id: f1
+      observable: resonance_frequency
+      mode: m1
+      target:
+        value: 70.0
+        unit: Hz
+      unit: Hz
+      tolerance:
+        value: 0.2
+        unit: cent
+      level: passive
+      scope: {}
+      role: hard
+    modes:
+    - id: m1
+      order: 1
+      window_hz:
+      - 45.0
+      - 160.0
+    spectrum:
+      min_hz: 10.0
+      max_hz: 700.0
+      step_hz: 2.0
+      final_step_hz: 0.5
+      refinement_hz: 1.0e-05
+      h_cm: 2.0
+    budgets:
+      evaluations: 70
+      iterations: 12
+      variables: 8
+      frequencies: 4000
+      segments: 512
+      history: 70
+      seconds: 150
+      frequency_segment_product: 1000000
+    models:
+      loss_model: zk
+      air_reference: ck_dry20
+      radiation_model: legacy
