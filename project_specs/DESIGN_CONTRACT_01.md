@@ -8,6 +8,12 @@ modulaires, le jeu, l'accessibilité des toots, les seuils/régimes, les paramè
 incertains ni une garantie sur un continuum. L'issue #79 garde ce périmètre plus
 large ouvert.
 
+Les demandes U01–U07 restent conservées : fixe/coulissant/modulaire, verrous et
+obligations non compensables, toots choisis multiples, relations entre géométrie,
+composants, matériau, joueur/source, environnement et fabrication, et distinction
+entre incertitudes et variables choisies. Les corrections ci-dessous ne couvrent
+aucune capacité physique supplémentaire ; passif et joué restent distincts.
+
 ## Exécution et API
 
 Depuis la racine du dépôt, avec NumPy et PyYAML déjà disponibles :
@@ -228,6 +234,14 @@ produit `unresolved`. Un changement du nombre de pics entre essais/raffinements
 empêche une substitution silencieuse de branche. Aucun choix du pic le plus
 proche d'une cible, aucun zéro de ImZ ni harmonie FFT ne définit un toot.
 
+L'indisponibilité d'un mode au raffinement affecte seulement les critères qui
+le référencent, y compris les ratios. Un mode facultatif absent ou un mode
+déclaré sans critère ne retire pas les valeurs, marges et estimations des autres
+modes vérifiables. Une obligation dépendante reste non conforme ; une observation
+ou préférence non résolue rend la couverture partielle explicite. Les erreurs
+communes de propagation et changements du nombre de pics continuent à empêcher
+la conformité acoustique lorsque l'identité des branches n'est plus établie.
+
 La tolérance utilisateur, l'estimation numérique de convergence et une borne
 certifiée sont distinctes. `certified_bound`/`certified_uniform_bound` restent
 null : h/h2 et différences de grilles ne sont pas des preuves mathématiques.
@@ -265,6 +279,11 @@ est public, distinct d'`evaluations`. Tous ces calculs partagent le plafond mur
 de 180 secondes de l'enfant, jamais une succession de nouveaux budgets enfants.
 Les témoins de sondes conformes sont conservés même s'ils ne deviennent pas un
 pas de l'optimiseur. Sans préférence, aucun classement de complexité n'intervient.
+`search.best` considère chaque évaluation, y compris les sondes avant épuisement
+du budget ou Jacobien incomplet et les redémarrages. Un témoin admissible prime
+toujours sur un essai non admissible ; seuls les critères de préférence explicites
+et évaluables classent les témoins. Une préférence non résolue ne devient pas
+zéro. Historique et témoins conservés restent distincts de la vérification finale.
 
 ## Exports, provenance et reprise
 
@@ -291,6 +310,12 @@ lecture. REQUEST est parsé et fingerprinté depuis les mêmes octets. Les sourc
 Python effectivement chargées sont lues, hashées et contrôlées avant/après
 calcul ; l'identité Git est déclarée inconnue si les sources ne sont pas suivies.
 Le parent compare le plan aux entrées/sources relues par l'enfant. Un hôte API peut avoir chargé des modules supplémentaires : leurs octets sont contrôlés séparément, sans prétendre que l'enfant les a exécutés.
+La CLI vérifie avant lecture des entrées/calcul/écriture qu'elle est exécutée
+depuis son fichier canonique et que ses octets n'ont pas changé depuis son
+chargement. Une copie extérieure, même identique, est refusée avec une erreur
+de provenance ; son hash n'est jamais remplacé par celui du fichier canonique.
+`python -m tools.constrained_design` et les scripts clients de l'API restent
+pris en charge. Les versions Python/NumPy/PyYAML effectives sont enregistrées.
 
 Les primitives natives `safe_path`, `atomic_bytes`, `write_json` publient sans
 écrasement, avec fsync et plafond total 250 Mio, JSON individuel 4 Mio. Les
@@ -298,7 +323,16 @@ Les primitives natives `safe_path`, `atomic_bytes`, `write_json` publient sans
 Le checkpoint conserve le dernier témoin/pas accepté par la recherche, son
 checksum, REQUEST et l'identité CONFIG/DESIGN/DB/modèles/sources. Il est étiqueté
 **non vérifié final**. `reporting.constrained_design.read_checkpoint` relit et
-contrôle ce contexte et les verrous ; aucune reprise automatique dans un dossier
+contrôle ce contexte et les verrous. Le format
+`dcalc.constrained_design.checkpoint.v2` fige séparément le contexte du calcul
+(dont les octets REQUEST, modèles effectifs, versions et masque de verrous) et
+le manifeste des sources du producteur. Un checksum lie contexte, manifeste et
+candidat. Le lecteur rehash les fichiers de ce manifeste sans les importer ;
+ses propres imports supplémentaires ne deviennent pas des sources du producteur.
+CLI vers API et API vers processus neuf sont ainsi relisibles sans import CLI
+artificiel. Les anciens checkpoints sans ce manifeste explicite sont refusés
+comme incompatibles ; produire un nouveau bundle avec la CLI corrigée.
+Il n'y a aucune reprise automatique ni remise à zéro du budget dans un dossier
 existant. Une nouvelle exécution peut utiliser un DESIGN exporté, une nouvelle
 sortie et un REQUEST explicitement choisi. Un reçu d'exécution absent ou en erreur
 n'est pas un succès de publication.

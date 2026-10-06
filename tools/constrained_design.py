@@ -1,10 +1,15 @@
 """CLI française du contrat de conception statique."""
 from __future__ import annotations
 import argparse
+import hashlib
 import json
+from pathlib import Path
 import sys
 
-from didgeridoo_optimizer.pipeline.constrained_design import run, worker
+from didgeridoo_optimizer.pipeline.constrained_design import ROOT, run, worker
+
+ENTRY_PATH=Path(__file__).resolve()
+ENTRY_SHA256=hashlib.sha256(ENTRY_PATH.read_bytes()).hexdigest()
 
 
 def main(argv=None):
@@ -14,6 +19,11 @@ def main(argv=None):
     parser.add_argument('--worker',action='store_true',help=argparse.SUPPRESS)
     args=parser.parse_args(argv)
     try:
+        # This entry point may only claim the provenance of its executed file.
+        # Client scripts calling the public API do not use this CLI guard.
+        if ENTRY_PATH!=ROOT/'tools/constrained_design.py' or (
+                hashlib.sha256(ENTRY_PATH.read_bytes()).hexdigest()!=ENTRY_SHA256):
+            raise ValueError('provenance CLI refusée: entrée copiée ou modifiée depuis chargement')
         if args.worker:
             result=worker(json.load(sys.stdin))
         else:

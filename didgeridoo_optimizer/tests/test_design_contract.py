@@ -178,3 +178,24 @@ def test_overlapping_targets_cannot_reuse_one_peak(context,request_data):
 def test_bad_types_are_invalid_requests(context,request_data,where,value):
     request_data['criteria'][0][where]=value
     with pytest.raises(InvalidRequest):Contract(request_data,context)
+
+
+@pytest.mark.parametrize('unresolved_first',[False,True])
+def test_search_best_feasibility_before_evaluable_preferences(unresolved_first):
+    """Prescribed helper observations only; no acoustic or physiological claim."""
+    from types import SimpleNamespace
+    from didgeridoo_optimizer.optimization.constrained_search import search, preference_key
+    c=SimpleNamespace(budgets=dict(evaluations=4,iterations=1,seconds=5),initial=[.5],
+        variables=[dict(low=0.,high=1.)],preference_supported=True,
+        criteria=[dict(id='h',role='hard',unsupported_reason=None),dict(id='p',role='preference',priority=0)])
+    observations=iter([(2.,.0),(.5,None if unresolved_first else .1),(.1,.9)])
+    def prescribed(x):
+        hard,pref=next(observations)
+        return dict(search_feasible=abs(hard)<=1,criteria=[
+            dict(id='h',status='satisfied' if abs(hard)<=1 else 'violated',residual_normalized=hard),
+            dict(id='p',status='unresolved' if pref is None else 'satisfied',residual_normalized=pref)])
+    result=search(c,prescribed)
+    assert result['best']['search_feasible']
+    assert result['best'] is result['history'][2 if unresolved_first else 1]
+    assert preference_key(c,result['history'][0])==(0.,)  # Better preference cannot buy hard feasibility.
+    if unresolved_first:assert preference_key(c,result['history'][1]) is None

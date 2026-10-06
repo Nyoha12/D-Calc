@@ -2,14 +2,21 @@
 from __future__ import annotations
 
 import csv
+import copy
 import hashlib
 import io
 import json
 from pathlib import Path
 import sys
 
+import numpy as np
+import yaml
+
 from .regime_reference import safe_path, atomic_bytes, write_json
 from ..pipeline.fixed_design import _software_source
+
+ROOT=Path(__file__).resolve().parents[2]
+CHECKPOINT_SCHEMA='dcalc.constrained_design.checkpoint.v2'
 
 
 def fingerprint(value):
@@ -34,13 +41,50 @@ def source_files():
 
 
 def provenance():
-    return dict(software=_software_source(),loaded_sources_sha256=source_files())
+    return dict(software=_software_source(),versions=versions(),loaded_sources_sha256=source_files())
+
+
+def versions():
+    return dict(python=sys.version,numpy=np.__version__,pyyaml=yaml.__version__)
+
+
+def calculation_context(contract):
+    """Calculation inputs only: the reader's ambient imports are not identity."""
+    from ..pipeline.design_pitch import models
+    return copy.deepcopy(dict(request=contract.request,design=contract.base,config=contract.context['config'],
+        inputs={k:v['sha256'] for k,v in contract.context['provenance']['files'].items()},
+        request_bytes_sha256=getattr(contract,'input_files',{}).get('request',{}).get('sha256'),
+        models=contract.options,effective_models=models(contract.context,contract.options)[3],
+        lock_mask=contract.lock_mask,versions=versions()))
 
 
 def context_identity(contract):
-    return fingerprint(dict(request=contract.request,design=contract.base,config=contract.context['config'],
-        inputs={k:v['sha256'] for k,v in contract.context['provenance']['files'].items()},
-        models=contract.options,sources=source_files()))
+    return fingerprint(calculation_context(contract))
+
+
+def verify_sources(sources):
+    """Read the producer's actual source paths; never import them into a reader."""
+    for name,expected in sources.items():
+        path=Path(name)
+        if path.is_absolute() or '..' in path.parts or path.suffix!='.py':
+            raise ValueError('manifeste sources invalide')
+        resolved=(ROOT/path).resolve(strict=True)
+        if not resolved.is_relative_to(ROOT): raise ValueError('source hors dépôt')
+        if hashlib.sha256(resolved.read_bytes()).hexdigest()!=expected:
+            raise ValueError('sources producteur modifiées: '+name)
+
+
+def checkpoint_record(contract,candidate,producer,calculation=None):
+    value=dict(schema_version=CHECKPOINT_SCHEMA,
+        calculation_context=calculation if calculation is not None else calculation_context(contract),
+        producer_provenance=producer,request_sha256=fingerprint(contract.request),
+        candidate_sha256=fingerprint(candidate),candidate=candidate,
+        status='search_witness_not_final_conformity')
+    # Copy the snapshot: later candidate/context mutations must not change it.
+    value=json.loads(json.dumps(value,allow_nan=False))
+    value['context_sha256']=fingerprint(value['calculation_context'])
+    value['checkpoint_sha256']=fingerprint(value)
+    return value
 
 
 def new_destination(path):
@@ -96,8 +140,18 @@ def read_checkpoint(output,contract):
     paths=sorted(out.glob('checkpoint_*.json'))
     if not paths: return None
     value=json.loads(safe_path(paths[-1]).read_text())
+    if value.get('schema_version')!=CHECKPOINT_SCHEMA:
+        raise ValueError('checkpoint incompatible: manifeste producteur explicite requis (v2)')
     if value['request_sha256']!=fingerprint(contract.request): raise ValueError('REQUEST de reprise différent')
     if value['context_sha256']!=context_identity(contract): raise ValueError('contexte/sources de reprise différents')
     if value['candidate_sha256']!=fingerprint(value['candidate']): raise ValueError('checkpoint altéré')
+    if value['context_sha256']!=fingerprint(value['calculation_context']): raise ValueError('contexte altéré')
+    if value['checkpoint_sha256']!=fingerprint({k:v for k,v in value.items() if k!='checkpoint_sha256'}):
+        raise ValueError('checkpoint altéré')
+    producer=value['producer_provenance']
+    if producer['versions']!=versions(): raise ValueError('versions producteur différentes')
+    sources=producer['loaded_sources_sha256']
+    if not sources: raise ValueError('manifeste sources producteur vide')
+    verify_sources(sources)
     contract.check_locks(value['candidate']['physical_design'])
     return value

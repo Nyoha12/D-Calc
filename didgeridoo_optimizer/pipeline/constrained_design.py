@@ -59,9 +59,11 @@ def load_inputs(config,design,request):
     files={k:{'name':Path(v['path']).name,'sha256':v['sha256'],'read':v['read']}
            for k,v in context['provenance']['files'].items()}
     files['request']=source
+    contract.input_files=copy.deepcopy(files)
     plan=dict(contract.plan(),effective_models=effective,max_mesh_segments=count,
               input_files=files,request=r,original_config=context['config'],
               physical_design=context['design'].as_dict(),provenance=report.provenance(),
+              calculation_context=report.calculation_context(contract),
               limits=['Scénario nominal CONFIG unique; instrument fixe.',
                       'Pas de fréquence jouée, accessibilité toot, seuil, régime, couverture continue ou robustesse.',
                       'h/h2 et grille/refinement: estimations, pas bornes mathématiques uniformes.',
@@ -238,11 +240,11 @@ class Evaluator:
         rows=criterion_rows(c,design,selected,acoustic_error=error)
         return dict(physical_design=design.as_dict(),criteria=rows,peaks=peaks,selected_modes=selected,
                     search_feasible=all(r['status']=='satisfied' for r in rows if r['role']=='hard'),
-                    final_verified=False)
+                    final_verified=False,acoustic_error=error)
 
     def verify(self,values):
         c=self.contract; base=self(values); design=c.generate(values)
-        levels=[]; estimates={}; error=None; selected=base['selected_modes']
+        levels=[]; estimates={}; error=base.get('acoustic_error'); selected=base['selected_modes']
         acoustic=any(k['observable'] in ('resonance_frequency','resonance_ratio') and not k['unsupported_reason'] for k in c.criteria)
         if acoustic:
             try:
@@ -254,9 +256,15 @@ class Evaluator:
                         subdivision_uniform=subdivide,peaks=peaks,selected_modes=selected,
                         analysis_mesh=dict(segment_count=len(mesh.segments),sha256=report.fingerprint(mesh.as_dict()),
                                            metadata=mesh.metadata)))
+                selected=dict(selected)
                 for ident in c.modes:
                     seq=[base['selected_modes'][ident]]+[l['selected_modes'][ident] for l in levels]
-                    if any(m['status']!='resolved' for m in seq): raise ArithmeticError('mode perdu/ambigu lors du raffinement: '+ident)
+                    failures=[m for m in seq if m['status']!='resolved']
+                    if failures:
+                        selected[ident]=dict(selected[ident],status='unresolved',
+                            reason='mode perdu/ambigu lors du raffinement: '+ident+'; '+
+                                   '; '.join(str(m['reason']) for m in failures))
+                        continue
                     fs=[m['peak']['frequency_hz'] for m in seq]
                     estimates[ident]=max(abs(fs[1]-fs[0]),abs(fs[2]-fs[1]))+sum(m['peak']['frequency_estimate_hz'] for m in seq)
             except (ValueError,ArithmeticError,KeyError) as exc: error=str(exc)
@@ -278,14 +286,28 @@ class Evaluator:
 
 
 def execute(contract,plan,output):
+    # Freeze the producer's context and manifest, independent of future readers.
+    plan=copy.deepcopy(plan)
+    calculation=report.calculation_context(contract)
+    if plan.get('calculation_context',calculation)!=calculation:
+        raise ValueError('contexte du calcul différent du plan')
+    plan['calculation_context']=calculation
+    producer=plan['provenance']
+    def check_sources():
+        if report.calculation_context(contract)!=calculation:
+            raise ValueError('contexte modifié pendant calcul')
+        if report.source_files()!=producer['loaded_sources_sha256']:
+            raise ValueError('sources chargées modifiées pendant calcul')
+        report.verify_sources(plan.get('parent_sources_checked_sha256',{}))
+    check_sources()
     evaluator=Evaluator(contract); count=0
     def checkpoint(row):
         nonlocal count
         if row['physical_design'] is None: return
+        check_sources()
         count+=1
-        report.write_json(output/f'checkpoint_{count:04d}.json',dict(request_sha256=report.fingerprint(contract.request),
-            context_sha256=report.context_identity(contract),candidate_sha256=report.fingerprint(row),
-            status='search_witness_not_final_conformity',candidate=row))
+        report.write_json(output/f'checkpoint_{count:04d}.json',
+            report.checkpoint_record(contract,row,producer,calculation))
     result=search(contract,evaluator,checkpoint)
     # No finite-difference witness is discarded merely because it was not an
     # accepted optimizer step. Final verification is separately bounded to four.
@@ -305,8 +327,7 @@ def execute(contract,plan,output):
     optimization_status=('no_preferences' if not preference_rows else
         'unsupported' if any(r['status']=='unsupported' for r in preference_rows) else
         'unresolved' if any(r['status'] not in ('satisfied','violated') for r in preference_rows) else 'feasible_witness_ranking_only')
-    if report.source_files()!=plan['provenance']['loaded_sources_sha256']:
-        raise ValueError('sources chargées modifiées pendant calcul')
+    check_sources()
     status=('conforming' if final['request_fully_covered'] else 'hard_feasible_partial_coverage') if solutions else 'no_conforming_solution_found'
     payload=dict(schema_version='dcalc.constrained_design.result.v1',status=status,
         request=contract.request,plan=plan,search=result,final=final,solutions=solutions,

@@ -17,19 +17,21 @@ def preference_key(contract, row):
 
 def search(contract, evaluate, checkpoint=None):
     budget=contract.budgets
-    start=time.monotonic(); history=[]; accepted=[]; rank_diagnostics=[]
+    start=time.monotonic(); history=[]; accepted=[]; rank_diagnostics=[]; best=None
     low=np.array([v['low'] for v in contract.variables]); high=np.array([v['high'] for v in contract.variables])
     scale=high-low
     x=np.array(contract.initial)
     hard=[c for c in contract.criteria if c['role']=='hard' and not c['unsupported_reason']]
 
     def call(point,stage):
+        nonlocal best
         if len(history)>=budget['evaluations'] or time.monotonic()-start>budget['seconds']:
             return None
         result=evaluate(point)
         result['evaluation']=len(history)+1; result['stage']=stage
         result['variables_si']=point.tolist()
         history.append(result)
+        if best is None or better(result,best): best=result
         if result['search_feasible']:
             accepted.append(result)
             if checkpoint: checkpoint(result)
@@ -48,10 +50,21 @@ def search(contract, evaluate, checkpoint=None):
     def score(r):
         return float(np.max(np.abs(r))) if len(r) else 0.
 
+    def better(candidate,incumbent):
+        # Every observation counts, including probes before an incomplete
+        # Jacobian/budget exit. Hard feasibility always precedes preferences.
+        if candidate['search_feasible']!=incumbent['search_feasible']:
+            return candidate['search_feasible']
+        if candidate['search_feasible']:
+            key=preference_key(contract,candidate)
+            previous=preference_key(contract,incumbent)
+            return key is not None and (previous is None or key<previous)
+        r=residual(candidate); previous=residual(incumbent)
+        return r is not None and (previous is None or score(r)<score(previous))
+
     current=call(x,'initial'); reason='evaluation_only' if not len(x) else 'budget_exhausted'
     if current is None: raise ValueError('budget insuffisant même pour évaluation initiale')
     if checkpoint and not current['search_feasible']: checkpoint(current)
-    best=current
     # Explicit reproducible restarts used only when the local iteration cannot progress.
     rng=np.random.default_rng(0)
     for iteration in range(budget['iterations'] if len(x) else 0):
@@ -68,7 +81,7 @@ def search(contract, evaluate, checkpoint=None):
                     trial=call(proposal,'lexicographic_poll')
                     candidate_key=None if trial is None else preference_key(contract,trial)
                     if trial is not None and trial['search_feasible'] and candidate_key is not None and candidate_key<key:
-                        x=proposal;current=trial;best=trial;key=candidate_key;improved=True
+                        x=proposal;current=trial;key=candidate_key;improved=True
             if not improved:
                 reason='local_preference_poll_complete';break
             continue
@@ -101,8 +114,6 @@ def search(contract, evaluate, checkpoint=None):
             rr=None if trial is None else residual(trial)
             if rr is not None and score(rr)<score(r):
                 x=proposal; current=trial; moved=True
-                br=residual(best)
-                if br is None or score(rr)<score(br): best=trial
                 if checkpoint and not trial['search_feasible']: checkpoint(trial)
                 break
         if not moved:
@@ -111,9 +122,6 @@ def search(contract, evaluate, checkpoint=None):
             rr=None if trial is None else residual(trial)
             if rr is None: reason='budget_or_unresolved_restart'; break
             x=proposal; current=trial
-            br=residual(best)
-            if br is None or score(rr)<score(br): best=trial
-    if current['search_feasible']: best=current
     return dict(history=history,best=best,accepted=accepted,termination=reason,
                 local_jacobians=rank_diagnostics,evaluations=len(history),
                 elapsed_seconds=time.monotonic()-start,seed=0,
