@@ -427,10 +427,12 @@ def _run(config, assembly, request, output_dir, *, dry_run=False):
 
 
 def run(config, assembly, request, output_dir, *, dry_run=False):
-    """Public POSIX supervision: the whole call is bounded, including preflight.
+    """Public POSIX supervision of preparation, including preflight.
 
     POSIX callers use the main thread with no pre-existing real-time alarm;
     execute() remains available under an independently supervised API host.
+    The alarm is restored before the terminal link; an external supervisor is
+    needed to bound the entire call, including that final filesystem operation.
     Portable dry-run does not require the POSIX execution machinery.
     """
     if os.name != 'posix':

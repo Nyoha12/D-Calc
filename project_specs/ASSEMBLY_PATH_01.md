@@ -392,8 +392,10 @@ witness = read_checkpoint(new_output_dir, contract)
 ```
 
 `run` supervise un enfant POSIX, BLAS à un thread, mémoire virtuelle 768 Mio,
-CPU 175 s et mur 180 s. L’ensemble de l’appel, préparation et publication comprises,
-est borné à 200 s par une alarme POSIX. Le client utilise le thread principal
+CPU 175 s et mur 180 s. La préparation, préflight et écritures candidates compris,
+dispose d'une alarme POSIX de 200 s. Cette alarme est restaurée avant le lien
+terminal ; borner l'appel entier, y compris cette dernière opération de système
+de fichiers, exige un superviseur externe. Le client utilise le thread principal
 sans alarme préexistante. Il récolte son propre enfant. Les signaux et expirations
 ne sont pas des succès métier. L'API synchrone `execute(contract, plan, output)`
 est destinée à un appelant qui a déjà préparé la sortie et imposé cette
