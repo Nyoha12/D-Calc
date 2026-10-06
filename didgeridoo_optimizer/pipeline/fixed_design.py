@@ -54,14 +54,17 @@ def _software_source() -> dict[str, Any]:
         return {"sha": None, "origin": f"Git source revision could not be established: {reason}", "working_tree_dirty": None}
 
 
-def load_fixed_context(config_path: str | Path, design_path: str | Path, *, output_dir_override: str | Path | None = None) -> dict[str, Any]:
-    # Reuse only existing read/schema/path helpers, never load_context (which builds other phases).
+def load_analysis_context(config_path: str | Path, *, output_dir_override: str | Path | None = None) -> dict[str, Any]:
+    """Native CONFIG/DB read, without a Design or output side effect.
+
+    Generated in-memory designs must supply their own identity and parent provenance;
+    this context deliberately contains no ``design`` file fingerprint.
+    """
     from .run_optimizer import OptimizerRunner
 
     adapter = OptimizerRunner()
     config_file = Path(config_path).resolve()
-    design_file = Path(design_path).resolve()
-    sources = {"config": _file_source(config_file), "design": _file_source(design_file)}
+    sources = {"config": _file_source(config_file)}
     config_file, config = adapter._load_config_file(config_file)
     config = adapter._apply_output_dir_override(config, output_dir_override)
     effective = validate_analysis(config)
@@ -72,8 +75,6 @@ def load_fixed_context(config_path: str | Path, design_path: str | Path, *, outp
     sources["materials"] = _file_source(materials_path)
     sources["variant_rules"] = _file_source(variants_path, optional=True)
     material_db = MaterialDatabase.from_yaml(materials_path, variant_rules_path=variants_path)
-    design_file, design = load_design(design_file, material_db, config)
-    # If files changed while loading, do not claim a fingerprint for different bytes.
     for label, source in sources.items():
         if _file_source(Path(source["path"]), optional=label == "variant_rules") != source:
             raise ValueError(f"Input changed while loading: {source['path']}")
@@ -81,14 +82,31 @@ def load_fixed_context(config_path: str | Path, design_path: str | Path, *, outp
     return {
         "config": config,
         **schema,
-        "design": design,
         "material_db": material_db,
-        "materials_used": {material_id: material_db.get(material_id).as_dict() for material_id in dict.fromkeys(design.material_ids)},
         "effective_parameters": effective,
         "provenance": {"files": sources, "software": _software_source()},
         "output_dir": adapter._resolve_output_dir(config_file, config, create=False),
         "warnings": warnings,
     }
+
+
+def load_fixed_context(config_path: str | Path, design_path: str | Path, *, output_dir_override: str | Path | None = None) -> dict[str, Any]:
+    design_file = Path(design_path).resolve()
+    design_source = _file_source(design_file)
+    context = load_analysis_context(config_path, output_dir_override=output_dir_override)
+    _, design = load_design(design_file, context["material_db"], context["config"])
+    sources = context["provenance"]["files"]
+    sources = {"config": sources["config"], "design": design_source,
+               "materials": sources["materials"], "variant_rules": sources["variant_rules"]}
+    context["provenance"]["files"] = sources
+    for label, source in sources.items():
+        if _file_source(Path(source["path"]), optional=label == "variant_rules") != source:
+            raise ValueError(f"Input changed while loading: {source['path']}")
+    context.update(design=design, materials_used={
+        material_id: context["material_db"].get(material_id).as_dict()
+        for material_id in dict.fromkeys(design.material_ids)})
+    context["provenance"]["software"] = _software_source()
+    return context
 
 
 def run_fixed_design(config_path: str | Path, design_path: str | Path, *, dry_run: bool = False, output_dir_override: str | Path | None = None) -> dict[str, Any]:
