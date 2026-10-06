@@ -244,3 +244,32 @@ def test_fixed_stock_and_conical_volume(db):
     piece['stock']['length']=q(.39)
     with pytest.raises(InvalidAssembly,match='stock insuffisant'):
         Assembly(raw,db,{}).generate('nominal')
+
+
+@pytest.mark.parametrize('value,unit', [(.35,'m'), (35,'cm'), (350,'mm')])
+def test_physical_field_uses_geometry_decimal_convention(value, unit):
+    raw=fixed();raw['pieces']['body']['segments'][0]['length']=q(value,unit)
+    path='pieces.body.segments.first.length'
+    assert field_info(raw,path,exact=True)[0] == Fraction(7,20)
+    assert field_info(raw,path)[0] == .35
+    original=copy.deepcopy(raw)
+    set_field(raw,path,Fraction(7,20))
+    assert raw == original
+    set_field(raw,path,Fraction(3,10))
+    assert field_info(raw,path,exact=True)[0] == Fraction(3,10)
+
+
+def test_exact_derived_write_refuses_rounding_to_a_different_decimal():
+    raw=fixed();original=copy.deepcopy(raw)
+    with pytest.raises(InvalidAssembly,match='non représentable'):
+        set_field(raw,'pieces.body.segments.first.length',Fraction(30000000000000001,10**17))
+    assert raw == original
+
+
+def test_exact_write_uses_existing_unit_when_metres_cannot_represent_it():
+    raw=fixed();path='pieces.body.segments.first.length'
+    exact=Fraction('0.30000000000000004')/100
+    assert Fraction(str(float(exact))) != exact
+    set_field(raw,path,exact)
+    assert field_info(raw,path,exact=True)[0] == exact
+    assert raw['pieces']['body']['segments'][0]['length']==q(.30000000000000004,'cm')

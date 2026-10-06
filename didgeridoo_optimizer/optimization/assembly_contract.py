@@ -4,11 +4,12 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+from fractions import Fraction
 from types import SimpleNamespace
 
 from .design_contract import (Contract, InvalidRequest, obj, number, integer, identifier,
                               quantity, UNITS, expression, _stripped)
-from ..geometry.assemblies import Assembly, field_info, set_field
+from ..geometry.assemblies import Assembly, exact_quantity, field_info, set_field
 
 SCHEMA = 'dcalc.assembly_request.v1'
 LIMITS = dict(candidates=32, evaluations=300, projections=4096, spectral_calls=10000,
@@ -26,14 +27,14 @@ def physical_expression(expr, raw, depth=0):
         raise InvalidRequest('relation trop profonde')
     obj(expr, {'field', 'constant', 'affine', 'offset'}, 'relation')
     if set(expr) == {'field'}:
-        value, dim, _ = field_info(raw, expr['field'])
+        value, dim, _ = field_info(raw, expr['field'], exact=True)
         return value, dim, {expr['field']}
     if set(expr) == {'constant'}:
-        value, dim = quantity(expr['constant'])
+        value, dim = exact_quantity(expr['constant'])
         return value, dim, set()
     if set(expr) != {'affine', 'offset'}:
         raise InvalidRequest('relation affine typée requise')
-    value, dim = quantity(expr['offset']); deps = set()
+    value, dim = exact_quantity(expr['offset']); deps = set()
     terms = expr['affine']
     if not isinstance(terms, list) or not 1 <= len(terms) <= 64:
         raise InvalidRequest('relation: 1..64 termes')
@@ -42,7 +43,8 @@ def physical_expression(expr, raw, depth=0):
         v, d, refs = physical_expression(term['expression'], raw, depth + 1)
         if d != dim:
             raise InvalidRequest('relation: unités incompatibles')
-        value += number(term['coefficient'], 'coefficient') * v
+        number(term['coefficient'], 'coefficient')
+        value += Fraction(str(term['coefficient'])) * v
         deps |= refs
     return value, dim, deps
 
@@ -50,8 +52,8 @@ def physical_expression(expr, raw, depth=0):
 def bounds(v):
     if v['unit'] not in UNITS or not isinstance(v['bounds'], list) or len(v['bounds']) != 2:
         raise InvalidRequest('bornes dimensionnées requises')
-    lo, dim = quantity(dict(value=v['bounds'][0], unit=v['unit']))
-    hi, _ = quantity(dict(value=v['bounds'][1], unit=v['unit']))
+    lo, dim = exact_quantity(dict(value=v['bounds'][0], unit=v['unit']))
+    hi, _ = exact_quantity(dict(value=v['bounds'][1], unit=v['unit']))
     if not lo < hi:
         raise InvalidRequest('bornes strictement ordonnées requises')
     return lo, hi, dim
@@ -133,13 +135,13 @@ class AssemblyContract:
                 raise InvalidRequest('variables dupliquées/vides')
             ids.add(ident); lo, hi, dim = bounds(v); initial = []
             for f in v['fields']:
-                val, d, _ = field_info(self.base, f)
+                val, d, _ = field_info(self.base, f, exact=True)
                 if f in self.fields or d != dim or lo < 0 or (lo == 0 and not f.startswith('configurations.')):
                     raise InvalidRequest('liaison double, borne ou unité incorrecte')
                 self.fields.add(f); initial.append(val)
             if any(val != initial[0] for val in initial) or not lo <= initial[0] <= hi:
                 raise InvalidRequest('liaison/valeur initiale hors bornes')
-            self.variables.append(dict(v, low=lo, high=hi, initial=initial[0]))
+            self.variables.append(dict(v, low=float(lo), high=float(hi), initial=float(initial[0])))
         pending = {}
         derived = r.get('derived', [])
         if not isinstance(derived, list) or len(derived) > 64:
@@ -148,12 +150,12 @@ class AssemblyContract:
             obj(d, {'id', 'field', 'expression', 'unit', 'bounds'}, 'derived',
                 {'id', 'field', 'expression', 'unit', 'bounds'})
             ident = identifier(d['id'], 'derived.id'); lo, hi, dim = bounds(d)
-            value, fd, _ = field_info(self.base, d['field'])
+            value, fd, _ = field_info(self.base, d['field'], exact=True)
             expected, ed, deps = physical_expression(d['expression'], self.base)
             if ident in ids or d['field'] in self.fields or fd != dim or ed != dim or value != expected or not lo <= value <= hi:
                 raise InvalidRequest('relation dérivée incompatible avec assemblage')
             ids.add(ident); self.fields.add(d['field'])
-            pending[d['field']] = dict(d, low=lo, high=hi, deps=deps)
+            pending[d['field']] = dict(d, low=float(lo), high=float(hi), deps=deps)
         while pending:
             ready = [f for f, d in pending.items() if not d['deps'] & pending.keys()]
             if not ready:
@@ -209,7 +211,7 @@ class AssemblyContract:
                 _, dim, _ = field_info(raw, f)
                 if f in self.fields:
                     raise InvalidRequest('catalogue et variable écrivent le même champ')
-                set_field(raw, f, quantity(q, dim)[0])
+                set_field(raw, f, exact_quantity(q, dim)[0])
             orientations = alternative.get('orientations', {})
             if not isinstance(orientations, dict):
                 raise InvalidRequest('orientations: objet')
@@ -231,12 +233,14 @@ class AssemblyContract:
         if mask(raw, self.fields) != expected:
             raise InvalidRequest('verrous physiques violés')
         for v in self.variables:
-            values = [field_info(raw, f)[0] for f in v['fields']]
-            if any(x != values[0] for x in values) or not v['low'] <= values[0] <= v['high']:
+            values = [field_info(raw, f, exact=True)[0] for f in v['fields']]
+            lo, hi, _ = bounds(v)
+            if any(x != values[0] for x in values) or not lo <= values[0] <= hi:
                 raise InvalidRequest('liaison/bornes physiques violées')
         for d in self.derived:
-            val = field_info(raw, d['field'])[0]
-            if val != physical_expression(d['expression'], raw)[0] or not d['low'] <= val <= d['high']:
+            val = field_info(raw, d['field'], exact=True)[0]
+            lo, hi, _ = bounds(d)
+            if val != physical_expression(d['expression'], raw)[0] or not lo <= val <= hi:
                 raise InvalidRequest('relation physique violée')
 
     def generate(self, values, alternative):
@@ -245,7 +249,8 @@ class AssemblyContract:
         raw = copy.deepcopy(alternative['base'])
         for v, value in zip(self.variables, values):
             value = number(value, 'candidat')
-            if not v['low'] <= value <= v['high']:
+            lo, hi, _ = bounds(v)
+            if not lo <= Fraction(str(value)) <= hi:
                 raise InvalidRequest('candidat hors bornes')
             for f in v['fields']:
                 set_field(raw, f, value)

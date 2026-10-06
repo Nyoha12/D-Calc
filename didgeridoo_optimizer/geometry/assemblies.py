@@ -52,13 +52,17 @@ def read_assembly(path):
     return raw, {'name': source.name, 'sha256': hashlib.sha256(data).hexdigest(), 'read': True}
 
 
+def exact_quantity(value, dimension=None):
+    """Native quantity validation, with the decimal input interpreted exactly."""
+    _, dim = quantity(value, dimension)
+    return Fraction(str(value['value'])) * Fraction(str(UNITS[value['unit']][1])), dim
+
+
 def _q(value, where, *, positive=True):
-    si, _ = quantity(value, 'length')
+    si, _ = exact_quantity(value, 'length')
     if not math.isfinite(si) or (si <= 0 if positive else si < 0):
         raise InvalidAssembly(f'{where}: longueur {"positive" if positive else "non négative"} finie requise')
-    # Decimal spelling of each input number, multiplied by an exact SI factor.
-    result = Fraction(str(value['value'])) * Fraction(str(UNITS[value['unit']][1]))
-    return result
+    return si
 
 
 def _annotations(value, where):
@@ -96,23 +100,33 @@ def _field(raw, path):
     raise InvalidAssembly(f'champ physique absent/non variable: {path}')
 
 
-def field_info(raw, path):
+def field_info(raw, path, *, exact=False):
     """Return SI value, dimension and source-unit factor for a stable physical ID."""
     container, key, _ = _field(raw, path)
     try:
         value = container[key]
     except KeyError as exc:
         raise InvalidAssembly(f'champ non déclaré: {path}') from exc
-    si, dim = quantity(value, 'length')
-    return si, dim, UNITS[value['unit']][1]
+    si, dim = exact_quantity(value, 'length')
+    return si if exact else float(si), dim, UNITS[value['unit']][1]
 
 
 def set_field(raw, path, si):
-    """Set a declared degree of freedom canonically in SI; parent retains notation."""
-    _, _, factor = field_info(raw, path)
+    """Set an exposed field; prefer SI, but never round an exact relation."""
+    current, _, _ = field_info(raw, path, exact=True)
+    container, key, _ = _field(raw, path)
+    if isinstance(si, Fraction):
+        if si == current:
+            return  # Keep an already exact nominal quantity and its notation.
+        for unit in ('m', 'cm', 'mm'):
+            factor = Fraction(str(UNITS[unit][1]))
+            converted = float(si / factor)
+            if math.isfinite(converted) and Fraction(str(converted)) * factor == si:
+                container[key] = {'value': converted, 'unit': unit}
+                return
+        raise InvalidAssembly(f'{path}: relation exacte non représentable en quantité numérique m/cm/mm')
     if isinstance(si, bool) or not isinstance(si, (int, float)) or not math.isfinite(si):
         raise InvalidAssembly(f'{path}: valeur SI finie requise')
-    container, key, _ = _field(raw, path)
     container[key] = {'value': float(si), 'unit': 'm'}
 
 

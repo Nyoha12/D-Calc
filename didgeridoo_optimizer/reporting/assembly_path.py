@@ -12,11 +12,40 @@ import sys
 from .constrained_design import (fingerprint, versions, verify_sources, csv_write,
                                  new_destination, source_files as native_sources)
 from .regime_reference import (safe_path, atomic_bytes, write_json, read_json,
-                               read_execution, file_sha256)
+                               read_execution as legacy_read_execution, file_sha256)
 from ..pipeline.fixed_design import _software_source
 
 ROOT = Path(__file__).resolve().parents[2]
 CHECKPOINT_SCHEMA = 'dcalc.assembly_checkpoint.v1'
+COMPLETION_PROTOCOL = 'dcalc.assembly_completion.v1'
+PREPARED_COMPLETION = '.pending-execution-completion.json'
+
+
+def completion_record(output):
+    out = Path(output)
+    return dict(schema=COMPLETION_PROTOCOL,
+                execution_sha256=file_sha256(out/'execution.json'),
+                closure_sha256=file_sha256(out/'execution.closed.json'))
+
+
+def read_execution(output):
+    """Versioned assembly authority; historical closures keep their old meaning."""
+    value = legacy_read_execution(output)
+    if not value.get('ok'):
+        return value
+    protocol = value.get('completion_protocol')
+    if 'completion_protocol' not in value:
+        return dict(value, completion_assurance='legacy_closure')
+    try:
+        if protocol != COMPLETION_PROTOCOL:
+            raise ValueError('protocole de clôture inconnu')
+        out = safe_path(output)
+        completed = read_json(safe_path(out/'execution.completed.json'))
+        if completed != completion_record(out):
+            raise ValueError('commit terminal incohérent')
+    except (OSError, ValueError, TypeError) as exc:
+        return dict(ok=False, status='unconfirmed', reason='terminal_receipt_unavailable: '+str(exc))
+    return dict(value, completion_assurance='terminal_commit')
 
 
 def source_files():

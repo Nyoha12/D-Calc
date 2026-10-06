@@ -441,3 +441,163 @@ def test_source_changed_since_import_is_refused_before_preflight(tmp_path,monkey
     with pytest.raises(ValueError,match='sources producteur modifiées'):
         pipeline.run(*paths,tmp_path/'changed',dry_run=True)
     assert not (tmp_path/'changed').exists()
+
+
+@pytest.mark.parametrize('point', [
+    'closed_after', 'prepared_after', 'closed_fsync', 'closed_close',
+    'prepared_fsync', 'prepared_close', 'restore_int', 'restore_term',
+    'disarm_alarm', 'restore_alarm', 'terminal_link'])
+def test_preterminal_failure_never_needs_successful_cancellation(tmp_path,monkeypatch,point):
+    import stat
+    paths=files(tmp_path);out=tmp_path/'out'
+    original_write=reporting.write_json;original_fsync=os.fsync;original_close=os.close
+    original_signal=signal.signal;original_timer=signal.setitimer;original_link=os.link
+    saved={s:signal.getsignal(s) for s in (signal.SIGINT,signal.SIGTERM,signal.SIGALRM)}
+    state={'active':None,'fired':False,'cancel_attempts':0}
+    prepared='.pending-execution-completion.json'
+    def fail():
+        state['fired']=True
+        raise KeyboardInterrupt('injected before terminal commit: '+point)
+    def write(path,value,**kw):
+        name=Path(path).name
+        if name=='execution.cancelled.json':
+            state['cancel_attempts']+=1
+            raise OSError('cancellation notification unavailable')
+        state['active']=name
+        try:
+            result=original_write(path,value,**kw)
+            if (point=='closed_after' and name=='execution.closed.json' or
+                    point=='prepared_after' and name==prepared):fail()
+            return result
+        finally:state['active']=None
+    def fsync(fd):
+        result=original_fsync(fd)
+        name='execution.closed.json' if point=='closed_fsync' else prepared if point=='prepared_fsync' else None
+        if name and state['active']==name and stat.S_ISDIR(os.fstat(fd).st_mode):fail()
+        return result
+    def close(fd):
+        directory=stat.S_ISDIR(os.fstat(fd).st_mode)
+        result=original_close(fd)
+        name='execution.closed.json' if point=='closed_close' else prepared if point=='prepared_close' else None
+        if name and state['active']==name and directory:fail()
+        return result
+    def handler(sig,value):
+        result=original_signal(sig,value)
+        watched={'restore_int':signal.SIGINT,'restore_term':signal.SIGTERM,'restore_alarm':signal.SIGALRM}.get(point)
+        if sig==watched and value==saved[sig] and (out/'execution.closed.json').exists():fail()
+        return result
+    def timer(which,seconds,*args):
+        result=original_timer(which,seconds,*args)
+        if point=='disarm_alarm' and seconds==0 and (out/'execution.closed.json').exists():fail()
+        return result
+    def link(src,dst,**kw):
+        if point=='terminal_link' and Path(dst).name=='execution.completed.json':fail()
+        return original_link(src,dst,**kw)
+    with monkeypatch.context() as patch:
+        patch.setattr(reporting,'write_json',write);patch.setattr(os,'fsync',fsync)
+        patch.setattr(os,'close',close);patch.setattr(signal,'signal',handler)
+        patch.setattr(signal,'setitimer',timer);patch.setattr(os,'link',link)
+        try:
+            with pytest.raises(KeyboardInterrupt,match='before terminal commit'):
+                pipeline.run(*paths,out)
+        finally:
+            try:
+                assert signal.getitimer(signal.ITIMER_REAL)==(0.,0.)
+                assert all(signal.getsignal(sig)==value for sig,value in saved.items())
+            finally:
+                original_timer(signal.ITIMER_REAL,0.)
+                for sig,value in saved.items():original_signal(sig,value)
+    assert state['fired']
+    if point.startswith(('closed_','prepared_')):assert state['cancel_attempts']==1
+    assert not (out/'execution.completed.json').exists()
+    assert not reporting.read_result(out)['ok']
+    execution=reporting.read_json(out/'execution.json')
+    assert execution['child']==dict(exit_code=0,reaped=True)
+
+
+def test_terminal_commit_follows_restoration_and_later_event_does_not_reopen_it(tmp_path,monkeypatch):
+    paths=files(tmp_path);out=tmp_path/'out';original=os.link
+    saved={s:signal.getsignal(s) for s in (signal.SIGINT,signal.SIGTERM,signal.SIGALRM)}
+    def link(src,dst,**kw):
+        if Path(dst).name=='execution.completed.json':
+            assert signal.getitimer(signal.ITIMER_REAL)==(0.,0.)
+            assert all(signal.getsignal(s)==h for s,h in saved.items())
+            assert not reporting.read_result(out)['ok']
+            original(src,dst,**kw)
+            raise KeyboardInterrupt('event after completed terminal commit')
+        return original(src,dst,**kw)
+    monkeypatch.setattr(os,'link',link)
+    with pytest.raises(KeyboardInterrupt,match='after completed terminal commit'):
+        pipeline.run(*paths,out)
+    assert not (out/'execution.cancelled.json').exists()
+    closed=reporting.read_result(out)
+    assert closed['ok'] and closed['execution']['completion_assurance']=='terminal_commit'
+
+
+@pytest.mark.parametrize('protocol,expected', [('absent',True),(None,False),('dcalc.assembly_completion.v1',False),('unknown',False)])
+def test_completion_reader_explicit_legacy_and_version_policy(tmp_path,protocol,expected):
+    receipt=dict(ok=True,child=dict(exit_code=0,reaped=True))
+    if protocol!='absent':receipt['completion_protocol']=protocol
+    reporting.write_json(tmp_path/'execution.json',receipt)
+    reporting.write_json(tmp_path/'execution.closed.json',dict(
+        execution_sha256=reporting.file_sha256(tmp_path/'execution.json'),cancelled=False))
+    read=reporting.read_execution(tmp_path)
+    assert read['ok'] is expected
+    if protocol=='absent':assert read['completion_assurance']=='legacy_closure'
+    if protocol=='dcalc.assembly_completion.v1':
+        record=reporting.completion_record(tmp_path)
+        reporting.write_json(tmp_path/'execution.completed.json',record)
+        assert reporting.read_execution(tmp_path)['ok']
+        reporting.write_json(tmp_path/'execution.cancelled.json',dict(ok=False,status='interrupted',
+            execution_sha256=reporting.file_sha256(tmp_path/'execution.json')))
+        assert not reporting.read_execution(tmp_path)['ok']
+
+
+def test_played_observation_preserves_selected_candidate_and_every_hard_row(tmp_path):
+    base=tmp_path/'base';base.mkdir();observed=tmp_path/'observed';observed.mkdir()
+    data=fixed_inputs();paths=files(base,data)
+    baseline=pipeline.run(*paths,base/'out')
+    baseline_result=reporting.read_result(base/'out')['result']
+    data[2]['projections'][0]['request']['criteria'].append(dict(id='played',observable='played_frequency',
+        target=q(140,'Hz'),unit='Hz',tolerance=q(1,'Hz'),level='played',scope={},role='observe'))
+    response=pipeline.run(*files(observed,data),observed/'out')
+    result=reporting.read_result(observed/'out')['result']
+    assert baseline['ok'] and baseline['conforming']
+    assert response['ok'] and response['hard_conforming'] and response['sampled_hard_conforming']
+    assert not response['conforming'] and not response['request_fully_covered']
+    assert response['status']=='hard_conforming_partial_coverage'
+    assert result['best']['alternative']==baseline_result['best']['alternative']
+    assert result['best']['variables_si']==baseline_result['best']['variables_si']
+    assert result['best']['assembly']==baseline_result['best']['assembly']
+    for key in ('best','history'):
+        before=[baseline_result[key]] if key=='best' else baseline_result[key]
+        after=[result[key]] if key=='best' else result[key]
+        assert len(before)==len(after)
+        for old,new in zip(before,after):
+            assert [r for r in new['criteria'] if r['role']=='hard']==[r for r in old['criteria'] if r['role']=='hard']
+
+
+@pytest.mark.parametrize('name',['execution.closed.json','.pending-execution-completion.json'])
+def test_preterminal_io_error_and_failed_cancellation_remain_unconfirmed(tmp_path,monkeypatch,name):
+    paths=files(tmp_path);out=tmp_path/'out';original=reporting.write_json
+    def write(path,value,**kw):
+        if Path(path).name=='execution.cancelled.json':raise OSError('cancel write failed')
+        result=original(path,value,**kw)
+        if Path(path).name==name:raise OSError('prepared write failed')
+        return result
+    monkeypatch.setattr(reporting,'write_json',write)
+    response=pipeline.run(*paths,out)
+    assert not response['ok'] and response['reason']=='prepared write failed'
+    assert not reporting.read_result(out)['ok']
+    assert not (out/'execution.completed.json').exists()
+
+
+@pytest.mark.parametrize('key',['schema','execution_sha256','closure_sha256'])
+def test_terminal_marker_cannot_bind_a_different_receipt(tmp_path,key):
+    reporting.write_json(tmp_path/'execution.json',dict(ok=True,completion_protocol=reporting.COMPLETION_PROTOCOL,
+        child=dict(exit_code=0,reaped=True)))
+    reporting.write_json(tmp_path/'execution.closed.json',dict(cancelled=False,
+        execution_sha256=reporting.file_sha256(tmp_path/'execution.json')))
+    record=reporting.completion_record(tmp_path);record[key]='different'
+    reporting.write_json(tmp_path/'execution.completed.json',record)
+    assert not reporting.read_execution(tmp_path)['ok']

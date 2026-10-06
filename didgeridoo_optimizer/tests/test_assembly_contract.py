@@ -191,3 +191,59 @@ def test_native_hard_geometry_contradiction_not_masked():
     data=fixed_inputs();request=data[2]['projections'][0]['request']
     request['criteria']=[geometry_request(.7)['criteria'][0],dict(geometry_request(.8)['criteria'][0],id='incompatible')]
     with pytest.raises(ValueError,match='contradiction directe'):make(data)
+
+
+@pytest.mark.parametrize('unit,scale', [('m',1),('cm',100),('mm',1000)])
+def test_decimal_affine_relation_accepts_exact_sum_and_rejects_neighbour(unit, scale):
+    from fractions import Fraction
+    data=fixed_inputs();raw,request=data[1:]
+    raw['pieces']['body']['segments'][0]['length']=q(.3*scale,unit)
+    raw['annotations']={'nominal':'0.1 + 0.2 m'}
+    request['metadata']={'notation':'somme décimale nominale'}
+    request['projections'][0]['request']=geometry_request(.7)
+    request['derived']=[dict(id='decimal',field='pieces.body.segments.first.length',
+        unit=unit,bounds=[.2*scale,.4*scale],expression=dict(
+            affine=[dict(coefficient=1,expression={'constant':q(.1*scale,unit)})],
+            offset=q(.2*scale,unit)))]
+    original=copy.deepcopy(data[1:]);c=make(data)
+    assert physical_expression(request['derived'][0]['expression'],raw)[0] == Fraction(3,10)
+    assert c.plan()['degrees_of_freedom'] == 0 and len(c.derived) == 1
+    assert c.generate([],c.catalogue[0]).raw == original[0]
+    assert c.base == original[0] and c.request == original[1] and data[1:] == original
+    raw['pieces']['body']['segments'][0]['length']=q(.30000000000000004)
+    with pytest.raises(ValueError,match='relation dérivée'):make(data)
+    altered=c.generate([],c.catalogue[0]).raw
+    altered['pieces']['body']['segments'][0]['length']=q(.30000000000000004)
+    with pytest.raises(ValueError,match='relation physique'):c.check_locks(altered)
+
+
+def test_decimal_chained_relations_linked_units_bounds_and_locked_fields():
+    data=fixed_inputs();raw,request=data[1:];segments=raw['pieces']['body']['segments']
+    segments[0]['length']=q(10,'cm');segments[1]['length']=q(300,'mm')
+    third=copy.deepcopy(segments[0]);third.update(id='third',length=q(.35))
+    fourth=copy.deepcopy(segments[0]);fourth.update(id='fourth',length=q(100,'mm'))
+    segments.extend([third,fourth]);request['projections'][0]['request']=geometry_request(.85)
+    prefix='pieces.body.segments.'
+    request['variables']=[dict(id='shared',fields=[prefix+'first.length',prefix+'fourth.length'],
+        unit='cm',bounds=[10,20])]
+    # Deliberately reverse declaration order; evaluation follows dependencies.
+    request['derived']=[dict(id='third',field=prefix+'third.length',unit='mm',bounds=[350,450],
+        expression=dict(affine=[dict(coefficient=1,expression={'field':prefix+'bell.length'})],offset=q(5,'cm'))),
+        dict(id='bell',field=prefix+'bell.length',unit='m',bounds=[.3,.4],
+        expression=dict(affine=[dict(coefficient=1,expression={'field':prefix+'first.length'})],offset=q(.2)))]
+    c=make(data);a=c.generate([.2],c.catalogue[0]);c.check_locks(a.raw)
+    assert c.plan()['degrees_of_freedom']==1 and len(c.derived)==2
+    assert [field_info(a.raw,prefix+name+'.length')[0] for name in ('first','bell','third','fourth')]==[.2,.4,.45,.2]
+    assert c.base==raw and c.request==request
+    altered=a.raw;altered['pieces']['body']['segments'][3]['length']=q(.20000000000000004)
+    with pytest.raises(ValueError,match='liaison'):c.check_locks(altered)
+    with pytest.raises(ValueError,match='hors bornes'):c.generate([.20000000000000004],c.catalogue[0])
+    altered=a.raw;altered['pieces']['body']['segments'][0]['diameter_in']=q(.031)
+    with pytest.raises(ValueError,match='verrous'):c.check_locks(altered)
+
+
+@pytest.mark.parametrize('coefficient,offset,expected',[(.1,.2,.23),(-.1,.2,.17)])
+def test_affine_decimal_coefficients_are_exact(coefficient,offset,expected):
+    from fractions import Fraction
+    expr=dict(affine=[dict(coefficient=coefficient,expression={'constant':q(.3)})],offset=q(offset))
+    assert physical_expression(expr,{})[:2] == (Fraction(str(expected)),'length')

@@ -366,10 +366,10 @@ def _run(config, assembly, request, output_dir, *, dry_run=False):
     env = dict(os.environ, OPENBLAS_NUM_THREADS='1', OMP_NUM_THREADS='1', MKL_NUM_THREADS='1',
                NUMEXPR_NUM_THREADS='1', PYTHONDONTWRITEBYTECODE='1')
     handlers = {}; child = None; response = None; started = time.monotonic()
-    if threading.current_thread() is threading.main_thread():
-        for signum in (signal.SIGINT, signal.SIGTERM):
-            handlers[signum] = signal.signal(signum, interrupt_run)
     try:
+        if threading.current_thread() is threading.main_thread():
+            for signum in (signal.SIGINT, signal.SIGTERM):
+                handlers[signum] = signal.signal(signum, interrupt_run)
         child = subprocess.Popen([sys.executable, '-B', '-m', 'tools.assembly_path', '--worker'],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
             cwd=ROOT, env=env, preexec_fn=child_limits)
@@ -382,9 +382,13 @@ def _run(config, assembly, request, output_dir, *, dry_run=False):
             response['manifest_sha256'] = report.file_sha256(output/'manifest.json')
         if stderr:
             response['diagnostic'] = stderr[-4000:]
+        response['completion_protocol'] = report.COMPLETION_PROTOCOL
         report.write_json(output/'execution.json', response)
         report.write_json(output/'execution.closed.json',
                           dict(execution_sha256=report.file_sha256(output/'execution.json'), cancelled=False))
+        # These synchronized files are only candidates. The public caller still
+        # has fallible signal/alarm restoration to finish before committing.
+        report.write_json(output/report.PREPARED_COMPLETION, report.completion_record(output))
         return response
     except (BaseException,) as exc:
         if child is not None and child.poll() is None:
@@ -393,19 +397,33 @@ def _run(config, assembly, request, output_dir, *, dry_run=False):
         response = dict(ok=False, status='interrupted' if interrupted else 'failed', reason=str(exc),
                         child=dict(exit_code=None if child is None else child.returncode, reaped=True),
                         wall_seconds=time.monotonic()-started)
-        if (output/'execution.json').exists():
-            report.write_json(output/'execution.cancelled.json',
-                              dict(response, execution_sha256=report.file_sha256(output/'execution.json')))
-        else:
-            report.write_json(output/'execution.json', response)
+        try:
+            if (output/'execution.json').exists():
+                report.write_json(output/'execution.cancelled.json',
+                                  dict(response, execution_sha256=report.file_sha256(output/'execution.json')))
+            else:
+                report.write_json(output/'execution.json', response)
+        except (OSError, ValueError):
+            # Absence of terminal authority is sufficient, even on a full disk.
+            # A failed diagnostic must not replace the original interruption.
+            pass
         if isinstance(exc, (KeyboardInterrupt, SystemExit)):
             raise
         return response
     finally:
-        if child is not None and child.poll() is None:
-            child.kill(); child.communicate()
-        for signum, handler in handlers.items():
-            signal.signal(signum, handler)
+        try:
+            if child is not None and child.poll() is None:
+                child.kill(); child.communicate()
+        finally:
+            restore_error = None
+            for signum, handler in handlers.items():
+                try:
+                    signal.signal(signum, handler)
+                except BaseException as exc:
+                    if restore_error is None:
+                        restore_error = exc
+            if restore_error is not None:
+                raise restore_error
 
 
 def run(config, assembly, request, output_dir, *, dry_run=False):
@@ -425,13 +443,24 @@ def run(config, assembly, request, output_dir, *, dry_run=False):
         raise ValueError('API supervisée: alarme active; utiliser execute sous supervision externe')
     previous = signal.signal(signal.SIGALRM, interrupt_run)
     started = time.monotonic()
-    signal.setitimer(signal.ITIMER_REAL, PUBLIC_WALL_SECONDS)
     try:
-        return _run(config, assembly, request, output_dir, dry_run=dry_run)
+        signal.setitimer(signal.ITIMER_REAL, PUBLIC_WALL_SECONDS)
+        response = _run(config, assembly, request, output_dir, dry_run=dry_run)
     except RunInterrupted as exc:
         # Preflight can expire before a destination or child exists.
         return dict(ok=False, status='interrupted', reason=str(exc),
                     wall_seconds=time.monotonic()-started)
     finally:
-        signal.setitimer(signal.ITIMER_REAL, 0.)
-        signal.signal(signal.SIGALRM, previous)
+        try:
+            signal.setitimer(signal.ITIMER_REAL, 0.)
+        finally:
+            signal.signal(signal.SIGALRM, previous)
+    if response.get('ok') and not dry_run:
+        output = Path(output_dir)
+        # Terminal commit: all writes/fsyncs, child cleanup and handler/alarm
+        # restorations have finished. No fallible cleanup or cancellation follows
+        # this single no-overwrite link. Later events cannot undo its meaning.
+        # The final directory entry has no power-loss durability guarantee.
+        os.link(output/report.PREPARED_COMPLETION, output/'execution.completed.json',
+                follow_symlinks=False)
+    return response

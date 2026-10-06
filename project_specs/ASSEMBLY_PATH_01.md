@@ -225,6 +225,17 @@ L'expression physique peut être `{field: ...}`, `{constant: {value: ..., unit: 
 ou `{affine: [{coefficient: ..., expression: ...}], offset: {value: ..., unit: ...}}`.
 Les dépendances doivent être acycliques, compatibles dimensionnellement et
 satisfaites dans l'entrée initiale. Elles ajoutent des relations, pas des libertés.
+Quantités, coefficients affines, bornes et liaisons utilisent la même convention
+décimale rationnelle exacte que la géométrie : `0.1 m + 0.2 m = 0.3 m`, également
+en cm ou mm. `0.30000000000000004 m` reste une valeur différente, sans tolérance
+physique de secours. Les chaînes sont évaluées dans l'ordre des dépendances.
+Le parent, les annotations et les quantités nominales déjà exactes sont conservés.
+Le solveur conserve son interface numérique SI ; chaque candidat est revérifié
+exactement. La sérialisation préfère les mètres, puis utilise cm ou mm si cette
+notation permet de conserver exactement la valeur. Une nouvelle valeur dérivée
+impossible à sérialiser exactement dans ces quantités numériques est refusée
+explicitement, jamais arrondie pour faire passer une relation. Cela ne crée
+aucune liberté supplémentaire.
 Les critères géométriques projetés peuvent utiliser `total_length` ; les
 expressions visant `segments.N` sont refusées, car cet index peut changer à
 `q = 0`. Les dimensions individuelles sont contrôlées par les champs physiques,
@@ -253,6 +264,19 @@ constitue une violation ; l'absence de contre-exemple ne certifie pas l'interval
 `continuous_acoustics_certified` sont distincts. Une observation optionnelle
 indisponible ne retire pas la conformité d'obligations indépendantes ; elle
 reste visible dans la couverture globale (`hard_conforming_partial_coverage`).
+
+Dans la réponse de commande, `ok` signifie que l'exécution a terminé ; il ne
+certifie aucun objectif physique. `sampled_hard_conforming` porte sur les
+obligations vérifiées aux positions échantillonnées ; `hard_conforming` exige
+aussi la portée discrète déclarée. `request_fully_covered` inclut la disponibilité
+des observations et préférences demandées. `conforming` correspond au statut
+global `conforming`, qui exige cette couverture complète en plus des obligations.
+Ainsi une observation `played_frequency` non prise en charge peut laisser
+`hard_conforming=true`, avec `conforming=false`, `request_fully_covered=false`
+et `status=hard_conforming_partial_coverage`. Elle ne change ni les lignes hard
+ni la sélection du candidat. Ce sens global de `conforming` n'est pas le seul
+booléen de conformité hard de R41 ; cette différence de vocabulaire n'établit
+pas une contamination scientifique.
 
 ## Cas fixe complet, sans coulisse
 
@@ -399,11 +423,34 @@ SHA du dépôt canonique. Les modifications de source ou de contexte rendent la
 relecture/reprise incompatible.
 
 Les écritures sont atomiques et sans écrasement. `manifest.json` seul ne vaut
-pas reçu complet. Le lecteur exige `execution.json` et une fermeture cohérente
-`execution.closed.json`, avec enfant récolté et code zéro pour un succès.
-`execution.cancelled.json` a priorité. Un crash ou une interruption avant la
-fermeture normative ne devient pas un succès apparent, même si des fichiers
-de calcul ont déjà été publiés.
+pas reçu complet. Les nouveaux reçus `execution.json` portent
+`completion_protocol: dcalc.assembly_completion.v1`. `execution.closed.json`
+est une clôture candidate ; `.pending-execution-completion.json` contient les
+hashes du reçu et de cette clôture. Les écritures, synchronisations, fermetures,
+récolte de l'enfant et restaurations des handlers/alarme se terminent avant
+la publication terminale. Celle-ci est un unique lien atomique sans écrasement
+vers `execution.completed.json`, suivi du retour sans autre opération de clôture.
+Le lecteur exige ce marqueur cohérent, un enfant récolté et un code zéro pour
+annoncer le succès. `execution.cancelled.json` conserve sa priorité.
+
+Une erreur ou interruption avant ce commit reste non réussie, même si la
+notification d'annulation échoue elle aussi : l'absence d'autorité terminale
+suffit. Une interruption injectée après l'ancien helper de clôture se situe
+désormais avant le commit. À l'inverse, un événement réellement postérieur au
+lien terminal ne rend pas rétroactivement l'exécution non effectuée ; le lecteur
+peut alors confirmer le commit même si l'appelant observe cet événement.
+Il n'y a aucune garantie universelle contre une panne matérielle ou une coupure
+après commit : l'entrée finale du répertoire n'est pas resynchronisée après le lien.
+
+Compatibilité explicite : les reçus historiques sans `completion_protocol`
+restent interprétés selon l'ancienne clôture, avec
+`completion_assurance=legacy_closure`. Ils ne sont ni déclarés faux à cause du
+nouveau marqueur absent, ni réputés bénéficier rétroactivement de sa garantie.
+Les nouveaux reçus valides portent `completion_assurance=terminal_commit` à la
+lecture ; un protocole inconnu ou un marqueur manquant/incohérent reste non
+confirmé. La vérification des sources productrices de `read_result` reste
+indépendante : relire des résultats historiques complets exige toujours les
+sources et versions compatibles, sans réécrire leurs preuves.
 
 Un checkpoint est un témoin vérifiable accompagné de compteurs cumulés.
 `solver_state_complete` est faux : la lecture ne reprend pas automatiquement
