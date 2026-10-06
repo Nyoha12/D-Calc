@@ -1,0 +1,56 @@
+{
+  "id": "six_cylinders_static",
+  "metadata": {
+    "nature": "oracle dissipatif numérique, aucun instrument construit",
+    "annotations": [
+      "conserver",
+      {
+        "piece_commune": "non évaluée ici"
+      }
+    ]
+  },
+  "segments": [
+    {
+      "kind": "cylinder",
+      "length_cm": 12.99889463699567,
+      "d_in_cm": 3,
+      "d_out_cm": 3,
+      "material_id": "pvc_pressure"
+    },
+    {
+      "kind": "cylinder",
+      "length_cm": 23.831306834492064,
+      "d_in_cm": 4,
+      "d_out_cm": 4,
+      "material_id": "pvc_pressure"
+    },
+    {
+      "kind": "cylinder",
+      "length_cm": 32.49723659248917,
+      "d_in_cm": 3.5,
+      "d_out_cm": 3.5,
+      "material_id": "pvc_pressure"
+    },
+    {
+      "kind": "cylinder",
+      "length_cm": 32.49723659248917,
+      "d_in_cm": 4.6,
+      "d_out_cm": 4.6,
+      "material_id": "pvc_pressure"
+    },
+    {
+      "kind": "cylinder",
+      "length_cm": 30.3307541529899,
+      "d_in_cm": 5.2,
+      "d_out_cm": 5.2,
+      "material_id": "pvc_pressure"
+    },
+    {
+      "kind": "cylinder",
+      "length_cm": 19.498341955493505,
+      "d_in_cm": 6,
+      "d_out_cm": 6,
+      "material_id": "pvc_pressure"
+    }
+  ]
+}
