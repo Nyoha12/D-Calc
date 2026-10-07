@@ -270,3 +270,139 @@ def test_budget_refusal_before_arrays(monkeypatch):
 def test_inadequate_half_support_rejected():
     r=request();r['observation']['frame_steps']=550;r['observation']['hop_steps']=100
     with pytest.raises(ValueError,match='fixed support'):core.validate_request(r)
+
+
+def tail_request(steps=13200):
+    r=request(fs=12000,steps=steps)
+    r['observation'].update(frame_steps=4000,hop_steps=2000)
+    return r
+
+
+@pytest.mark.parametrize('tail',[70,210,0])
+def test_terminal_tail_frequency_and_hard_duration(tail):
+    r=tail_request();fs=12000;n=13200;t=(np.arange(n)+.5)/fs
+    y=np.sin(2*np.pi*70*t)
+    y[12000:]=np.sin(2*np.pi*tail*t[12000:])
+    r['criteria']=[criterion(target=dict(value=70.,unit='Hz'),tolerance=dict(value=2.,unit='cent')),
+        dict(criterion('duration',minimum=dict(value=1.09,unit='s')),id='duration')]
+    core.Request.validate(r)
+    observed=core.observe_pressure(y,fs,r['observation'])
+    result=core.analyze(r,times=np.arange(n+1)/fs,states=np.zeros((n+1,2)),
+        midpoint_times=t,pressure=y,source=dict(kind='synthetic',description='Public terminal tone or silence'))
+    assert result['criteria'][1]['status']=='pass'
+    assert result['windows']['hold']['duration_s']==1.1
+    assert result['windows']['hold']['activity_rms_pa']>r['observation']['min_rms_pa']
+    if tail==70:
+        assert observed['status']=='observed'
+        assert abs(1200*math.log2(observed['frequency_hz']/70))<2
+        assert result['hard_conforming'] is True
+    else:
+        assert observed['status']=='unresolved' and observed['frequency_hz'] is None
+        assert result['criteria'][0]['status']=='unresolved'
+        assert result['hard_conforming'] is None
+    assert [f['start_sample'] for f in observed['frames']]==[0,2000,4000,6000,8000,9200]
+    assert all(len(f['sensitivities'])==2 for f in observed['frames'])
+
+
+@pytest.mark.parametrize('n,hop,starts',[
+    (0,2000,[]),(3999,2000,[]),(4000,2000,[0]),(4001,2000,[0,1]),
+    (6000,2000,[0,2000]),(6001,2000,[0,2000,2001]),
+    (7199,2000,[0,2000,3199]),(7999,2000,[0,2000,3999]),
+    (8000,4000,[0,4000]),(8001,4000,[0,4000,4001]),(10000,4000,[0,4000,6000])])
+def test_terminal_frame_coverage_and_no_duplicates(monkeypatch,n,hop,starts):
+    o=tail_request()['observation'];o['hop_steps']=hop
+    y=np.arange(n,dtype=float);calls=[]
+    def period(samples,*args):
+        calls.append(samples.copy())
+        return dict(frequency_hz=70.)
+    monkeypatch.setattr(core,'_period_frame',period)
+    result=core.observe_pressure(y,12000,o)
+    assert [f['start_sample'] for f in result['frames']]==starts
+    assert len(starts)==len(set(starts))
+    assert len(calls)==3*len(starts)
+    for i,start in enumerate(starts):
+        frame=y[start:start+4000]
+        assert np.array_equal(calls[3*i],frame)
+        for half,actual in zip(np.array_split(frame,2),calls[3*i+1:3*i+3]):
+            assert np.array_equal(actual,half)
+        assert result['frames'][i]['stop_sample']==start+4000
+    if n<4000:
+        assert result['reason']=='insufficient_window'
+    else:
+        covered=np.zeros(n,dtype=bool)
+        for start in starts:covered[start:start+4000]=True
+        assert covered.all()
+        assert starts[-1]+4000==n
+        assert set(range(0,n-4000+1,hop))<=set(starts)
+
+
+@pytest.mark.parametrize('n,frames',[(316,127),(317,128),(318,128),(319,129),(320,129)])
+def test_terminal_frame_quota_request_and_api(monkeypatch,n,frames):
+    r=request(fs=1000,steps=n)
+    r['observation'].update(band_hz=[100.,200.],frame_steps=64,hop_steps=2)
+    y=np.arange(n,dtype=np.int16);calls=[]
+    if frames>128:
+        def no(*args,**kw):pytest.fail('Analysis/allocation before frame quota')
+        monkeypatch.setattr(core,'_period_frame',no)
+        finite=np.isfinite
+        monkeypatch.setattr(np,'isfinite',lambda value:no() if isinstance(value,np.ndarray) else finite(value))
+        monkeypatch.setattr(np,'empty',no)
+        with pytest.raises(ValueError,match='frame quota'):core.Request.validate(r)
+        with pytest.raises(ValueError,match='frame quota'):core.observe_pressure(y,1000,r['observation'])
+    else:
+        core.Request.validate(r)
+        def period(*args):
+            calls.append(True)
+            return dict(frequency_hz=150.)
+        monkeypatch.setattr(core,'_period_frame',period)
+        result=core.observe_pressure(y,1000,r['observation'])
+        assert len(result['frames'])==frames and len(calls)==3*frames
+
+
+@pytest.mark.parametrize('n,frames',[(28000,13),(28001,14)])
+def test_terminal_operation_ceiling_request_and_api(monkeypatch,n,frames):
+    r=tail_request(n);y=np.arange(n,dtype=np.int16);calls=[]
+    if frames==14:
+        def no(*args,**kw):pytest.fail('Analysis/allocation before operation quota')
+        monkeypatch.setattr(core,'_period_frame',no)
+        finite=np.isfinite
+        monkeypatch.setattr(np,'isfinite',lambda value:no() if isinstance(value,np.ndarray) else finite(value))
+        monkeypatch.setattr(np,'empty',no)
+        with pytest.raises(ValueError,match='operation quota'):core.Request.validate(r)
+        with pytest.raises(ValueError,match='operation quota'):core.observe_pressure(y,12000,r['observation'])
+    else:
+        core.Request.validate(r)
+        def period(*args):
+            calls.append(True)
+            return dict(frequency_hz=70.)
+        monkeypatch.setattr(core,'_period_frame',period)
+        result=core.observe_pressure(y,12000,r['observation'])
+        assert len(result['frames'])==13 and len(calls)==39
+
+
+@pytest.mark.parametrize('lengths,budget,accepted',[
+    ([12000],36000000,True),([12001],36000000,False),
+    ([13200],43200000,True),([13200],43199999,False),
+    ([12000,13200],79200000,True),([12000,13200],79199999,False),
+    ([16000],100000000,True),([16000,16000],100000000,False)])
+def test_terminal_aggregate_window_operation_budget(monkeypatch,lengths,budget,accepted):
+    r=tail_request(max(lengths));r['budgets']['observation_ops']=budget
+    r['windows']=[dict(id='w'+str(i),plateau='a',start_step=0,stop_step=n) for i,n in enumerate(lengths)]
+    def no(*args,**kw):pytest.fail('Arrays/period analysis before request quota')
+    monkeypatch.setattr(np,'empty',no);monkeypatch.setattr(core,'_period_frame',no)
+    if accepted:core.Request.validate(r)
+    else:
+        with pytest.raises(ValueError,match='operation quota'):core.Request.validate(r)
+
+
+def test_terminal_other_window_obligations_stay_independent():
+    r=tail_request();n=13200;fs=12000;t=(np.arange(n)+.5)/fs
+    y=np.sin(2*np.pi*70*t);y[12000:]=0
+    r['windows'].append(dict(id='earlier',plateau='a',start_step=0,stop_step=12000))
+    music=criterion(target=dict(value=70.,unit='Hz'),tolerance=dict(value=2.,unit='cent'))
+    r['criteria']=[music,dict(music,id='earlier_music',windows=['earlier']),
+        dict(music,id='both',windows=['hold','earlier'])]
+    result=core.analyze(r,times=np.arange(n+1)/fs,states=np.zeros((n+1,2)),
+        midpoint_times=t,pressure=y,source=dict(kind='synthetic',description='Independent window obligations'))
+    assert [c['status'] for c in result['criteria']]==['unresolved','pass','unresolved']
+    assert result['hard_conforming'] is None

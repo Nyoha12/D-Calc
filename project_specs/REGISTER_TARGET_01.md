@@ -87,6 +87,21 @@ faible, erreurs excessives ou sensibilités non résolues gardent une fréquence
 nulle au sens JSON `null`, jamais zéro inventé. Il s’agit d’une adaptation
 explicite de différence quadratique, pas d’une annonce de YIN complet.
 
+Toutes les trames complètes aux départs réguliers sont conservées. Si la dernière
+ne termine pas à la fin de la fenêtre déclarée, une seule trame complète est
+ajoutée, ancrée à cette fin, sans sélection selon une cible. Son recouvrement avec
+la précédente peut dépasser le recouvrement habituel, jusqu’à presque toute la
+trame ; ces observations ne sont donc pas des preuves statistiquement
+indépendantes. Une longueur exactement alignée n’ajoute aucun doublon. Une fenêtre
+plus courte qu’une trame demeure insuffisante, sans padding ni extrapolation.
+Le support minimal et les deux sensibilités par trame restent identiques.
+Cette couverture en trames est un protocole fini : elle ne certifie ni la
+détection d’un événement arbitrairement bref, ni une période minimale universelle.
+La durée décrit l’intervalle acquis ; elle ne garantit pas à elle seule une
+fréquence tenue ou une activité suffisante. Les obligations des autres fenêtres
+restent évaluées indépendamment, sans exigence implicite de Floquet ou de
+périodicité parfaite.
+
 Un pic spectral dominant à 210 Hz peut être une harmonique d’un signal à 70 Hz.
 Les fréquences de passages dépendent de la section déclarée. Ces observables ne
 remplacent jamais automatiquement `played_frequency`, qui désigne ici une
@@ -121,6 +136,14 @@ quotas de calcul d’observation, fichiers JSON, séries et stockage sont vérif
 avant allocations. Les enfants POSIX ont 180 s de mur au plus, CPU 175 s,
 768 Mio et BLAS 1 ; l’orchestration est bornée à 600 s. L’API mémoire reste sous
 la responsabilité du superviseur de son appelant pour les limites OS.
+
+Le preflight et l’API d’observation utilisent le même calcul des trames, y compris
+la trame terminale éventuelle : au plus 128 par fenêtre. Le coût déclaré est
+`nombre_trames × ceil(fs / borne_basse_hz) × frame_steps × 6`, cumulé sur toutes
+les fenêtres pour `observation_ops` (plafond inchangé de 100 millions). L’API
+directe applique ce même plafond à sa fenêtre. Les refus interviennent avant
+conversion/allocation des tableaux d’analyse et estimation des périodes. Une
+trame terminale peut ainsi rendre irrecevable un PLAN auparavant sous-compté.
 
 Les NPZ sont numériques stricts sans pickle, contrôlés par morceaux, avec
 manifeste, hashes, checkpoints complets, paramètres/événements/bilans JSON,
