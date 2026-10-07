@@ -204,3 +204,14 @@ def test_native_mechanical_rejection_is_proved_not_zero(job):
     assert result['ok'] and result['geometry_valid'] is False
     assert result['rows'][0]['status']=='violated' and result['rows'][0]['value_si'] is None
     assert not result['configurations']
+
+
+
+def test_live_storage_scan_tolerates_native_atomic_progress_rename(tmp_path,monkeypatch):
+    stable=tmp_path/'stable';stable.write_bytes(b'123')
+    vanished=tmp_path/'.fit_progress.json.tmp'
+    monkeypatch.setattr(Path,'rglob',lambda self,pattern:iter([vanished,stable]))
+    assert report.size(tmp_path)==3
+    link=tmp_path/'unsafe';link.symlink_to(stable)
+    monkeypatch.setattr(Path,'rglob',lambda self,pattern:iter([link]))
+    with pytest.raises(ValueError,match='Symbolic'):report.size(tmp_path)

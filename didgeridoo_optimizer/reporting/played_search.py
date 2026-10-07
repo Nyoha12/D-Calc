@@ -45,9 +45,13 @@ def provenance():
 def size(root):
     total = 0; inodes = set()
     for p in Path(root).rglob('*'):
-        safe_path(p)
+        # Native fit progress atomically renames its temporary file. A live
+        # storage scan must tolerate its disappearance, without following links.
+        safe_path(p, exists=False)
         if p.is_file():
-            st = p.stat(); inode = (st.st_dev, st.st_ino)
+            try: st = p.stat()
+            except FileNotFoundError: continue
+            inode = (st.st_dev, st.st_ino)
             if inode not in inodes: total += st.st_size
             inodes.add(inode)
     return total
