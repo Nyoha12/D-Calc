@@ -79,6 +79,20 @@ compte instable 0→2, côtés cohérents et résidus propres/marginaux <1e−7.
 Restabilisation, multiplicité et ambiguïté sont conservées sans certification.
 Absence sur grille n’est ni impossibilité globale ni seuil minimal universel.
 
+Le seuil numérique existant **1e−8/s** du compteur `unstable_roots` n’est pas
+un test de signe du bracket affiné. `bracket_signs` conserve les signes calculés
+de ses extrémités ; un encadrement signé reste nécessaire. `axis_tolerance_s`,
+`axis_indeterminate`, `near_axis_roots` et `bracket_axis_indeterminate` exposent
+la proximité de l’axe, sans transformer ces signes en preuve exacte. La preuve
+locale 0→2 est demandée aux côtés éloignés, dont les parties réelles doivent
+dépasser cette bande de part et d’autre. Les extrémités affinées participent
+aux contrôles de résidu, isolation, suivi et stabilité des autres racines.
+Une indétermination près de l’axe n’annule donc pas à elle seule une traversée
+localement vérifiée ; des côtés indéterminés, un résidu excessif, un suivi ambigu
+ou une évaluation de raffinement échouée restent non résolus. Les demi-brackets
+pression et intervalles fréquence restent exportés ; ce sont des estimations
+numériques locales, pas des garanties analytiques d’erreur d’arrondi.
+
 `root_real_s`, `root_imag_s` et `realization_frequency_hz` décrivent la réalisation.
 Les coordonnées discrètes utilisent `z=(1+s/(2fs))/(1−s/(2fs))`, croissance
 `fs log(abs(z))` et fréquence `arg(z) fs/(2*pi)`. En `discrete_prewarped`, s
@@ -90,6 +104,16 @@ Chaque fenêtre possède `id`, `pressure_pa: [min,max]`, `frequency_hz: [min,max
 Elle identifie une candidate par ses coordonnées discrètes ; plusieurs
 correspondances restent ambiguës. Aucun choix « plus proche de la cible ».
 Un bracket qui traverse une frontière de fenêtre reste non résolu.
+La sélection utilise une règle conservatrice par unité **(cas, scénario)**,
+exportée comme `selection_scope: whole_case_scenario_unit`. Un statut `partial`
+ou `not_resolved`, un nœud non évalué, un candidat non affiné/sans racine, un
+raffinement échoué ou un candidat non résolu empêche toute sélection certifiée
+dans cette unité, même hors de la fenêtre concernée. Cette version ne démontre
+pas la couverture fine de chaque sous-intervalle. Les candidats acquis gardent
+leurs racines, traces et verdicts locaux dans le résultat ; ils ne suffisent pas
+à établir l’unicité demandée tant que ce contrôle de complétude échoue. Plusieurs
+candidats résolus dans une même fenêtre restent ambigus. Une autre unité complète
+garde ses résultats, y compris sous un autre scénario du même cas.
 Les comparaisons descriptives exportent B−A et B/A pour chaque paire de cas,
 scénario et fenêtre, avec identité des candidats et raison des valeurs nulles.
 Les conditions acoustiques et domaines doivent être compatibles. Une permutation
@@ -136,6 +160,11 @@ rend la couverture partielle sans contaminer les hard indépendants. Zéro crit�
 est une comparaison descriptive valide. `played_frequency`, `toot_accessibility`,
 `regime`, `transitions` restent explicitement unsupported, jamais remplacés par
 onset ou un pic. Aucun instrument ou joueur « meilleur » n’est sélectionné.
+
+`coverage` porte sur les critères déclarés, pas sur toutes les branches physiques
+ni sur toutes les comparaisons descriptives. Un calcul peut terminer avec son
+marqueur d’exécution valide et conserver des critères `unresolved` : achèvement
+du processus, preuve locale, sélection unique et conformité sont distincts.
 
 ## Modèles sauvegardés et provenance
 

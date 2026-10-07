@@ -418,6 +418,7 @@ def compare(p,units):
         evaluated.append(row)
     hard=all(c['status']=='satisfied' for c in evaluated if c['role']=='hard')
     return dict(differentials=differentials,criteria=evaluated,hard_conforming=hard,
+                selection_scope=core.SELECTION_SCOPE,
                 coverage='complete' if all(c['status'] in ('satisfied','violated') for c in evaluated) else 'partial')
 
 

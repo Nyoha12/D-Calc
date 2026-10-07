@@ -194,3 +194,120 @@ def test_identical_different_ids_have_correlated_zero_uncertainty():
         observable='pressure_difference',target=dict(value=0,unit='Pa'),tolerance=dict(value=0,unit='Pa'))])
     result=pipeline.compare(p,{('a','central'):value,('b','central'):copy.deepcopy(value)})
     assert result['hard_conforming'] and result['differentials'][0]['pressure_difference_bounds_pa']==[0.,0.]
+
+
+@pytest.mark.parametrize('R0,expected',[(0.,4003.21108642964),
+    (1100.,4003.59855636337),(200000.,4075.42081407333)])
+@pytest.mark.parametrize('refinements',[23,26,32])
+def test_r44_fine_bracket_keeps_verified_local_crossing(R0,expected,refinements):
+    value=run(modal(R0),refinements=refinements)
+    assert value['status']=='complete' and len(value['candidates'])==1
+    c=value['candidates'][0]
+    assert c['status']=='local_crossing_verified'
+    assert abs(c['root']['pressure_pa']-expected)<.001
+    assert c['bracket_pa'][0]<expected<c['bracket_pa'][1]
+    assert c['uncertainty_pressure_pa']==(c['bracket_pa'][1]-c['bracket_pa'][0])/2
+    assert [s['unstable_roots'] for s in c['sides']]==[0,2]
+    assert core.crossing_verified(c['root'],c['sides'],[])
+    assert c['bracket_signs']==[-1,1]
+    if refinements==32:
+        assert c['bracket_axis_indeterminate']
+        assert c['root']['axis_indeterminate']
+    assert c['root']['axis_tolerance_s']==1e-8
+
+
+@pytest.mark.parametrize('fault',['marginal','residual','isolation','other_roots',
+    'side_counts','near_axis_sides','reversed_sides','real_root','tracking'])
+def test_r44_local_crossing_still_requires_all_evidence(fault):
+    c=run(refinements=32)['candidates'][0]
+    root,sides=c['root'],c['sides']
+    if fault=='marginal':root['marginal_relative_residual']=1e-6
+    if fault=='residual':sides[0]['characteristic_relative_residual']=1e-6
+    if fault=='isolation':root['pair_separation_s']=0.
+    if fault=='other_roots':root['other_root_max_real_s']=1e-9
+    if fault=='side_counts':sides[1]['unstable_roots']=4
+    if fault=='near_axis_sides':sides[0]['root_real_s']=-1e-10
+    if fault=='reversed_sides':sides.reverse()
+    if fault=='real_root':root['root_imag_s']=0.
+    if fault=='tracking':sides[1]['roots_s'].append([root['root_real_s'],root['root_imag_s']])
+    assert not core.crossing_verified(root,sides,[])
+
+
+def test_r44_refinement_failure_cannot_be_filtered_out(monkeypatch):
+    original=core.eigen_row;calls=[]
+    def fail_once(*args):
+        calls.append(args[1])
+        # Late failure: the retained bracket is already narrow enough to pass
+        # the marginal residual, and subsequent root/side evaluations succeed.
+        if len(calls)==len(GRID['fractions'])+22:
+            raise ValueError('prescribed refinement failure')
+        return original(*args)
+    monkeypatch.setattr(core,'eigen_row',fail_once)
+    value=run();c=value['candidates'][0]
+    assert any(r['status']=='not_resolved' for r in c['trace'])
+    assert c['root']['status']=='evaluated'
+    assert c['status']=='not_resolved'
+    assert c['reason']=='refinement_evaluation_failed'
+    assert core.match_candidate(value,comparison_plan()['request']['windows'][0])['candidate'] is None
+
+
+@pytest.mark.parametrize('state',['partial','not_resolved','unrefined','failed_refinement','ambiguous','failed_grid'])
+def test_r44_incomplete_unit_does_not_certify_unique_selection(state):
+    value=run();window=dict(id='w',pressure_pa=[3500.,4500.],frequency_hz=[60.,70.])
+    if state in ('partial','not_resolved'):
+        value.update(status=state,reason='evaluation_budget')
+    if state in ('partial','unrefined'):
+        value['candidates'].append(dict(id='unrefined',status='not_resolved',root=None,
+            bracket_pa=[4200.,4400.],trace=[],sides=[],reason='budget_before_refinement'))
+    if state=='failed_refinement':
+        value['candidates'][0]['trace'].append(dict(status='not_resolved',pressure_pa=4003.,reason='failure'))
+    if state=='ambiguous':value['candidates'].append(copy.deepcopy(value['candidates'][0]))
+    if state=='failed_grid':value['grid'][0]['status']='not_resolved'
+    before=copy.deepcopy(value)
+    selected=core.match_candidate(value,window)
+    assert selected['candidate'] is None
+    assert selected['status'] in ('not_resolved','ambiguous')
+    assert selected['selection_scope']=='whole_case_scenario_unit'
+    assert value==before and value['candidates'][0]['status']=='local_crossing_verified'
+
+
+@pytest.mark.parametrize('field,bounds',[('bracket_pa','pressure_pa'),('frequency_bracket_hz','frequency_hz')])
+def test_r44_window_must_contain_entire_pressure_and_frequency_bracket(field,bounds):
+    value=run();c=value['candidates'][0]
+    window=dict(id='w',pressure_pa=[3500.,4500.],frequency_hz=[60.,70.])
+    key='pressure_pa' if field=='bracket_pa' else 'discrete_frequency_hz'
+    center=c['root'][key];c[field]=[center-.05,center+.05]
+    window[bounds]=[center-.01,center+.01]
+    match=core.match_candidate(value,window)
+    assert match['status']=='not_resolved' and match['candidate'] is None
+    assert match['reason']=='window_intersects_'+('pressure' if field=='bracket_pa' else 'frequency')+'_bracket'
+
+
+@pytest.mark.parametrize('state',['partial','not_resolved','unrefined','ambiguous'])
+def test_r44_comparison_keeps_independent_units_and_hard_obligations(state):
+    good=run();bad=copy.deepcopy(good)
+    if state in ('partial','not_resolved'):bad['status']=state
+    if state=='unrefined':
+        bad['candidates'].append(dict(id='unrefined',status='not_resolved',root=None,
+            bracket_pa=[4200.,4400.],trace=[],sides=[],reason='not_processed'))
+    if state=='ambiguous':bad['candidates']*=2
+    base=dict(id='covered',role='hard',case='b',scenario='central',window='w',observable='onset_pressure',
+        target=dict(value=4003.21108643,unit='Pa'),tolerance=dict(value=.01,unit='Pa'))
+    observe=dict(base,id='incomplete',role='observe',case='a')
+    paired=dict(base,id='paired',role='observe',pair=['a','b'],observable='pressure_difference',
+        target=dict(value=0.,unit='Pa'))
+    del paired['case']
+    plan=comparison_plan([base,observe,paired]);plan['request']['scenarios'].append(dict(id='independent'))
+    plan['request']['criteria'].append(dict(base,id='other_scenario',case='a',scenario='independent'))
+    units={('a','central'):bad,('b','central'):good,
+        ('a','independent'):good,('b','independent'):copy.deepcopy(good)}
+    before=copy.deepcopy(units);result=pipeline.compare(plan,units)
+    assert [c['status'] for c in result['criteria']]==['satisfied','unresolved','unresolved','satisfied']
+    assert result['hard_conforming'] and result['coverage']=='partial'
+    assert result['selection_scope']=='whole_case_scenario_unit'
+    assert result['differentials'][0]['pressure_difference_pa'] is None
+    assert result['differentials'][1]['status']=='paired'
+    assert result['differentials'][1]['pressure_difference_bounds_pa']==[0.,0.]
+    plan['request']['criteria'][1]['role']='hard'
+    assert not pipeline.compare(plan,units)['hard_conforming']
+    assert units==before

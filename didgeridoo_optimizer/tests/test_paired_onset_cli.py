@@ -276,3 +276,21 @@ def test_example_is_strict_and_has_only_missing_user_models():
     parent=ROOT/'project_specs/examples/paired_onset'
     for case in raw['cases']:
         assert (parent/case['config']).is_file() and (parent/case['design']).is_file()
+
+
+def test_r44_cli_refused_refinement_keeps_evidence_but_blocks_hard(saved_plan,tmp_path):
+    path,raw=saved_plan
+    raw['budgets']['refinements']=0
+    raw['criteria']=[dict(id='pressure',role='hard',case='a',scenario='central',window='modal',
+        observable='onset_pressure',target=dict(value=4000.,unit='Pa'),tolerance=dict(value=2000.,unit='Pa'))]
+    path.write_text(json.dumps(raw));out=tmp_path/'unresolved';proc=cli(path,out)
+    assert proc.returncode==0,proc.stdout+proc.stderr
+    read=report.read_result(out)
+    assert read['ok'] and all(c['reaped'] for c in read['execution']['children'])
+    result=read['result']
+    assert not result['hard_conforming'] and result['coverage']=='partial'
+    assert result['criteria'][0]['status']=='unresolved'
+    assert result['selection_scope']=='whole_case_scenario_unit'
+    unit=json.loads((out/result['units'][0]['file']).read_text())
+    assert unit['candidates'] and unit['candidates'][0]['status']=='not_resolved'
+    assert unit['candidates'][0]['root']['status']=='evaluated'

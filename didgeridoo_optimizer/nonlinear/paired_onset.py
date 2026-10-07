@@ -17,6 +17,8 @@ from .passive_resonator import PassiveResonator, real, integer, digest
 
 SCOPE = ('Dominant equilibrium loss only, within the declared regular free grid; '
          'no enumeration of higher unstable branches, global minimum, played frequency or toot.')
+AXIS_TOLERANCE_S = 1e-8
+SELECTION_SCOPE = 'whole_case_scenario_unit'
 
 
 class BudgetExhausted(ValueError):
@@ -140,7 +142,10 @@ def eigen_row(model, pressure, rho, params):
         discrete_frequency_hz=float(np.angle(z)*fs/(2*np.pi)),
         discrete_growth_per_s=float(np.log(abs(z))*fs),
         roots_s=[[float(v.real), float(v.imag)] for v in ordered],
-        unstable_roots=int(np.sum(roots.real > 1e-8)),
+        unstable_roots=int(np.sum(roots.real > AXIS_TOLERANCE_S)),
+        axis_tolerance_s=AXIS_TOLERANCE_S,
+        axis_indeterminate=bool(abs(root.real) <= AXIS_TOLERANCE_S),
+        near_axis_roots=int(np.sum(abs(roots.real) <= AXIS_TOLERANCE_S)),
         other_root_max_real_s=float(max(other.real)) if len(other) else None,
         pair_separation_s=float(separation),
         characteristic_relative_residual=float(abs(value)/scale),
@@ -172,11 +177,15 @@ def crossing_verified(root, sides, trace):
     if any(r.get('status') != 'evaluated' for r in [root, left, right]): return False
     if root['marginal_relative_residual'] >= 1e-7: return False
     other = root['other_root_max_real_s']
-    if not (left['root_real_s'] < 0 < right['root_real_s'] and left['unstable_roots'] == 0
+    if not (left['root_real_s'] < -AXIS_TOLERANCE_S
+            and right['root_real_s'] > AXIS_TOLERANCE_S and left['unstable_roots'] == 0
             and right['unstable_roots'] == 2 and root['root_imag_s'] > 1e-6
-            and (other is None or other < -1e-8)):
+            and (other is None or other < -AXIS_TOLERANCE_S)):
         return False
     rows = [root, left, right, *trace]
+    if any(r.get('status') != 'evaluated' for r in rows): return False
+    if any(r['other_root_max_real_s'] is not None
+           and r['other_root_max_real_s'] >= -AXIS_TOLERANCE_S for r in rows): return False
     if max(r['characteristic_relative_residual'] for r in rows) >= 1e-7: return False
     if any(r['pair_separation_s'] < 1e-5*max(1., abs(r['root_imag_s'])) for r in rows): return False
     # Only a locally continuous dominant pair is accepted, never a nearby target.
@@ -242,6 +251,12 @@ def analyze(model, params, rho, pressure_grid, *, refinements, max_evaluations,
                 if (row['root_real_s'] > 0) == (hi['root_real_s'] > 0): hi = row
                 else: lo = row
                 candidate['bracket_pa'] = [lo['pressure_pa'], hi['pressure_pa']]
+            # Signed bisection endpoints may lie inside the axis diagnostic band.
+            # Stability counts are evidence at the separated sides, not here.
+            candidate['bracket_signs'] = [int(np.sign(r['root_real_s'])) for r in (lo, hi)]
+            candidate['bracket_axis_indeterminate'] = any(
+                abs(r['root_real_s']) <= AXIS_TOLERANCE_S for r in (lo, hi))
+            refinement_failed = any(r['status'] != 'evaluated' for r in candidate['trace'])
             root = evaluate(sum(candidate['bracket_pa'])/2); candidate['root'] = root
             if root['status'] == 'evaluated':
                 d = min(10., .01*pressure_limit(params), (root['pressure_pa']-nodes[0])/2,
@@ -250,11 +265,13 @@ def analyze(model, params, rho, pressure_grid, *, refinements, max_evaluations,
                 # Original broad bracket can contain switching branches; assess the final local trace.
                 local = [r for r in candidate['trace'] if r['status']=='evaluated'
                          and abs(r['pressure_pa']-root['pressure_pa']) <= d]
-                if (candidate['direction']=='loss' and crossing_verified(root, candidate['sides'], local)
+                if (not refinement_failed and candidate['direction']=='loss'
+                        and crossing_verified(root, candidate['sides'], [*local, lo, hi])
                         and lo['status']=='evaluated' and hi['status']=='evaluated'
-                        and lo['unstable_roots']==0 and hi['unstable_roots']==2):
+                        and lo['root_real_s'] <= 0 < hi['root_real_s']):
                     candidate['status'] = 'local_crossing_verified'
-                else: candidate['reason'] = 'restabilization_multiple_or_ambiguous_pair'
+                else: candidate['reason'] = ('refinement_evaluation_failed' if refinement_failed
+                                            else 'restabilization_multiple_or_ambiguous_pair')
             else: candidate['reason'] = root.get('reason')
             candidate['uncertainty_pressure_pa'] = (candidate['bracket_pa'][1]-candidate['bracket_pa'][0])/2
             candidate['frequency_bracket_hz'] = sorted([lo.get('discrete_frequency_hz', 0.), hi.get('discrete_frequency_hz', 0.)])
@@ -271,21 +288,35 @@ def analyze(model, params, rho, pressure_grid, *, refinements, max_evaluations,
 
 
 def match_candidate(result, window):
+    """Conservative selection: unresolved work anywhere in this unit blocks it.
+
+    Acquired candidates remain in result; no sub-interval coverage is inferred.
+    Completion refers to the declared finite search, not all physical branches.
+    """
+    def selection(status, candidate=None, reason=None):
+        return dict(status=status, candidate=candidate, reason=reason, selection_scope=SELECTION_SCOPE)
+    if (result.get('status') != 'complete'
+            or any(r.get('status') != 'evaluated' for r in result.get('grid', []))):
+        return selection('not_resolved', reason='unit_search_incomplete')
+    if any(c.get('status') != 'local_crossing_verified' or not c.get('root')
+           or any(r.get('status') != 'evaluated' for r in
+                  [c['root'], *c.get('sides', []), *c.get('trace', [])])
+           for c in result['candidates']):
+        return selection('not_resolved', reason='unit_has_unresolved_candidates')
     matches = [c for c in result['candidates'] if c.get('root') and c['root'].get('status')=='evaluated'
         and window['pressure_pa'][0] <= c['root']['pressure_pa'] <= window['pressure_pa'][1]
         and window['frequency_hz'][0] <= c['root']['discrete_frequency_hz'] <= window['frequency_hz'][1]]
     if len(matches) != 1:
-        return dict(status='ambiguous' if matches else 'unavailable', candidate=None,
-                    reason='multiple_window_matches' if matches else 'no_candidate_in_declared_window')
+        return selection('ambiguous' if matches else 'unavailable',
+                         reason='multiple_window_matches' if matches else 'no_candidate_in_declared_window')
     c = matches[0]
     if (c.get('uncertainty_pressure_pa') is not None and
             not (window['pressure_pa'][0]<=c['bracket_pa'][0]<=c['bracket_pa'][1]<=window['pressure_pa'][1])):
-        return dict(status='not_resolved',candidate=None,reason='window_intersects_pressure_bracket')
+        return selection('not_resolved', reason='window_intersects_pressure_bracket')
     if (c.get('frequency_bracket_hz') and not
             window['frequency_hz'][0]<=c['frequency_bracket_hz'][0]<=c['frequency_bracket_hz'][1]<=window['frequency_hz'][1]):
-        return dict(status='not_resolved',candidate=None,reason='window_intersects_frequency_bracket')
-    return dict(status=c['status'], candidate=c if c['status']=='local_crossing_verified' else None,
-                reason=c.get('reason'))
+        return selection('not_resolved', reason='window_intersects_frequency_bracket')
+    return selection(c['status'], candidate=c, reason=c.get('reason'))
 
 
 def marginal_axis(model, params, rho, seed, evaluate, *, pressure_bounds, frequency_bounds,
