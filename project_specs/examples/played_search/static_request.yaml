@@ -1,0 +1,48 @@
+schema_version: dcalc.design_request.v1
+variables:
+- id: length
+  fields:
+  - segments.0.length_cm
+  unit: cm
+  bounds:
+  - 110.0
+  - 130.0
+derived: []
+criteria:
+- id: length
+  observable: geometry
+  expression:
+    total_length: true
+  bounds:
+  - value: 110.0
+    unit: cm
+  - value: 130.0
+    unit: cm
+  unit: cm
+  tolerance:
+    value: 1.0e-08
+    unit: cm
+  level: geometry
+  scope: {}
+  role: hard
+modes: []
+models:
+  loss_model: zk
+  air_reference: ck_dry20
+  radiation_model: legacy
+spectrum:
+  min_hz: 10.0
+  max_hz: 700.0
+  step_hz: 1.0
+  final_step_hz: 0.5
+  refinement_hz: 1.0e-06
+  h_cm: 0.5
+budgets:
+  evaluations: 4
+  iterations: 1
+  variables: 1
+  frequencies: 2000
+  segments: 600
+  history: 4
+  seconds: 60
+  frequency_segment_product: 1200000

@@ -1,0 +1,60 @@
+schema: dcalc.played_search.job.v1
+config: config.yaml
+input:
+  kind: fixed
+  design: design.json
+  request: static_request.yaml
+fit:
+  sample_rate_hz: 12000
+  h_cm: 0.5
+  loss_model: zk
+  radiation_model: legacy
+  air_reference: ck_dry20
+  R0: null
+  dc_origin: null
+  basis_completion: r29
+  fit_min_hz: 40.0
+  fit_max_hz: 3000.0
+  fit_points: 4096
+  guard_max_hz: 3500.0
+  guard_points: 768
+  audit_points: 1536
+  gates:
+    complex_nrmse: 0.005
+    relative_max: 0.08
+    phase_rms_deg: 0.3
+  mesh_gate: 0.005
+  seconds: 175.0
+  fit_seconds: 110.0
+  max_passes: 10
+  signal_samples: 256
+  flow_peak_m3_s: 1.0e-06
+scenarios:
+- id: nominal3500
+  configuration: nominal
+  template: experiment.yaml
+search:
+  normalized_steps:
+  - 0.125
+  - 0.0625
+  - 0.03125
+  - 0.015625
+  directions:
+  - -1
+  - 1
+  stop_on_witness: true
+budgets:
+  candidates: 8
+  scenarios: 8
+  fits: 8
+  trajectories: 8
+  steps: 288000
+  seconds: 3600
+  memory_mib: 768
+  output_mib: 650
+  child_seconds: 180
+scope:
+  coverage: finite
+  player_controls: prescribed
+  objective: feasibility
+  physiological_guarantee: false
