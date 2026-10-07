@@ -86,6 +86,19 @@ def active_parameters(request, index):
                    resonance_hz=s['resonance_hz'], damping_ratio=s['damping_ratio'])
 
 
+def _observation_frames(n, fs, o):
+    """Regular starts plus one complete end-anchored frame, with shared quotas."""
+    frame=o['frame_steps'];hop=o['hop_steps']
+    regular=range(0,max(0,n-frame+1),hop)
+    terminal=n-frame if n>=frame and (n-frame)%hop else None
+    count=len(regular)+int(terminal is not None)
+    if count>128:raise ValueError('Observation frame quota')
+    ops=count*math.ceil(fs/o['band_hz'][0])*frame*6
+    starts=tuple(regular)
+    if terminal is not None:starts+=(terminal,)
+    return starts,ops
+
+
 def validate_request(value, *, states=None):
     """Pure JSON/domain/quota validation, before numeric arrays or contexts."""
     bounded_json(value)
@@ -167,9 +180,8 @@ def validate_request(value, *, states=None):
     ops = 0
     for w in value['windows']:
         n=w['stop_step']-w['start_step']
-        frames=max(0,1+(n-o['frame_steps'])//o['hop_steps'])
-        if frames>128: raise ValueError('Observation frame quota')
-        ops += frames*lag*o['frame_steps']*6
+        _,window_ops=_observation_frames(n,fs,o)
+        ops += window_ops
     if ops > b['observation_ops']: raise ValueError('Observation operation quota before arrays')
     if o['phase'] is not None:
         pp=PhasePlan.from_dict(o['phase'])
@@ -432,10 +444,11 @@ def observe_pressure(pressure, fs, observation):
     """Target-free signal API; all declared sliding windows and two halves retained."""
     if type(pressure) is not np.ndarray or pressure.ndim!=1 or pressure.dtype.kind not in 'fiu' or len(pressure)>MAX_STEPS:
         raise ValueError('Bounded real ndarray pressure required')
-    if not np.all(np.isfinite(pressure)):raise ValueError('Nonfinite pressure')
     o=observation;n=len(pressure)
     if not 1000<=real(fs,'fs')<=12000:raise ValueError('Sample rate domain')
-    if n*math.ceil(fs/o['band_hz'][0])*6>100000000:raise ValueError('Observation operation quota')
+    starts,ops=_observation_frames(n,fs,o)
+    if ops>100000000:raise ValueError('Observation operation quota')
+    if not np.all(np.isfinite(pressure)):raise ValueError('Nonfinite pressure')
     pressure=pressure.astype(np.float64,copy=False)
     if n and np.max(np.abs(pressure))>1e100:raise ValueError('Unrepresentable observation amplitude')
     ac=float(np.std(pressure)) if n else None
@@ -455,7 +468,7 @@ def observe_pressure(pressure, fs, observation):
         out['passage_frequency_hz']=float(1/np.mean(periods))
         out['passage_dispersion_s']=float(np.std(periods))
     estimates=[]
-    for start in range(0,n-o['frame_steps']+1,o['hop_steps']):
+    for start in starts:
         y=pressure[start:start+o['frame_steps']]
         central=_period_frame(y,fs,o)
         # Both halves keep the same lag band and fixed support, no best-half selection.

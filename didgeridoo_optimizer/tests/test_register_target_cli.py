@@ -230,3 +230,27 @@ def test_missing_observation_artifact_not_confirmed(plan,tmp_path):
     (out/'execution.completed.json').write_text(json.dumps(marker))
     result=report.read_result(out)
     assert not result['ok'] and 'observation' in result['reason']
+
+
+@pytest.mark.parametrize('quota,n,accepted',[
+    ('frame',317,True),('frame',318,True),('frame',319,False),
+    ('operation',28000,True),('operation',28001,False),('aggregate',16000,False)])
+def test_terminal_quota_real_cli_preflight(plan,tmp_path,monkeypatch,quota,n,accepted):
+    path,r=plan;r['plateaus']=r['plateaus'][:1]
+    r['plateaus'][0].update(steps=n,duration_s=n/12000)
+    r['windows'][0]['stop_step']=n
+    r['budgets'].update(new_steps=n,new_seconds=n/12000,chunk_steps=1200)
+    if quota=='frame':r['observation'].update(band_hz=[1200.,2400.],frame_steps=64,hop_steps=2)
+    else:r['observation'].update(frame_steps=4000,hop_steps=2000)
+    if quota=='aggregate':r['windows'].append(dict(r['windows'][0],id='second'))
+    path.write_text(json.dumps(r));out=tmp_path/'preflight'
+    if not accepted:
+        def no(*args,**kw):pytest.fail('Quota refusal must precede context/period analysis')
+        monkeypatch.setattr(workflow,'_case_context',no)
+        monkeypatch.setattr(core,'_period_frame',no)
+        with pytest.raises(ValueError,match=('frame' if quota=='frame' else 'operation')+' quota'):
+            workflow.preflight(path,out)
+    p=cli(path,out,'--dry-run')
+    assert p.returncode==(0 if accepted else 2),p.stdout+p.stderr
+    if not accepted:assert ('frame' if quota=='frame' else 'operation')+' quota' in p.stdout
+    assert not out.exists()
