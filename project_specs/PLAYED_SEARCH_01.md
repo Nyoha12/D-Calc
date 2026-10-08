@@ -211,6 +211,24 @@ Une réserve de 15 s précède la finalisation, également soumise au délai tot
 Les lecteurs scientifiques sont eux aussi des enfants bornés ; ils ne refont
 aucun fit et ne prolongent aucune trajectoire.
 
+L'entrée enfant est du JSON de **4 Mio maximum**, compté par fragments bornés
+avant allocation disque. Ses octets exacts s'ajoutent une seule fois à la
+réservation de sortie et d'export. Elle est préparée dans un fichier temporaire
+unique du répertoire de sortie du JOB, repositionné au début puis transmis comme
+stdin : un enfant qui ne lit jamais son entrée ne bloque pas le parent dans un
+pipe. Seul ce temporaire est retiré à la fermeture ; les sorties partielles et
+les fichiers des autres appels sont conservés.
+
+Le délai enfant commence avant comptage, réservation, écriture et lancement.
+Le délai global et les signaux sont contrôlés aussi après la fin de l'enfant :
+un code zéro tardif ne transforme pas un dépassement en succès. La récolte est
+distincte : jusqu'à 2 s après terminaison demandée, puis mise à mort et attente
+bornée, dans une enveloppe de 4 s. Le reçu conserve le code réel, la cause d'arrêt,
+les durées `operation_seconds` et `collection_seconds`, les octets d'entrée,
+et les indicateurs `launched` / `reaped`. Un échec avant création du processus
+garde la réservation sans incrémenter les compteurs lancés. Les descripteurs
+sont fermés avant retour ; aucune récolte échouée n'autorise une clôture finale.
+
 Les limites natives locales peuvent être plus restrictives (par exemple
 REGISTER-TARGET ≤72 000 pas/6 s). La v1 refuse plus de 512 lignes scalaires par
 candidat et vérifie le pire maillage de fit avant allocation scientifique.

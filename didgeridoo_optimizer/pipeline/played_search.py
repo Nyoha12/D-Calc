@@ -10,6 +10,7 @@ import resource
 import signal
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 
@@ -48,10 +49,10 @@ class Budget:
         self.reserved = dict(fits=0, trajectories=0, steps_charged=0, children=0)
         self.witness = None
 
-    def check(self):
+    def check(self, *, storage=True):
         if self.stop(): raise BudgetStop('signal_interrupted')
         if time.monotonic()-self.start >= self.limits['seconds']: raise BudgetStop('total_seconds')
-        if report.size(self.out) > self.limits['output_mib']*MIB: raise BudgetStop('total_output')
+        if storage and report.size(self.out) > self.limits['output_mib']*MIB: raise BudgetStop('total_output')
 
     def reserve(self, kind, seconds, output_bytes, steps=0):
         self.check()
@@ -264,51 +265,139 @@ def _limits():
     resource.setrlimit(resource.RLIMIT_FSIZE, (8*MIB, 8*MIB))
 
 
+def _input_chunks(value, active=None):
+    """The default JSON wire format, without allocating an unbounded string."""
+    if active is None: active = set()
+    if isinstance(value, str):
+        yield b'"'
+        for i in range(0, len(value), 8192):
+            yield json.dumps(value[i:i+8192], allow_nan=False)[1:-1].encode('ascii')
+        yield b'"'
+    elif isinstance(value, (dict, list, tuple)):
+        ident = id(value)
+        if ident in active: raise ValueError('Circular worker input')
+        active.add(ident)
+        try:
+            mapping = isinstance(value, dict)
+            yield b'{' if mapping else b'['
+            for index, item in enumerate(value.items() if mapping else value):
+                if index: yield b', '
+                if mapping:
+                    key, item = item
+                    if not isinstance(key, str):
+                        if key is not None and not isinstance(key, (int, float, bool)):
+                            raise TypeError('Worker input keys must be JSON keys')
+                        key = json.dumps(key, allow_nan=False)
+                    yield from _input_chunks(key, active)
+                    yield b': '
+                yield from _input_chunks(item, active)
+            yield b'}' if mapping else b']'
+        finally:
+            active.remove(ident)
+    else:
+        yield json.dumps(value, allow_nan=False).encode('ascii')
+
+
 def launch(kind, task, out, budget, children, *, seconds, output_bytes, steps=0):
     """One direct child, no daemon or descendants. All numerical work is serial."""
-    budget.reserve(kind, seconds, output_bytes, steps)
+    start = time.monotonic()
+    def check(*, storage=True):
+        budget.check(storage=storage)
+        if time.monotonic()-start >= seconds: raise BudgetStop('child_timeout')
+
+    # Count before reserving/allocating the input file. Even a single enormous
+    # JSON string is escaped in bounded chunks. No full raw copy is needed.
+    check()
+    available = budget.limits['output_mib']*MIB-report.size(budget.out)-output_bytes-2*MIB
+    input_bytes = 0
+    for chunk in _input_chunks(task):
+        check(storage=False)
+        input_bytes += len(chunk)
+        if input_bytes > 4*MIB: raise ValueError('Worker input quota')
+        if input_bytes > available: raise BudgetStop('child_does_not_fit_remaining_storage')
+    budget.reserve(kind, seconds, output_bytes+input_bytes, steps)
     index = budget.reserved['children']
-    log = Path(out)/f'child-{index:04d}.log'
+    out = report.safe_path(out)
+    log = out/f'child-{index:04d}.log'
     module = {'fit':'tools.time_domain_reference', 'trajectory':'tools.register_target'}.get(kind, 'tools.played_search')
-    raw = json.dumps(task, allow_nan=False).encode()
-    if len(raw) > 4*MIB: raise ValueError('Worker input quota')
     env = dict(os.environ, OPENBLAS_NUM_THREADS='1', OMP_NUM_THREADS='1', MKL_NUM_THREADS='1',
                NUMEXPR_NUM_THREADS='1', PYTHONDONTWRITEBYTECODE='1')
-    start = time.monotonic(); child = None; reason = None; receipt = None
-    # File stdout avoids pipe deadlock on a full native fit certificate.
-    with log.open('xb') as stream:
-        try:
-            child = subprocess.Popen([sys.executable, '-B', '-m', module, '--worker'], cwd=ROOT, env=env,
-                                     stdin=subprocess.PIPE, stdout=stream, stderr=subprocess.STDOUT, preexec_fn=_limits)
-            budget.launched(kind,steps)
-            child.stdin.write(raw); child.stdin.close()
-            while child.poll() is None:
-                if time.monotonic()-start >= seconds: reason='child_timeout'; break
-                try: budget.check()
-                except BudgetStop as exc: reason=str(exc); break
-                time.sleep(.02)
-            if reason is not None and child.poll() is None:
-                child.terminate()
-                try: child.wait(timeout=2)
-                except subprocess.TimeoutExpired: child.kill()
-            code = child.wait()
-        finally:
-            if child is not None:
-                if child.poll() is None: child.kill()
-                child.wait()
-                if child.stdin and not child.stdin.closed: child.stdin.close()
-                receipt = dict(kind=kind, pid=child.pid, exit_code=child.returncode, reaped=True,
-                               seconds=time.monotonic()-start, timeout_or_error=reason, log=log.name,
-                               steps_charged=steps)
-                children.append(receipt)
-        stream.flush(); os.fsync(stream.fileno())
+    child = None; reason = None; collection_seconds = 0.; operation_seconds = 0.
     try:
+        # Both streams are files: a child that never reads cannot block sending.
+        # Only this uniquely created temporary is removed by its context manager.
+        with tempfile.NamedTemporaryFile(mode='w+b', dir=out, prefix='.worker-input-') as source, log.open('xb') as stream:
+            try:
+                written = 0
+                for chunk in _input_chunks(task):
+                    check(storage=False)
+                    written += len(chunk)
+                    if written > input_bytes: raise ValueError('Worker input changed during preparation')
+                    source.write(chunk)
+                if written != input_bytes: raise ValueError('Worker input changed during preparation')
+                source.flush(); source.seek(0)
+                check()
+                # The input is now counted by size(); do not charge it twice.
+                if report.size(budget.out)+output_bytes+2*MIB > budget.limits['output_mib']*MIB:
+                    raise BudgetStop('child_does_not_fit_remaining_storage')
+                child = subprocess.Popen([sys.executable, '-B', '-m', module, '--worker'], cwd=ROOT, env=env,
+                                         stdin=source, stdout=stream, stderr=subprocess.STDOUT, preexec_fn=_limits)
+                budget.launched(kind,steps)
+                while True:
+                    # A late successful exit never outranks a deadline or stop.
+                    check()
+                    if child.poll() is not None: break
+                    time.sleep(min(.02, max(0., seconds-(time.monotonic()-start))))
+            except BaseException as exc:
+                reason = str(exc) if isinstance(exc, BudgetStop) else type(exc).__name__+': '+str(exc)
+                raise
+            finally:
+                operation_seconds = time.monotonic()-start
+                collected = time.monotonic()
+                try:
+                    if child is not None:
+                        try:
+                            if child.poll() is None: child.terminate()
+                            child.wait(timeout=2)
+                        except BaseException as exc:
+                            # Even a deadline signal during collection must
+                            # first kill/reap the owned child. Never wait forever.
+                            try:
+                                child.kill()
+                                child.wait(timeout=max(0., 4-(time.monotonic()-collected)))
+                            except BaseException as cleanup:
+                                raise RuntimeError('Owned child reap not confirmed') from cleanup
+                            if not isinstance(exc, subprocess.TimeoutExpired): raise
+                finally:
+                    collection_seconds = time.monotonic()-collected
+            stream.flush(); os.fsync(stream.fileno())
+    except BudgetStop as exc:
+        reason = str(exc)
+    except BaseException as exc:
+        if reason is None: reason = type(exc).__name__+': '+str(exc)
+        raise
+    finally:
+        receipt = dict(kind=kind, pid=child.pid if child else None,
+                       exit_code=child.returncode if child else None,
+                       launched=child is not None, reaped=child is None or child.returncode is not None,
+                       seconds=time.monotonic()-start, operation_seconds=operation_seconds,
+                       collection_seconds=collection_seconds, collection_limit_seconds=4,
+                       timeout_or_error=reason, log=log.name, input_bytes=input_bytes,
+                       steps_charged=steps if child else 0)
+        children.append(receipt)
+    try:
+        if not log.exists(): raise ValueError('Child not launched')
+        if log.stat().st_size > 8*MIB: raise ValueError('Child output quota')
         content = log.read_bytes()
         if len(content) > 8*MIB: raise ValueError('Child output quota')
         response = json.loads(content.decode().splitlines()[-1], object_pairs_hook=_pairs, parse_constant=_constant)
         json.dumps(response, allow_nan=False)
     except (ValueError, IndexError, UnicodeError) as exc:
         response = dict(ok=False, status='partial', reason='child_receipt_unavailable: '+str(exc))
+    if reason is None:
+        try: check()
+        except BudgetStop as exc: reason = str(exc)
+    receipt['timeout_or_error'] = reason
     if receipt['exit_code'] != 0 or reason:
         response.update(ok=False, status='partial', reason=reason or 'child_failed')
     return response, receipt
@@ -577,6 +666,8 @@ def run(job_path, output_dir, *, dry_run=False):
         ok=result['status']=='complete' and not flags
         response=dict(ok=ok,status=result['status'],conforming=result['conforming'],output=str(out),
                       termination=result['search']['termination'],counters=result['counters'])
+        if any(not child['reaped'] for child in children):
+            raise RuntimeError('Owned child reap not confirmed; completion refused')
         report.prepare_completion(out,dict(ok=ok,children=children,status=result['status'],cancelled=bool(flags)), **kw)
     except BudgetStop as exc:
         response=dict(ok=False,status='partial',conforming=bool((result and result.get('conforming')) or budget.witness),output=str(out),reason=str(exc),
