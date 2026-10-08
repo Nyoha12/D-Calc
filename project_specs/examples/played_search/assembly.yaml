@@ -1,0 +1,24 @@
+schema_version: dcalc.assembly.v1
+id: fixed_assembly
+pieces:
+  body:
+    kind: fixed
+    material_id: pvc_pressure
+    segments:
+    - id: bore
+      kind: cylinder
+      length:
+        value: 120.1604159825398
+        unit: cm
+      diameter_in:
+        value: 30.0
+        unit: mm
+      diameter_out:
+        value: 30.0
+        unit: mm
+blocks:
+- id: body
+  kind: fixed
+  piece: body
+configurations:
+  nominal: {}

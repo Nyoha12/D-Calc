@@ -1,0 +1,124 @@
+schema: dcalc.register_target.plan.v1
+case:
+  kind: saved
+  id: instrument
+  config: '@CONFIG'
+  design: '@DESIGN'
+  model_in: '@MODEL'
+  recipe:
+    sample_rate_hz: 12000
+    h_cm: 0.5
+    loss_model: zk
+    radiation_model: legacy
+    air_reference: ck_dry20
+    R0: null
+    dc_origin: null
+    basis_completion: r29
+    fit_min_hz: 40.0
+    fit_max_hz: 3000.0
+    fit_points: 4096
+    guard_max_hz: 3500.0
+    guard_points: 768
+    audit_points: 1536
+reference_lips:
+  mouth_pressure_kpa: 3.5
+  resonance_hz: 80.0
+  effective_area_m2: 3.0e-06
+  mass_kg: 0.0001
+  rest_opening_m: 0.0008
+  lip_width_m: 0.012
+  damping_ratio: 0.2
+  contact_stiffness_n_per_m: 10000.0
+  contact_damping_n_s_per_m: 0.04
+  min_opening_m: 1.0e-06
+  flow_coefficient: 0.72
+  pressure_force_sign: -1.0
+rho_kg_m3: 1.2046925976462561
+source: ideal
+port_model: conjugate
+initial:
+  kind: native
+plateaus:
+- id: hold
+  pressure_pa: 3500.0
+  resonance_hz: 80.0
+  damping_ratio: 0.2
+  steps: 36000
+  duration_s: 3.0
+windows:
+- id: early
+  plateau: hold
+  start_step: 24000
+  stop_step: 30000
+- id: late
+  plateau: hold
+  start_step: 30000
+  stop_step: 36000
+observation:
+  band_hz:
+  - 40.0
+  - 400.0
+  frame_steps: 4000
+  hop_steps: 2000
+  min_rms_pa: 0.01
+  min_periods: 2
+  max_error: 0.015
+  competitor_margin: 1.0e-05
+  max_drift_cents: 15.0
+  max_dispersion_cents: 5.0
+  multiple_tolerance: 0.015
+  period_error_floor: 1.0e-08
+  section_level_pa: 0.0
+  section_direction: rising
+  phase: null
+  pressure_scale_pa: 1.0
+criteria:
+- id: pitch
+  role: hard
+  observable: played_frequency
+  windows:
+  - early
+  - late
+  target:
+    value: 70.0
+    unit: Hz
+  tolerance:
+    value: 5.0
+    unit: cent
+- id: pressure
+  role: hard
+  observable: pressure_max
+  windows:
+  - early
+  - late
+  maximum:
+    value: 4000.0
+    unit: Pa
+- id: activity
+  role: hard
+  observable: activity_rms
+  windows:
+  - early
+  - late
+  minimum:
+    value: 100.0
+    unit: Pa
+- id: duration
+  role: hard
+  observable: duration
+  windows:
+  - early
+  - late
+  minimum:
+    value: 0.49
+    unit: s
+budgets:
+  chunk_steps: 1200
+  new_steps: 36000
+  new_seconds: 3.0
+  child_seconds: 170.0
+  orchestrator_seconds: 500.0
+  memory_mib: 768
+  blas_threads: 1
+  output_mib: 160
+  observation_ops: 100000000

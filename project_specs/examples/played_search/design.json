@@ -1,0 +1,15 @@
+{
+  "id": "cylinder_played_search",
+  "segments": [
+    {
+      "kind": "cylinder",
+      "length_cm": 120.1604159825398,
+      "d_in_cm": 3.0,
+      "d_out_cm": 3.0,
+      "material_id": "pvc_pressure"
+    }
+  ],
+  "metadata": {
+    "nature": "Exemple numérique public; aucun instrument mesuré"
+  }
+}
