@@ -291,6 +291,7 @@ def test_reader_rejects_semantic_contradictions_with_valid_hashes(tmp_path, chan
 def test_reader_partial_result_retains_counterexample(tmp_path):
     result, out = sealed_bundle(tmp_path)
     result['observations'] = result['observations'][:2]
+    (out/'observation_0003.json').unlink()  # Model a genuinely truncated bundle.
     result.update(audit.summarize(result['observations'], result['plan'], False))
     rewrite_bundle(out, result)
     reread = report.read_result(out)
@@ -391,3 +392,12 @@ def test_reader_checks_coverage_against_original_job(tmp_path):
     result.update(audit.summarize(result['observations'], result['plan'], True))
     write(out/'plan.json', result['plan']); rewrite_bundle(out, result)
     with pytest.raises(ValueError, match='portées originales'): report.read_result(out)
+
+
+def test_reader_partial_manifest_cannot_hide_present_counterexample(tmp_path):
+    result, out = sealed_bundle(tmp_path)
+    result['observations'] = result['observations'][:1]
+    result.update(audit.summarize(result['observations'], result['plan'], False))
+    rewrite_bundle(out, result)
+    assert (out/'observation_0002.json').is_file()
+    with pytest.raises(ValueError, match='absente du manifeste'): report.read_result(out)

@@ -224,6 +224,8 @@ sont confrontés aux cibles/tolérances originales et aux valeurs conservées, s
 élargir de tolérance. Les minima et les booléens de résultat sont recalculés à
 partir des lignes présentes ; une déclaration complète exige toute la grille.
 Une sortie partielle conserve ses contre-exemples et ne couvre pas la demande.
+Toute observation encore présente dans le dossier doit figurer au manifeste,
+y compris lorsqu’une sortie est déclarée partielle.
 Les hard tous acquis restent conformes si seul un budget facultatif manque.
 
 Le préflight conserve des empreintes de la géométrie, du profil et des métadonnées

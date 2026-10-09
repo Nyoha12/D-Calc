@@ -383,6 +383,9 @@ def read_result(output):
     for name,sha in manifest.items():
         if Path(name).name != name or file_sha256(safe_path(out/name)) != sha:
             raise ValueError('sortie altérée: '+name)
+    _require({p.name for p in out.glob('observation_*.json')} ==
+             {name for name in manifest if name.startswith('observation_')},
+             'observation présente mais absente du manifeste')
     plan = read_json(out/'plan.json')
     result = read_json(out/'result.json') if 'result.json' in manifest else None
     producer = (result['plan'] if result else plan)['provenance']
