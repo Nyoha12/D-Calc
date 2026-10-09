@@ -1,0 +1,74 @@
+{
+  "schema_version": "dcalc.tolerance_audit.v1",
+  "input": {
+    "kind": "fixed",
+    "config": "../constrained_design/config.yaml",
+    "design": "fixed_design.json",
+    "request": "fixed_request.json"
+  },
+  "uncertainties": [
+    {
+      "id": "cut",
+      "fields": [
+        "segments.0.length_cm"
+      ],
+      "delta": {
+        "value": 1,
+        "unit": "mm"
+      },
+      "origin": "Scénario prescrit synthétique, sans qualification industrielle."
+    },
+    {
+      "id": "bore",
+      "fields": [
+        "segments.0.d_in_cm",
+        "segments.0.d_out_cm"
+      ],
+      "delta": {
+        "value": 0.2,
+        "unit": "mm"
+      },
+      "origin": "Écart commun des deux bouts du cylindre; scénario synthétique."
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "nominal",
+      "coefficients": {
+        "cut": 0,
+        "bore": 0
+      }
+    },
+    {
+      "id": "plus",
+      "coefficients": {
+        "cut": 1,
+        "bore": 1
+      }
+    },
+    {
+      "id": "minus",
+      "coefficients": {
+        "cut": -1,
+        "bore": -1
+      }
+    }
+  ],
+  "budgets": {
+    "uncertainties": 8,
+    "scenarios": 65,
+    "fields": 64,
+    "scenario_fields": 4160,
+    "projections": 100,
+    "spectral_calls": 2000,
+    "frequencies": 1000000,
+    "frequency_segment_product": 100000000,
+    "segments": 50000,
+    "seconds": 90,
+    "memory_mib": 650,
+    "output_mib": 30
+  },
+  "coverage": {
+    "kind": "finite"
+  }
+}

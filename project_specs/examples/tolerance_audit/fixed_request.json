@@ -1,0 +1,70 @@
+{
+  "schema_version": "dcalc.design_request.v1",
+  "variables": [],
+  "derived": [],
+  "models": {
+    "loss_model": "zk",
+    "air_reference": "ck_dry20",
+    "radiation_model": "legacy"
+  },
+  "spectrum": {
+    "min_hz": 10.0,
+    "max_hz": 350,
+    "step_hz": 2,
+    "final_step_hz": 0.5,
+    "refinement_hz": 1e-06,
+    "h_cm": 2
+  },
+  "budgets": {
+    "evaluations": 160,
+    "iterations": 24,
+    "variables": 4,
+    "frequencies": 2000,
+    "segments": 512,
+    "history": 160,
+    "seconds": 150,
+    "frequency_segment_product": 1000000
+  },
+  "preference_method": "lexicographic",
+  "scope": {
+    "configurations": [
+      "nominal"
+    ]
+  },
+  "modes": [
+    {
+      "id": "m1",
+      "order": 1,
+      "window_hz": [
+        50,
+        95
+      ]
+    }
+  ],
+  "criteria": [
+    {
+      "id": "f1",
+      "observable": "resonance_frequency",
+      "mode": "m1",
+      "target": {
+        "value": 70.0,
+        "unit": "Hz"
+      },
+      "unit": "Hz",
+      "tolerance": {
+        "value": 0.1,
+        "unit": "cent"
+      },
+      "level": "passive",
+      "scope": {
+        "configurations": [
+          "nominal"
+        ]
+      },
+      "role": "hard"
+    }
+  ],
+  "metadata": {
+    "origin": "Demande passive synthétique pour un cylindre fixé; aucune optimisation ni calibration."
+  }
+}

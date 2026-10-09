@@ -1,0 +1,73 @@
+{
+  "schema_version": "dcalc.tolerance_audit.v1",
+  "input": {
+    "kind": "assembly",
+    "config": "../assembly_path/config.yaml",
+    "assembly": "../assembly_path/assembly.yaml",
+    "assembly_request": "../assembly_path/request.yaml"
+  },
+  "uncertainties": [
+    {
+      "id": "cut",
+      "fields": [
+        "pieces.inner.length"
+      ],
+      "delta": {
+        "value": 1,
+        "unit": "mm"
+      },
+      "origin": "Scénario prescrit synthétique; même pièce dans short et long."
+    },
+    {
+      "id": "stock",
+      "fields": [
+        "pieces.outer.length"
+      ],
+      "delta": {
+        "value": 25,
+        "unit": "mm"
+      },
+      "origin": "Scénario de contrôle mécanique prescrit; ne représente pas une tolérance industrielle."
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "nominal",
+      "coefficients": {
+        "cut": 0,
+        "stock": 0
+      }
+    },
+    {
+      "id": "plus",
+      "coefficients": {
+        "cut": 1,
+        "stock": 1
+      }
+    },
+    {
+      "id": "minus",
+      "coefficients": {
+        "cut": -1,
+        "stock": -1
+      }
+    }
+  ],
+  "budgets": {
+    "uncertainties": 8,
+    "scenarios": 65,
+    "fields": 64,
+    "scenario_fields": 4160,
+    "projections": 100,
+    "spectral_calls": 2000,
+    "frequencies": 1000000,
+    "frequency_segment_product": 100000000,
+    "segments": 50000,
+    "seconds": 90,
+    "memory_mib": 650,
+    "output_mib": 30
+  },
+  "coverage": {
+    "kind": "finite"
+  }
+}
