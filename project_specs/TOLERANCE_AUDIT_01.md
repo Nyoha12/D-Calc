@@ -195,9 +195,11 @@ Une archive ancienne n’est ni réétiquetée ni assimilée à un nouveau calcu
 ## Exemples et tests
 
 Les deux JOB publics sont de petits exemples synthétiques documentés par leurs
-`origin`. Ils référencent les entrées publiques `constrained_design` et
-`assembly_path`, sans adaptation acoustique. Chacun comprend le nominal et
-quatre combinaisons explicites. L’assemblage comporte `short` et `long` avec
+`origin`. Le fixe fournit un cylindre de 120 cm, diamètre 3 cm, et une demande
+passive native de 70 Hz ; sa géométrie n'a pas été recherchée ni accordée.
+L'assemblage référence les entrées publiques `assembly_path`, sans adaptation
+acoustique. Chacun comprend le nominal et deux combinaisons explicites.
+L’assemblage comporte `short` et `long` avec
 commandes inchangées. Une réduction de 25 mm du tube externe laisse 75 mm de
 recouvrement en configuration longue pour 80 mm requis : contre-exemple
 mécanique indépendant du TMM. Une nominale acoustiquement non conforme est un

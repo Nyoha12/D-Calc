@@ -51,20 +51,6 @@
         "cut": -1,
         "stock": -1
       }
-    },
-    {
-      "id": "mixed_a",
-      "coefficients": {
-        "cut": 1,
-        "stock": -1
-      }
-    },
-    {
-      "id": "mixed_b",
-      "coefficients": {
-        "cut": -1,
-        "stock": 1
-      }
     }
   ],
   "budgets": {

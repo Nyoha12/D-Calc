@@ -64,7 +64,12 @@ def profile_name(scenario, projection):
 
 
 def write_geometry(output,scenario,raw,kind,plan):
-    write_json(Path(output)/f'{kind}_{scenario}.json',raw,budget_bytes=_limit(plan))
+    # Assembly.generate exposes piece insertion order in component_ids. Preserve
+    # that native order so the exported stock regenerates identical metadata.
+    data = (json.dumps(raw,ensure_ascii=False,allow_nan=False,indent=2)+'\n').encode()
+    if len(data) > 4*1024**2:
+        raise ValueError('JSON output budget')
+    atomic_bytes(Path(output)/f'{kind}_{scenario}.json',data,budget_bytes=_limit(plan))
 
 
 def write_unavailable_scenario(output,scenario,reason,plan):

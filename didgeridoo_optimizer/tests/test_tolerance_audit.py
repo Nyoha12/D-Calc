@@ -210,3 +210,16 @@ def test_unrepresentable_assembly_scenario_preserves_other_observations(tmp_path
     assert (out/'unavailable_fractional.json').is_file()
     assert not (out/'assembly_fractional.json').exists()
     assert not result['counterexample_found']
+
+
+def test_exported_assembly_regenerates_identical_native_profiles(tmp_path):
+    from didgeridoo_optimizer.geometry.assemblies import Assembly,read_assembly
+    prepared,plan=audit.load_inputs(EXAMPLES/'assembly_job.json')
+    raw=prepared['nominal'];context=prepared['context']
+    report.write_geometry(tmp_path,'nominal',raw,'assembly',plan)
+    reloaded,_=read_assembly(tmp_path/'assembly_nominal.json')
+    assert list(reloaded['pieces'])==list(raw['pieces'])
+    before=Assembly(raw,context['material_db'],context['config'])
+    after=Assembly(reloaded,context['material_db'],context['config'])
+    for configuration in raw['configurations']:
+        assert before.generate(configuration)['design'].as_dict()==after.generate(configuration)['design'].as_dict()
