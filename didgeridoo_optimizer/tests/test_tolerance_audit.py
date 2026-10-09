@@ -223,3 +223,171 @@ def test_exported_assembly_regenerates_identical_native_profiles(tmp_path):
     after=Assembly(reloaded,context['material_db'],context['config'])
     for configuration in raw['configurations']:
         assert before.generate(configuration)['design'].as_dict()==after.generate(configuration)['design'].as_dict()
+
+
+def sealed_bundle(tmp_path, *, optional=False):
+    job = make_job(tmp_path, optional=optional)
+    result, out = execute(tmp_path, job)
+    report.export_result(out, result)
+    report.close_prepared(out, dict(ok=True, status=result['status'],
+                                    child=dict(exit_code=0, reaped=True)), result['plan'])
+    report.commit_terminal(out)
+    return json.loads(json.dumps(result)), out
+
+
+def rewrite_bundle(out, result):
+    """Rehash deliberate semantic corruption; this is not an authenticity test."""
+    write(out/'result.json', result)
+    for index, observation in enumerate(result['observations'], 1):
+        write(out/f'observation_{index:04d}.json', observation)
+    manifest = json.loads((out/'manifest.json').read_text())
+    manifest = {name: report.file_sha256(out/name) for name in manifest
+                if not name.startswith('observation_')}
+    manifest.update({f'observation_{i:04d}.json': report.file_sha256(out/f'observation_{i:04d}.json')
+                     for i in range(1, len(result['observations'])+1)})
+    write(out/'manifest.json', manifest)
+    receipt = json.loads((out/'execution.json').read_text())
+    receipt['manifest_sha256'] = report.file_sha256(out/'manifest.json')
+    write(out/'execution.json', receipt)
+    write(out/'execution.closed.json', dict(execution_sha256=report.file_sha256(out/'execution.json'), cancelled=False))
+    write(out/'execution.completed.json', report.completion_record(out))
+
+
+@pytest.mark.parametrize('change', [
+    'summary', 'missing', 'duplicate', 'role', 'identity', 'configuration', 'scenario',
+    'coefficients', 'nominal', 'request', 'unit', 'margin_unit', 'margin', 'minimum',
+    'status', 'criterion_missing', 'criterion_duplicate', 'geometry', 'profile',
+])
+def test_reader_rejects_semantic_contradictions_with_valid_hashes(tmp_path, change):
+    result, out = sealed_bundle(tmp_path)
+    observation = result['observations'][0]
+    row = observation['criteria'][0]
+    if change == 'summary': result.update(sampled_hard_conforming=True, counterexample_found=False)
+    elif change == 'missing': result['observations'] = result['observations'][:1]
+    elif change == 'duplicate': result['observations'][1] = copy.deepcopy(observation)
+    elif change == 'role': row['role'] = 'observe'
+    elif change == 'identity': row['id'] = 'renamed'
+    elif change == 'configuration': observation['configuration'] = 'other'
+    elif change == 'scenario': observation['scenario'] = 'undeclared'
+    elif change == 'coefficients': observation['coefficients']['cut'] = 1
+    elif change == 'nominal': observation['nominal'] = False
+    elif change == 'request': observation['effective_request']['criteria'][0]['target']['value'] = .7
+    elif change == 'unit': row['unit_si'] = 'Hz'
+    elif change == 'margin_unit': row['margin_unit'] = 'Hz'
+    elif change == 'margin': row['margin'] += .1
+    elif change == 'minimum': result['margins'][0]['margin'] += .1
+    elif change == 'status': row['status'] = 'violated'
+    elif change == 'criterion_missing': observation['criteria'] = []
+    elif change == 'criterion_duplicate': observation['criteria'].append(copy.deepcopy(row))
+    else:
+        name = 'fixed_nominal.json' if change == 'geometry' else report.profile_name('nominal', 'fixed')
+        value = json.loads((out/name).read_text())
+        value['segments'][0]['length_cm'] = 99
+        write(out/name, value)
+    rewrite_bundle(out, result)
+    with pytest.raises(ValueError): report.read_result(out)
+
+
+def test_reader_partial_result_retains_counterexample(tmp_path):
+    result, out = sealed_bundle(tmp_path)
+    result['observations'] = result['observations'][:2]
+    result.update(audit.summarize(result['observations'], result['plan'], False))
+    rewrite_bundle(out, result)
+    reread = report.read_result(out)
+    assert reread['counterexample_found'] and not reread['execution_complete']
+    assert not reread['sampled_hard_conforming'] and not reread['request_fully_covered']
+
+
+def test_reader_optional_unavailable_and_budget_keep_acquired_hard(tmp_path, monkeypatch):
+    job = make_job(tmp_path, acoustic=True, optional=True)
+    request_path = tmp_path/'request.json'; request = json.loads(request_path.read_text())
+    request['criteria'][1]['role'] = 'observe'; write(request_path, request)
+    raw = json.loads(job.read_text()); raw['uncertainties'][0]['delta']['value'] = .1; write(job, raw)
+    monkeypatch.setattr(audit.ProjectionEvaluator, 'evaluate_design',
+        lambda *a, **k: (_ for _ in ()).throw(audit.BudgetExhausted('optional spectrum')))
+    result, out = execute(tmp_path, job)
+    report.export_result(out, result)
+    report.close_prepared(out, dict(ok=False, status='interrupted'), result['plan'])
+    report.commit_terminal(out)
+    reread = report.read_result(out)
+    assert reread['sampled_hard_conforming'] and not reread['execution_complete']
+    assert not reread['request_fully_covered']
+    assert reread['observations'][0]['criteria'][2]['status'] == 'unsupported'
+
+
+def test_reader_optional_unavailable_complete(tmp_path):
+    result, out = sealed_bundle(tmp_path, optional=True)
+    reread = report.read_result(out)
+    assert reread['execution_complete'] and reread['counterexample_found']
+    assert not reread['request_fully_covered'] and reread['semantic_verified']
+
+
+@pytest.mark.parametrize('dimension_change', ['dimension', 'target_si', 'tolerance_si', 'tolerance_dimension'])
+def test_reader_rejects_changed_original_dimensions_and_targets(tmp_path, dimension_change):
+    result, out = sealed_bundle(tmp_path)
+    row = result['observations'][0]['criteria'][0]
+    row[dimension_change] = 'frequency' if dimension_change in ('dimension', 'tolerance_dimension') else 7.
+    rewrite_bundle(out, result)
+    with pytest.raises(ValueError, match='dimension/demande'): report.read_result(out)
+
+
+def test_reader_fresh_without_importing_producer(tmp_path):
+    import os
+    import subprocess
+    import sys
+    _, out = sealed_bundle(tmp_path)
+    script = '''
+import importlib.abc, json, sys
+class Guard(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, *args):
+        if fullname == 'didgeridoo_optimizer.pipeline.tolerance_audit':
+            raise AssertionError('producer imported during readback')
+sys.meta_path.insert(0, Guard())
+from didgeridoo_optimizer.reporting.tolerance_audit import read_result
+result = read_result(sys.argv[1])
+assert result['ok'] and result['semantic_verified'] and result['counterexample_found']
+assert 'didgeridoo_optimizer.pipeline.tolerance_audit' not in sys.modules
+'''
+    child = subprocess.run([sys.executable, '-B', '-c', script, str(out)], cwd=ROOT,
+        env=dict(os.environ, OPENBLAS_NUM_THREADS='1', OMP_NUM_THREADS='1', MKL_NUM_THREADS='1'),
+        capture_output=True, text=True, timeout=15)
+    assert child.returncode == 0, child.stderr
+
+
+def test_reader_assembly_order_and_profile_association(tmp_path, monkeypatch):
+    import os
+    job = json.loads((EXAMPLES/'assembly_job.json').read_text())
+    request = read_request((EXAMPLES/job['input']['assembly_request']).resolve())[0]
+    for projection in request['projections']:
+        projection['request']['criteria'] = [dict(id='length', observable='geometry',
+            expression={'total_length': True}, target={'value': 1, 'unit': 'm'}, unit='m',
+            tolerance={'value': 1, 'unit': 'mm'}, level='geometry', scope={}, role='hard')]
+    for key in ('config', 'assembly'):
+        job['input'][key] = os.path.relpath((EXAMPLES/job['input'][key]).resolve(), tmp_path)
+    job['input']['assembly_request'] = 'request.json'
+    write(tmp_path/'request.json', request)
+    monkeypatch.setattr(audit.TracedProjectionEvaluator, 'spectrum', lambda *a, **k: pytest.fail('acoustics'))
+    result, out = execute(tmp_path, write(tmp_path/'job.json', job))
+    report.export_result(out, result)
+    report.close_prepared(out, dict(ok=True, child=dict(exit_code=0, reaped=True)), result['plan'])
+    report.commit_terminal(out)
+    assert report.read_result(out)['counterexample_found']
+    path = out/'assembly_nominal.json'; raw = json.loads(path.read_text())
+    assert len(raw['pieces']) > 1
+    raw['pieces'] = dict(reversed(list(raw['pieces'].items())))
+    write(path, raw); rewrite_bundle(out, result)
+    with pytest.raises(ValueError, match='ordre natif'): report.read_result(out)
+
+
+def test_reader_checks_coverage_against_original_job(tmp_path):
+    job = make_job(tmp_path)
+    raw = json.loads(job.read_text()); raw['coverage']['kind'] = 'continuous'; write(job, raw)
+    result, out = execute(tmp_path, job)
+    report.export_result(out, result)
+    report.close_prepared(out, dict(ok=True, child=dict(exit_code=0, reaped=True)), result['plan'])
+    report.commit_terminal(out)
+    assert not report.read_result(out)['request_fully_covered']
+    result['plan']['uncovered'] = []
+    result.update(audit.summarize(result['observations'], result['plan'], True))
+    write(out/'plan.json', result['plan']); rewrite_bundle(out, result)
+    with pytest.raises(ValueError, match='portées originales'): report.read_result(out)

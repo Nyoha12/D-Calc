@@ -35,6 +35,9 @@ LIMITS = dict(uncertainties=8, scenarios=65, fields=64, scenario_fields=4160,
               frequency_segment_product=200000000, segments=200000,
               seconds=165, memory_mib=700, output_mib=100)
 PUBLIC_WALL_SECONDS = 200.
+COMPUTE_WALL_SECONDS = 180.
+COLLECTION_WALL_SECONDS = 10.
+CLOSURE_RESERVE_SECONDS = 2.
 LOADED_SOURCES = report.source_files()
 
 
@@ -199,7 +202,11 @@ def load_inputs(job):
         for p, design, metadata, issue in geometries(kind, effective, context, projections):
             if design is not None and kind == 'fixed':
                 check_mask(nominal, design.as_dict(), parsed, kind)
-            geometry_plan.append(dict(scenario=scenario['id'], projection=p['id'], issue=issue))
+            geometry_plan.append(dict(scenario=scenario['id'], projection=p['id'], issue=issue,
+                geometry_sha256=report.fingerprint(effective),
+                piece_order=list(effective['pieces']) if kind == 'assembly' else None,
+                profile_sha256=report.fingerprint(design.as_dict()) if design is not None else None,
+                metadata_sha256=report.fingerprint(metadata)))
             if design is not None and any(c['observable'] in ('resonance_frequency','resonance_ratio') and
                                          not c['unsupported_reason'] for c in p['template'].criteria):
                 estimate = _mesh_bound(design,p['template'])
@@ -236,32 +243,7 @@ def load_inputs(job):
                 projections=projections, parsed=parsed, sources=sources, job_path=job_path), plan
 
 
-def summarize(observations, plan, complete):
-    rows = [r for o in observations for r in o['criteria']]
-    hard = [r for r in rows if r['role']=='hard']
-    physical_failure = any(o['geometry_status']=='geometry_violated' for o in observations)
-    failure = physical_failure or any(r['status']=='violated' for r in hard)
-    all_hard = bool(hard) and all(r['status']=='satisfied' and r.get('unit_si') for r in hard)
-    margins = {}
-    for o in observations:
-        for r in o['criteria']:
-            if r.get('value_si') is None or r.get('margin') is None or not r.get('margin_unit'):
-                continue
-            key = (o['projection'],r['id'])
-            if key not in margins or r['margin'] < margins[key]['margin']:
-                margins[key] = dict(projection=o['projection'],criterion=r['id'],scenario=o['scenario'],
-                                    margin=r['margin'],unit=r['margin_unit'],status=r['status'])
-    expected = {(g['scenario'],g['projection'],c) for g in plan.get('geometry',[])
-                for c in plan.get('expected_hard',{}).get(g['projection'],[])}
-    observed = {(o['scenario'],o['projection'],r['id']) for o in observations
-                for r in o['criteria'] if r['role']=='hard'}
-    sampled = bool(all_hard and not physical_failure and (observed == expected if expected else complete))
-    covered = not plan['uncovered'] and all(r['status'] in ('satisfied','violated') and r.get('unit_si') for r in rows)
-    return dict(execution_complete=bool(complete),sampled_hard_conforming=sampled,
-                request_fully_covered=bool(complete and covered),continuous_robustness_certified=False,
-                counterexample_found=failure, status='counterexample' if failure else 'sampled_conforming' if sampled
-                else 'unresolved', margins=list(margins.values()))
-
+summarize = report.summarize
 
 class TracedProjectionEvaluator(ProjectionEvaluator):
     """Native evaluator with immutable completed-level evidence, no new solver."""
@@ -368,7 +350,64 @@ def worker(task):
                 request_fully_covered=result['request_fully_covered'],counterexample_found=result['counterexample_found'])
 
 
-def _run(job, output_dir, dry_run):
+def _collect_child(child, collected, deadline):
+    """Reap only this Popen child; every retry shares one absolute deadline.
+
+    Draining pipes and reaping the process are separate confirmations. A killed
+    process can have exited while inherited pipe ends still prevent collection.
+    """
+    errors = []; reaped = False; closed = True; late = False
+    if child is None:
+        return dict(created=False,exit_code=None,reaped=False,collected=True,
+                    pipes_closed=True), errors, False
+    try:
+        if child.poll() is None:
+            child.kill()
+        if not collected:
+            remaining = deadline-time.monotonic()
+            if remaining <= 0:
+                raise subprocess.TimeoutExpired('collect owned child',0.)
+            # Keep half of the remaining collection budget for a final wait if
+            # the killed child exits but an inherited pipe stays open.
+            drain_timeout = remaining/2.
+            drain_deadline = time.monotonic()+drain_timeout
+            child.communicate(timeout=drain_timeout)
+            collected = True
+            if time.monotonic() >= drain_deadline:
+                late = True
+                errors.append('retour tardif de collecte des canaux')
+        reaped = child.returncode is not None and child.poll() is not None
+    except BaseException as exc:
+        errors.append(type(exc).__name__+': '+str(exc))
+    finally:
+        for name in ('stdin','stdout','stderr'):
+            stream = getattr(child,name,None)
+            if stream is not None:
+                try:
+                    stream.close()
+                    if not stream.closed:
+                        raise OSError(name+' non fermé')
+                except BaseException as exc:
+                    closed = False
+                    errors.append(name+': '+type(exc).__name__+': '+str(exc))
+        if not reaped:
+            remaining = deadline-time.monotonic()
+            if remaining > 0:
+                try:
+                    code = child.wait(timeout=remaining)
+                    reaped = code is not None and child.returncode == code and child.poll() == code
+                except BaseException as exc:
+                    errors.append(type(exc).__name__+': '+str(exc))
+        late = late or time.monotonic() >= deadline
+        if late:
+            errors.append('budget cumulé de collecte/fermeture dépassé')
+    return dict(created=True,exit_code=child.returncode,reaped=reaped,collected=collected,
+                pipes_closed=closed), errors, late
+
+
+def _run(job, output_dir, dry_run, *, deadline=None):
+    if deadline is None:
+        deadline = time.monotonic()+PUBLIC_WALL_SECONDS
     prepared, plan = load_inputs(job)
     if dry_run: return dict(ok=True,dry_run=True,output_created=False,plan=plan)
     execution_ready()
@@ -380,27 +419,54 @@ def _run(job, output_dir, dry_run):
     env = dict(os.environ,OPENBLAS_NUM_THREADS='1',OMP_NUM_THREADS='1',MKL_NUM_THREADS='1',
                NUMEXPR_NUM_THREADS='1',PYTHONDONTWRITEBYTECODE='1')
     child = None; handlers = {}; response = None; started = time.monotonic(); stdout = stderr = ''
+    collected = False; collection_signals = []
     try:
         for signum in (signal.SIGINT,signal.SIGTERM): handlers[signum] = signal.signal(signum,interrupt_run)
+        timeout = min(COMPUTE_WALL_SECONDS,deadline-time.monotonic()-COLLECTION_WALL_SECONDS-CLOSURE_RESERVE_SECONDS)
+        if timeout <= 0:
+            raise subprocess.TimeoutExpired('budget public avant lancement',0.)
         child = subprocess.Popen([sys.executable,'-B','-m','tools.tolerance_audit','--worker'],
             stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,
             cwd=ROOT,env=env,preexec_fn=child_limits)
-        stdout,stderr = child.communicate(json.dumps(task,allow_nan=False),timeout=180.)
+        compute_deadline = min(time.monotonic()+timeout,deadline-COLLECTION_WALL_SECONDS-CLOSURE_RESERVE_SECONDS)
+        remaining = compute_deadline-time.monotonic()
+        if remaining <= 0:
+            raise subprocess.TimeoutExpired('budget public après lancement',0.)
+        stdout,stderr = child.communicate(json.dumps(task,allow_nan=False),timeout=remaining)
+        collected = True
+        if time.monotonic() >= compute_deadline:
+            raise subprocess.TimeoutExpired('retour tardif du calcul',timeout)
         response = json.loads(stdout)
         response['ok'] = response.get('ok') is True and child.returncode == 0
-        response.update(child=dict(exit_code=child.returncode,reaped=True),wall_seconds=time.monotonic()-started)
+        if not response['ok']:
+            response['execution_complete'] = False
         if stderr: response['diagnostic'] = stderr[-2000:]
     except BaseException as exc:
-        if child is not None and child.poll() is None: child.kill(); child.communicate()
         response = dict(ok=False,status='interrupted' if isinstance(exc,(RunInterrupted,KeyboardInterrupt,subprocess.TimeoutExpired))
-                        else 'failed',reason=str(exc),execution_complete=False,
-                        child=dict(exit_code=None if child is None else child.returncode,reaped=True))
+                        else 'failed',reason=str(exc),execution_complete=False)
         if stdout or stderr:
             response['diagnostic'] = dict(stdout=stdout[-2000:],stderr=stderr[-4000:])
     finally:
-        if child is not None and child.poll() is None: child.kill(); child.communicate()
+        # Repeated INT/TERM must not interrupt the bounded reaping attempt. They
+        # still make the command unsuccessful and are reported after cleanup.
+        for signum in handlers:
+            signal.signal(signum,lambda received,frame: collection_signals.append(received))
+        collection_deadline = min(time.monotonic()+COLLECTION_WALL_SECONDS,
+                                  deadline-CLOSURE_RESERVE_SECONDS)
+        child_state, errors, late = _collect_child(child,collected,collection_deadline)
         for signum,handler in handlers.items(): signal.signal(signum,handler)
-    report.close_prepared(output,response,plan)
+    response.update(child=child_state,wall_seconds=time.monotonic()-started)
+    confirmed = (not child_state['created'] or child_state['reaped']) and child_state['collected'] and child_state['pipes_closed'] and not late
+    if errors or collection_signals or not confirmed:
+        response.update(ok=False,execution_complete=False,status='interrupted' if collection_signals else 'failed')
+        response['cleanup_errors'] = errors
+        if collection_signals: response['cleanup_signals'] = collection_signals
+    response['closure_confirmed'] = confirmed
+    if confirmed:
+        report.close_prepared(output,response,plan)
+        if time.monotonic() >= deadline:
+            response.update(ok=False,execution_complete=False,closure_confirmed=False,status='interrupted',
+                            reason='retour tardif de clôture')
     return response
 
 
@@ -413,14 +479,38 @@ def run(job, output_dir, *, dry_run=False):
         return _run(job,output_dir,dry_run)
     if signal.getitimer(signal.ITIMER_REAL) != (0.,0.):
         raise ValueError('API supervisée: alarme préexistante refusée')
+    deadline = time.monotonic()+PUBLIC_WALL_SECONDS
     old = signal.signal(signal.SIGALRM,interrupt_run)
     try:
         signal.setitimer(signal.ITIMER_REAL,PUBLIC_WALL_SECONDS)
-        response = _run(job,output_dir,dry_run)
+        response = _run(job,output_dir,dry_run,deadline=deadline)
     finally:
         try: signal.setitimer(signal.ITIMER_REAL,0.)
         finally: signal.signal(signal.SIGALRM,old)
-    if not dry_run:
+    if not dry_run and response.get('closure_confirmed'):
         # All cleanup/restoration precedes this no-overwrite terminal commit.
-        report.commit_terminal(output_dir)
+        if time.monotonic() >= deadline:
+            response.update(ok=False,execution_complete=False,closure_confirmed=False,status='interrupted',
+                            reason='budget public épuisé avant reçu terminal')
+        else:
+            terminal_error = None
+            try:
+                report.commit_terminal(output_dir)
+                if time.monotonic() >= deadline:
+                    terminal_error = 'retour tardif de publication terminale'
+            except BaseException as exc:
+                terminal_error = type(exc).__name__+': '+str(exc)
+            if terminal_error is not None:
+                response.update(ok=False,execution_complete=False,closure_confirmed=False,status='interrupted',
+                                reason=terminal_error)
+                out = Path(output_dir)
+                cancellation = dict(response,execution_sha256=report.file_sha256(out/'execution.json'))
+                try:
+                    report.write_json(out/'execution.cancelled.json',cancellation,
+                        budget_bytes=report.read_json(out/'plan.json')['budgets']['output_mib']*1024**2)
+                except BaseException:
+                    # If a failed disk cannot publish cancellation, revoke only
+                    # the marker created by this call; preserve every observation.
+                    (out/'execution.completed.json').unlink(missing_ok=True)
+                    raise
     return response

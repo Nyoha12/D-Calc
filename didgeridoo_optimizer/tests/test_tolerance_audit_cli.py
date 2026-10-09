@@ -122,3 +122,188 @@ def test_direct_worker_rejects_unbounded_environment(tmp_path):
         cwd=ROOT,env=ENV,text=True,capture_output=True,timeout=15)
     assert child.returncode==2 and 'limites mémoire/CPU' in child.stderr
     assert not list(tmp_path.iterdir())
+
+
+@pytest.fixture
+def supervised_double(tmp_path,monkeypatch):
+    """Controlled API protocol only: no live hung child or acoustic calculation."""
+    from types import SimpleNamespace
+    import signal
+    job=make_job(tmp_path);out=tmp_path/'out';prepared,plan=audit.load_inputs(job)
+    clock=[0.];children=[]
+    monkeypatch.setattr(audit,'time',SimpleNamespace(monotonic=lambda:clock[0]))
+    monkeypatch.setattr(audit,'load_inputs',lambda path:(prepared,plan))
+    class Pipe:
+        def __init__(self):self.closed=False;self.fail=False;self.delay=0.
+        def close(self):
+            clock[0]+=self.delay
+            if self.fail:raise OSError('controlled close failure')
+            self.closed=True
+    class Child:
+        def __init__(self,initial='timeout',cleanup='normal',wait='normal'):
+            self.returncode=None;self.initial=initial;self.cleanup=cleanup;self.wait_mode=wait
+            self.communications=[];self.waits=[];self.kills=0
+            self.stdin=Pipe();self.stdout=Pipe();self.stderr=Pipe()
+        def communicate(self,*args,timeout=None):
+            assert timeout is not None and timeout>0
+            self.communications.append(timeout)
+            if len(self.communications)==1:
+                if self.initial in ('normal','failed'):
+                    self.returncode=0 if self.initial=='normal' else 7
+                    return json.dumps(dict(ok=True,execution_complete=True,status='sampled_conforming')),''
+                if self.initial=='late':
+                    clock[0]+=timeout+1.;self.returncode=0
+                    return json.dumps(dict(ok=True,execution_complete=True,status='sampled_conforming')),''
+                report.write_json(out/'observation_0001.json',dict(retained='partial evidence'))
+                if self.initial=='finished':self.returncode=7
+                clock[0]+=timeout
+                raise subprocess.TimeoutExpired('owned-double',timeout)
+            if self.cleanup in ('timeout','late','late_phase'):
+                clock[0]+=(timeout+.1 if self.cleanup=='late_phase' else
+                           timeout if self.cleanup=='timeout' else audit.COLLECTION_WALL_SECONDS+1.)
+                if self.cleanup=='timeout':raise subprocess.TimeoutExpired('owned-double cleanup',timeout)
+            if self.cleanup in ('sigint','sigterm'):
+                signum=signal.SIGINT if self.cleanup=='sigint' else signal.SIGTERM
+                signal.getsignal(signum)(signum,None)
+            self.returncode=-9 if self.kills else 7
+            return '',''
+        def poll(self):return self.returncode
+        def kill(self):self.kills+=1
+        def wait(self,timeout=None):
+            assert timeout is not None and timeout>0
+            self.waits.append(timeout)
+            if self.wait_mode=='timeout':
+                clock[0]+=timeout
+                raise subprocess.TimeoutExpired('owned-double wait',timeout)
+            self.returncode=-9
+            return self.returncode
+    original=audit.subprocess.Popen
+    def launch(child):
+        children.append(child)
+        def factory(*args,**kwargs):
+            if isinstance(args[0],list) and 'tools.tolerance_audit' in args[0]:
+                if isinstance(child,Exception):raise child
+                return child
+            return original(*args,**kwargs)
+        monkeypatch.setattr(audit.subprocess,'Popen',factory)
+        return audit.run(job,out)
+    return SimpleNamespace(Child=Child,launch=launch,out=out,clock=clock)
+
+
+def test_supervision_normal_closes_pipes_and_confirms_child(supervised_double):
+    h=supervised_double;child=h.Child(initial='normal');response=h.launch(child)
+    assert response['ok'] and response['execution_complete'] and response['closure_confirmed']
+    assert response['child']==dict(created=True,exit_code=0,reaped=True,collected=True,pipes_closed=True)
+    assert child.kills==0 and len(child.communications)==1 and child.waits==[]
+    assert all(getattr(child,name).closed for name in ('stdin','stdout','stderr'))
+    assert report.read_execution(h.out)['ok']
+
+
+@pytest.mark.parametrize('wait_mode',['normal','timeout'])
+def test_supervision_second_timeout_is_cumulative_and_unconfirmed(supervised_double,wait_mode):
+    h=supervised_double;child=h.Child(cleanup='timeout',wait=wait_mode);response=h.launch(child)
+    assert not response['ok'] and not response['execution_complete'] and not response['closure_confirmed']
+    assert child.kills==1 and len(child.communications)==2 and len(child.waits)==1
+    assert child.communications[1]+child.waits[0]<=audit.COLLECTION_WALL_SECONDS
+    assert response['child']['reaped']==(wait_mode=='normal')
+    assert not response['child']['collected'] and response['child']['pipes_closed']
+    assert not (h.out/'execution.completed.json').exists()
+    assert json.loads((h.out/'observation_0001.json').read_text())==dict(retained='partial evidence')
+    assert h.clock[0]<=audit.COMPUTE_WALL_SECONDS+audit.COLLECTION_WALL_SECONDS
+
+
+@pytest.mark.parametrize('phase',['compute','collection','close'])
+def test_supervision_late_return_never_confirms_success(supervised_double,phase):
+    h=supervised_double;child=h.Child(initial='late' if phase=='compute' else 'timeout',
+                                    cleanup='late' if phase=='collection' else 'normal')
+    if phase=='close':child.stdout.delay=audit.COLLECTION_WALL_SECONDS+1.
+    response=h.launch(child)
+    assert not response['ok'] and not response['execution_complete']
+    assert not report.read_execution(h.out).get('ok')
+    if phase!='compute':
+        assert not response['closure_confirmed'] and not (h.out/'execution.completed.json').exists()
+    assert all(getattr(child,name).closed for name in ('stdin','stdout','stderr'))
+
+
+def test_supervision_close_error_keeps_partial_bundle_unconfirmed(supervised_double):
+    h=supervised_double;child=h.Child();child.stdout.fail=True;response=h.launch(child)
+    assert not response['ok'] and not response['closure_confirmed']
+    assert not response['child']['pipes_closed'] and response['child']['reaped']
+    assert child.stdin.closed and child.stderr.closed
+    assert any('controlled close failure' in reason for reason in response['cleanup_errors'])
+    assert not (h.out/'execution.completed.json').exists()
+    assert (h.out/'observation_0001.json').is_file()
+
+
+def test_supervision_already_finished_child_is_reaped_without_kill(supervised_double):
+    h=supervised_double;child=h.Child(initial='finished');response=h.launch(child)
+    assert not response['ok'] and response['closure_confirmed']
+    assert child.kills==0 and response['child']['reaped'] and response['child']['exit_code']==7
+    assert len(child.communications)==2 and not child.waits
+    assert report.read_execution(h.out)['ok'] is False
+
+
+def test_supervision_launch_error_does_not_claim_a_reaped_child(supervised_double):
+    h=supervised_double;response=h.launch(OSError('controlled launch failure'))
+    assert not response['ok'] and response['status']=='failed'
+    assert not response['child']['created'] and not response['child']['reaped']
+    assert response['child']['exit_code'] is None
+    assert 'controlled launch failure' in response['reason']
+    assert report.read_execution(h.out)['ok'] is False
+
+
+@pytest.mark.parametrize('received',['sigint','sigterm'])
+def test_supervision_signal_during_collection_finishes_owned_cleanup(supervised_double,received):
+    import signal
+    before={s:signal.getsignal(s) for s in (signal.SIGINT,signal.SIGTERM)}
+    h=supervised_double;child=h.Child(cleanup=received);response=h.launch(child)
+    assert not response['ok'] and response['status']=='interrupted'
+    assert response['cleanup_signals']==[signal.SIGINT if received=='sigint' else signal.SIGTERM]
+    assert child.kills==1 and response['child']['reaped'] and response['child']['pipes_closed']
+    assert len(child.communications)==2 and child.communications[1]<=audit.COLLECTION_WALL_SECONDS
+    assert (h.out/'observation_0001.json').is_file()
+    assert {s:signal.getsignal(s) for s in before}==before
+    assert report.read_execution(h.out)['ok'] is False
+
+
+def test_supervision_late_prepared_closure_has_no_terminal_authority(supervised_double,monkeypatch):
+    h=supervised_double;child=h.Child(initial='normal');original=report.close_prepared
+    def late_closure(*args):
+        original(*args)
+        h.clock[0]+=audit.PUBLIC_WALL_SECONDS+1.
+    monkeypatch.setattr(report,'close_prepared',late_closure)
+    response=h.launch(child)
+    assert not response['ok'] and not response['execution_complete'] and not response['closure_confirmed']
+    assert response['reason']=='retour tardif de clôture'
+    assert (h.out/report.PREPARED).exists() and not (h.out/'execution.completed.json').exists()
+    assert not report.read_execution(h.out).get('ok')
+
+
+def test_supervision_nonzero_exit_cannot_echo_success(supervised_double):
+    h=supervised_double;child=h.Child(initial='failed');response=h.launch(child)
+    assert not response['ok'] and not response['execution_complete']
+    assert response['child']['exit_code']==7 and response['child']['reaped']
+    assert child.kills==0 and report.read_execution(h.out)['ok'] is False
+
+
+def test_supervision_collection_late_within_cumulative_budget_is_unconfirmed(supervised_double):
+    h=supervised_double;child=h.Child(cleanup='late_phase');response=h.launch(child)
+    assert h.clock[0]<audit.COMPUTE_WALL_SECONDS+audit.COLLECTION_WALL_SECONDS
+    assert not response['ok'] and not response['closure_confirmed']
+    assert response['child']['reaped'] and response['child']['pipes_closed']
+    assert 'retour tardif de collecte des canaux' in response['cleanup_errors']
+    assert not (h.out/'execution.completed.json').exists()
+
+
+@pytest.mark.parametrize('closure',['late','error'])
+def test_supervision_terminal_return_cannot_leave_success_authority(supervised_double,monkeypatch,closure):
+    h=supervised_double;child=h.Child(initial='normal');original=report.commit_terminal
+    def faulty_commit(output):
+        original(output)
+        if closure=='late':h.clock[0]+=audit.PUBLIC_WALL_SECONDS+1.
+        else:raise OSError('controlled terminal error after publication')
+    monkeypatch.setattr(report,'commit_terminal',faulty_commit)
+    response=h.launch(child)
+    assert not response['ok'] and not response['execution_complete'] and not response['closure_confirmed']
+    assert (h.out/'execution.completed.json').exists() and (h.out/'execution.cancelled.json').exists()
+    assert report.read_execution(h.out)['ok'] is False

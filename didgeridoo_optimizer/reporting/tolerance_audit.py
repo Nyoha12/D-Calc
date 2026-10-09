@@ -1,4 +1,4 @@
-"""Immutable audit bundles and byte-only fresh-process readback (no acoustics)."""
+"""Immutable audit bundles and semantic fresh-process readback (no acoustics)."""
 from __future__ import annotations
 
 import copy
@@ -6,6 +6,7 @@ import csv
 import hashlib
 import io
 import json
+import math
 import os
 from pathlib import Path
 import sys
@@ -175,8 +176,192 @@ def read_execution(output):
     return receipt
 
 
+def _require(condition, message):
+    if not condition:
+        raise ValueError('cohérence sémantique: '+message)
+
+
+def _same_number(actual, expected, label):
+    # Both sides use the native scalar arithmetic on the same serialized values;
+    # no extra tolerance may turn a contradiction into a conforming observation.
+    _require(type(actual) in (int, float) and math.isfinite(actual) and actual == expected, label)
+
+
+def _unsupported(criterion, request):
+    from ..optimization.design_contract import scope_reason
+    obs = criterion['observable']
+    return bool(scope_reason(request.get('scope', {})) or scope_reason(criterion['scope']) or
+        obs not in ('geometry', 'resonance_frequency', 'resonance_ratio') or
+        criterion['level'] != ('geometry' if obs == 'geometry' else 'passive') or
+        criterion['role'] == 'preference' and request.get('preference_method') == 'weighted')
+
+
+def _verify_row(row, criterion, request, geometry_status, profile):
+    from ..optimization.design_contract import UNITS, quantity, target_quantity, expression
+    for key in ('id', 'observable', 'role'):
+        _require(row.get(key) == criterion[key], 'identité/rôle du critère: '+key)
+    for key in ('expression', 'mode', 'numerator', 'denominator', 'level', 'scope', 'unit'):
+        if key in row:
+            _require(row[key] == criterion.get(key), 'critère original: '+key)
+    dimension = UNITS[criterion['unit']][0]
+    unit = dict(length='m', frequency='Hz', scalar='1', pressure='Pa', cent='cent')[dimension]
+    tolerance, td = quantity(criterion['tolerance'])
+    if 'target' in criterion:
+        target = target_quantity(criterion['target'], dimension)
+        lower, upper = ((target*2**(-tolerance/1200), target*2**(tolerance/1200)) if td == 'cent'
+                        else (target-tolerance, target+tolerance))
+    else:
+        target = None
+        lo, hi = [quantity(q, dimension)[0] for q in criterion['bounds']]
+        lower, upper = lo-tolerance, hi+tolerance
+    expected = dict(dimension=dimension, target_si=target, lower_si=lower, upper_si=upper,
+                    tolerance_si=tolerance, tolerance_dimension=td)
+    for key, value in expected.items():
+        if key in row:
+            _require(row[key] == value, 'dimension/demande du critère: '+key)
+    obs = criterion['observable']
+    unsupported = _unsupported(criterion, request)
+    status = row.get('status')
+    _require(status in ('satisfied', 'violated', 'unsupported', 'unresolved', 'out_of_domain'), 'statut critère')
+    _require((status == 'unsupported') == unsupported, 'capacité/portée originale')
+    out_of_domain = status == 'out_of_domain'
+    if out_of_domain:
+        _require(obs in ('resonance_frequency', 'resonance_ratio') and
+                 request.get('models', {}).get('radiation_model', 'legacy') != 'legacy' and
+                 row.get('reason') == 'radiation Silva: domaine déclaré dépasse |ka|=2',
+                 'domaine acoustique déclaré')
+    if geometry_status != 'valid' or unsupported:
+        _require(status == ('unsupported' if unsupported else 'unresolved') and
+                 row.get('value_si') is None and row.get('margin') is None and
+                 row.get('margin_unit') is None, 'observation indisponible')
+        _require(row.get('unit_si') in (None, unit), 'unité indisponible')
+        return
+    _require(row.get('unit_si') == unit, 'unité SI')
+    value = row.get('value_si')
+    if value is None:
+        _require((status == 'unresolved' or out_of_domain) and row.get('margin') is None and
+                 row.get('margin_unit') is None, 'valeur absente')
+        return
+    _same_number(value, value, 'valeur finie')
+    if obs == 'geometry':
+        expected_value, actual_dimension, _ = expression(criterion['expression'], profile)
+        _require(actual_dimension == dimension, 'dimension géométrique')
+        _same_number(value, expected_value, 'valeur géométrique/profil')
+    # Acoustic values/convergence estimates remain evidence supplied by the
+    # producer. Only their scalar relationship to the original request is checked.
+    if td == 'cent' and value <= 0:
+        _require(status == 'unresolved' and row.get('margin') is None, 'cents non positifs')
+        return
+    error_cents = None
+    if td == 'cent':
+        error_cents = 1200*math.log2(value/target)
+        margin = tolerance-abs(error_cents); residual = error_cents/tolerance
+    elif target is not None:
+        error = value-target; margin = tolerance-abs(error); residual = error/tolerance
+        if dimension == 'frequency' and value > 0 and target > 0:
+            error_cents = 1200*math.log2(value/target)
+    else:
+        margin = min(value-lower, upper-value)
+        low, high = lower+tolerance, upper-tolerance
+        residual = (value-low)/tolerance if value < low else (value-high)/tolerance if value > high else 0.
+    _same_number(row.get('margin'), margin, 'marge/demande')
+    _require(row.get('margin_unit') == ('cent' if td == 'cent' else unit), 'unité marge')
+    for key, expected_value in (('residual_normalized', residual), ('error_cents', error_cents)):
+        if key in row:
+            if expected_value is None: _require(row[key] is None, key)
+            else: _same_number(row[key], expected_value, key)
+    estimate = row.get('convergence_estimate')
+    if estimate is not None:
+        _same_number(estimate, estimate, 'estimation finie')
+        _require(estimate >= 0, 'estimation négative')
+    expected_status = ('unresolved' if estimate is not None and estimate > 0 and abs(margin) <= estimate
+                       else 'satisfied' if margin >= 0 else 'violated')
+    _require(out_of_domain or status == expected_status, 'statut/marge/estimation')
+
+
+def verify_semantics(out, plan, result, observations, manifest):
+    """Compare bundle evidence to its original plan, without a producer import.
+
+    Preflight profile/metadata fingerprints bind files to the planned projection;
+    they are relative integrity evidence, never external authentication. Stored
+    acoustic quantities are not recalculated or acoustically revalidated here.
+    """
+    from ..geometry.tolerance_scenarios import parse_scenarios, perturb, ScenarioUnavailable
+    _require(result['schema_version'] == plan['schema_version'] == plan['job']['schema_version'] ==
+             'dcalc.tolerance_audit.v1', 'schéma original')
+    _require(plan['continuous_robustness_certified'] is False, 'garantie continue du plan')
+    kind = plan['job']['input']['kind']
+    parsed = parse_scenarios(plan['job'], kind, plan['nominal'])
+    _require(parsed == plan['parsed'], 'scénarios/écarts du JOB original')
+    request = plan['native_request']
+    projections = ([dict(id='fixed', configuration='nominal', request=request)] if kind == 'fixed'
+                   else request['projections'])
+    pmap = {p['id']: p for p in projections}
+    _require(len(pmap) == len(projections), 'projection dupliquée')
+    scenarios = {s['id']: s for s in parsed['scenarios']}
+    expected = {(s, p) for s in scenarios for p in pmap}
+    geometry = {(g['scenario'], g['projection']): g for g in plan['geometry']}
+    _require(set(geometry) == expected and len(geometry) == len(plan['geometry']), 'grille originale')
+    hard = {p['id']: [c['id'] for c in p['request']['criteria'] if c['role'] == 'hard'] for p in projections}
+    _require(plan['expected_hard'] == hard, 'hard originaux')
+    uncovered = (plan['job']['coverage']['kind'] == 'continuous' or
+                 kind == 'assembly' and request.get('coverage', {'kind': 'discrete'})['kind'] != 'discrete' or
+                 any(_unsupported(c, p['request']) for p in projections for c in p['request']['criteria']))
+    _require(bool(plan['uncovered']) == bool(uncovered), 'portées originales non couvertes')
+    seen = set(); files = {}
+    for observation in observations:
+        pair = observation['scenario'], observation['projection']
+        _require(pair in expected and pair not in seen, 'observation inconnue/dupliquée')
+        seen.add(pair)
+        sid, pid = pair; scenario = scenarios[sid]; projection = pmap[pid]; g = geometry[pair]
+        _require(observation['configuration'] == projection['configuration'], 'configuration')
+        _require(observation['effective_request'] == projection['request'], 'demande effective')
+        if 'effective_models' in observation['acoustics']:
+            _require(observation['acoustics']['effective_models'] ==
+                     plan['effective_models'][projections.index(projection)], 'modèles effectifs')
+        _require(observation['coefficients'] == scenario['coefficients'] and
+                 observation['nominal'] is scenario['nominal'], 'coefficients/nominal')
+        issue = g['issue']; status = issue['status'] if issue else 'valid'
+        _require(observation['geometry_status'] == status, 'statut géométrie/plan')
+        if sid not in files:
+            try: physical = perturb(plan['nominal'], parsed, scenario, kind)
+            except ScenarioUnavailable:
+                name = f'unavailable_{sid}.json'
+                _require(name in manifest, 'descripteur indisponible manquant')
+                unavailable = read_json(out/name)
+                _require(unavailable['scenario'] == scenario and unavailable['status'] == 'unresolved' and
+                         unavailable['physical_geometry_available'] is False, 'descripteur scénario')
+                files[sid] = None
+            else:
+                name = f'{kind}_{sid}.json'
+                _require(name in manifest, 'géométrie physique manquante')
+                files[sid] = read_json(out/name)
+                _require(files[sid] == physical, 'géométrie/écarts prescrits')
+        physical = files[sid]
+        if physical is not None:
+            _require(fingerprint(physical) == g['geometry_sha256'], 'géométrie/plan')
+            if kind == 'assembly':
+                _require(list(physical['pieces']) == g['piece_order'], 'ordre natif des pièces')
+            _require(fingerprint(observation['geometry']) == g['metadata_sha256'], 'métadonnées/projection')
+        profile = None
+        if status == 'valid':
+            name = profile_name(sid, pid)
+            _require(name in manifest, 'profil manquant')
+            profile = read_json(out/name)
+            _require(fingerprint(profile) == g['profile_sha256'], 'profil/projection prévue')
+        criteria = projection['request']['criteria']; rows = observation['criteria']
+        _require([r['id'] for r in rows] == [c['id'] for c in criteria], 'critères absents/dupliqués/inconnus')
+        for row, criterion in zip(rows, criteria):
+            _verify_row(row, criterion, projection['request'], status, profile)
+    _require(type(result['execution_complete']) is bool, 'complétude booléenne')
+    _require(not result['execution_complete'] or seen == expected, 'sortie complète tronquée')
+    for key, expected_value in summarize(observations, plan, result['execution_complete']).items():
+        _require(result.get(key) == expected_value and
+                 (type(result.get(key)) is bool if type(expected_value) is bool else True), 'agrégat '+key)
+
+
 def read_result(output):
-    """Verify producer bytes directly, without importing/replaying producer modules.
+    """Verify bytes and internal semantics without importing/replaying the producer.
 
     ok means a confirmed command, not conformity. Partial observations remain
     accessible with ok=false after failed or unconfirmed execution.
@@ -187,7 +372,7 @@ def read_result(output):
         # No completed manifest: inspect individually committed observations, never
         # promote them to an authenticated complete result.
         observations = [read_json(p) for p in sorted(out.glob('observation_*.json'))]
-        return dict(ok=False,artifacts_verified=False,execution=receipt,
+        return dict(ok=False,artifacts_verified=False,semantic_verified=False,execution=receipt,
             observations=observations, counterexample_found=counterexample(observations),
             sampled_hard_conforming=False,request_fully_covered=False,
             execution_complete=False,continuous_robustness_certified=False)
@@ -213,21 +398,49 @@ def read_result(output):
     if result is not None:
         if result['continuous_robustness_certified'] is not False:
             raise ValueError('garantie continue interdite')
-        # Geometries/profiles have separate files and must all be manifest members.
-        for o in observations:
-            if (f"{plan['job']['input']['kind']}_{o['scenario']}.json" not in manifest and
-                    not (o['geometry_status']=='unresolved' and f"unavailable_{o['scenario']}.json" in manifest)):
-                raise ValueError('géométrie physique manquante')
-            if o['geometry_status']=='valid' and profile_name(o['scenario'],o['projection']) not in manifest:
-                raise ValueError('profil manquant')
-    response = dict(result or {},ok=receipt.get('ok') is True,artifacts_verified=True,
+        try:
+            verify_semantics(out,plan,result,observations,manifest)
+        except (KeyError,TypeError,IndexError) as exc:
+            raise ValueError('cohérence sémantique: structure invalide') from exc
+    response = dict(result or {},ok=receipt.get('ok') is True,artifacts_verified=True,semantic_verified=result is not None,
                     execution=receipt,observations=observations)
     if result is None:
-        response.update(counterexample_found=counterexample(observations),sampled_hard_conforming=False)
+        response.update(counterexample_found=counterexample(observations),sampled_hard_conforming=False,
+                        execution_complete=False,request_fully_covered=False)
     if not receipt.get('ok'):
         response.update(execution_complete=False,request_fully_covered=False)
     response['continuous_robustness_certified'] = False
     return response
+
+
+def summarize(observations, plan, complete):
+    rows = [r for o in observations for r in o['criteria']]
+    hard = [r for r in rows if r['role']=='hard']
+    physical_failure = any(o['geometry_status']=='geometry_violated' for o in observations)
+    failure = physical_failure or any(r['status']=='violated' for r in hard)
+    all_hard = bool(hard) and all(r['status']=='satisfied' and r.get('unit_si') for r in hard)
+    margins = {}
+    for o in observations:
+        for r in o['criteria']:
+            if r.get('value_si') is None or r.get('margin') is None or not r.get('margin_unit'):
+                continue
+            key = (o['projection'],r['id'])
+            if key not in margins or r['margin'] < margins[key]['margin']:
+                margins[key] = dict(projection=o['projection'],criterion=r['id'],scenario=o['scenario'],
+                                    margin=r['margin'],unit=r['margin_unit'],status=r['status'])
+    expected = {(g['scenario'],g['projection'],c) for g in plan.get('geometry',[])
+                for c in plan.get('expected_hard',{}).get(g['projection'],[])}
+    observed = {(o['scenario'],o['projection'],r['id']) for o in observations
+                for r in o['criteria'] if r['role']=='hard'}
+    grid = {(g['scenario'],g['projection']) for g in plan.get('geometry',[])}
+    present = [(o['scenario'],o['projection']) for o in observations]
+    grid_present = (set(present) == grid and len(present) == len(grid)) if grid else bool(complete)
+    sampled = bool(grid_present and all_hard and not physical_failure and (observed == expected if expected else complete))
+    covered = not plan['uncovered'] and all(r['status'] in ('satisfied','violated') and r.get('unit_si') for r in rows)
+    return dict(execution_complete=bool(complete),sampled_hard_conforming=sampled,
+                request_fully_covered=bool(complete and grid_present and covered),continuous_robustness_certified=False,
+                counterexample_found=failure, status='counterexample' if failure else 'sampled_conforming' if sampled
+                else 'unresolved', margins=list(margins.values()))
 
 
 def counterexample(observations):

@@ -213,3 +213,44 @@ les résultats partiels, la vraie CLI, les sources copiées, le dry-run et la
 relecture fraîche avec détection d’altération. Les tests historiques ciblés
 restent inchangés : design_contract, constrained_design, assemblies,
 assembly_contract et assembly_path.
+
+### Cohérence de relecture (correction C1)
+
+Le lecteur reconstruit la grille depuis les scénarios du JOB original et les
+projections du REQUEST conservé. Il refuse les identités dupliquées/inconnues,
+les critères manquants, les rôles modifiés, les configurations, coefficients,
+demandes effectives ou unités contradictoires. Les conversions, marges et statuts
+sont confrontés aux cibles/tolérances originales et aux valeurs conservées, sans
+élargir de tolérance. Les minima et les booléens de résultat sont recalculés à
+partir des lignes présentes ; une déclaration complète exige toute la grille.
+Une sortie partielle conserve ses contre-exemples et ne couvre pas la demande.
+Les hard tous acquis restent conformes si seul un budget facultatif manque.
+
+Le préflight conserve des empreintes de la géométrie, du profil et des métadonnées
+attendus par projection. Le lecteur compare aussi les écarts physiques au nominal
+et aux coefficients prescrits ; les profils sont associés au scénario et à la
+configuration prévus. L’ordre natif des pièces et des `component_ids` est conservé.
+`semantic_verified` distingue ce contrôle d’une simple lecture de pièces partielles
+sans résultat. Aucun import préalable du producteur n’est requis. Les fréquences
+et estimations acoustiques conservées ne sont **pas** revérifiées acoustiquement ;
+aucun TMM, fit ou simulation n’est relancé. Ces contrôles empêchent un verdict
+contraire aux propres pièces du bundle, sans authentifier un bundle entièrement
+réécrit, plan compris.
+
+### Collecte bornée (correction C2)
+
+Le plafond de calcul reste de 180 s et le plafond public de 200 s inclut le
+préflight et la clôture. La collecte et la fermeture partagent un délai cumulé
+de 10 s, limité aussi par l’échéance publique avec une réserve de clôture de 2 s.
+Chaque `communicate` et `wait` reçoit le temps restant ; la communication de
+collecte réserve la moitié de ce temps pour récolter l’enfant si ses canaux ne
+se ferment pas. Seul l’objet enfant créé par cet appel peut être arrêté.
+
+La récolte du processus, la collecte des canaux et la fermeture des trois
+descripteurs sont distinguées. Un second timeout, une fermeture défaillante ou
+un retour tardif interdit une clôture réussie ; les observations déjà commises
+restent lisibles. Les signaux INT/TERM pendant cette collecte sont enregistrés,
+rendent la commande interrompue et laissent terminer la tentative bornée de
+récolte. Les gestionnaires et l’alarme sont restaurés avant le reçu terminal.
+Les tests de ces défauts utilisent des doubles contrôlés, sans processus
+réellement suspendu ni augmentation des quotas de calcul.
