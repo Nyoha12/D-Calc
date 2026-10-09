@@ -190,3 +190,23 @@ def test_source_snapshot_detects_changes(tmp_path,monkeypatch):
     job=make_job(tmp_path)
     monkeypatch.setattr(audit,'LOADED_SOURCES',{'didgeridoo_optimizer/pipeline/tolerance_audit.py':'0'*64})
     with pytest.raises(ValueError,match='sources producteur modifiées'):audit.load_inputs(job)
+
+
+def test_unrepresentable_assembly_scenario_preserves_other_observations(tmp_path,monkeypatch):
+    import os
+    raw=json.loads((EXAMPLES/'assembly_job.json').read_text())
+    for key in ('config','assembly','assembly_request'):
+        target=(EXAMPLES/raw['input'][key]).resolve()
+        raw['input'][key]=os.path.relpath(target,tmp_path)
+    raw['scenarios']=[dict(id='nominal',coefficients={'cut':0,'stock':0}),
+                      dict(id='fractional',coefficients={'cut':.3333333333333333,'stock':0}),
+                      dict(id='integer',coefficients={'cut':1,'stock':0})]
+    job=write(tmp_path/'job.json',raw)
+    monkeypatch.setattr(audit.ProjectionEvaluator,'evaluate_design',
+        lambda self,design,**kwargs:dict(criteria=report.unavailable_rows(self.contract.criteria,'test no acoustics')))
+    result,out=execute(tmp_path,job)
+    assert len(result['observations'])==6
+    assert [o['geometry_status'] for o in result['observations']]==['valid','valid','unresolved','unresolved','valid','valid']
+    assert (out/'unavailable_fractional.json').is_file()
+    assert not (out/'assembly_fractional.json').exists()
+    assert not result['counterexample_found']

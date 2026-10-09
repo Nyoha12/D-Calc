@@ -17,7 +17,7 @@ from ..optimization.design_contract import (
 )
 from ..pipeline.design_input import _validate_annotations
 from .assemblies import (
-    exact_quantity, field_info as assembly_field_info,
+    InvalidAssembly, exact_quantity, field_info as assembly_field_info,
     set_field as assembly_set_field,
 )
 
@@ -25,6 +25,10 @@ MAX_UNCERTAINTIES = 8
 MAX_SCENARIOS = 65
 MAX_FIELDS = 64
 MAX_SCENARIO_FIELDS = MAX_SCENARIOS * MAX_FIELDS
+
+
+class ScenarioUnavailable(RuntimeError):
+    """Native numeric representation unavailable; no physical violation proved."""
 
 
 def _kind(kind):
@@ -151,7 +155,15 @@ def perturb(nominal_raw, parsed, scenario, kind):
             delta = Fraction(str(coefficient)) * exact_quantity(uncertainty['delta'], 'length')[0]
             for path in uncertainty['fields']:
                 nominal = assembly_field_info(nominal_raw, path, exact=True)[0]
-                assembly_set_field(effective, path, nominal + delta)
+                try:
+                    assembly_set_field(effective, path, nominal + delta)
+                except InvalidAssembly as exc:
+                    # The exact native setter must not round an unrepresentable
+                    # decimal relation. This is a capacity limit of this one
+                    # scenario, not evidence against its physical geometry.
+                    if 'relation exacte non représentable en quantité numérique m/cm/mm' not in str(exc):
+                        raise
+                    raise ScenarioUnavailable(str(exc)) from exc
         else:
             delta = coefficient * uncertainty['delta_si']
             for path in uncertainty['fields']:
@@ -216,7 +228,12 @@ def validate_links(parsed, contract, kind, nominal_raw=None):
     else:
         evaluate = expression
     for scenario in parsed['scenarios']:
-        effective = perturb(raw, parsed, scenario, kind)
+        try:
+            effective = perturb(raw, parsed, scenario, kind)
+        except ScenarioUnavailable:
+            # The pipeline records this scenario as unresolved while preserving
+            # every other scenario. No relation is repaired, removed or certified.
+            continue
         for relation in contract.derived:
             actual = (assembly_field_info(effective, relation['field'], exact=True)[0]
                       if kind == 'assembly' else design_field_info(effective, relation['field'])[0])

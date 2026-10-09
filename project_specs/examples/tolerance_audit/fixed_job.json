@@ -78,7 +78,7 @@
     "frequencies": 1000000,
     "frequency_segment_product": 100000000,
     "segments": 50000,
-    "seconds": 60,
+    "seconds": 90,
     "memory_mib": 650,
     "output_mib": 30
   },

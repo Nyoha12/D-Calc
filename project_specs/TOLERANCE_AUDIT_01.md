@@ -17,6 +17,11 @@ La destination doit être nouvelle. Le dry-run réussit silencieusement : lectur
 validation des contrats et géométries, estimation des budgets ; aucune écriture,
 aucun TMM, maillage acoustique, fit ou simulation. L’API retourne le plan :
 
+Pour inclure les caches propres à l’interpréteur dans la garantie d’absence
+d’écriture, utiliser `python -B -m ...` ou définir `PYTHONDONTWRITEBYTECODE=1`
+avant le lancement. Python peut mettre le module CLI en cache avant même son
+exécution ; le CLI désactive ensuite les écritures de cache de ses imports.
+
 ```python
 from didgeridoo_optimizer.pipeline.tolerance_audit import run, load_inputs
 response = run(job, output_dir, dry_run=True)
@@ -119,6 +124,11 @@ spécifique : positivité dimensionnelle, contraintes de géométrie, diamètre
 intérieur/extérieur, marges mécaniques exactes ou stock insuffisant. Une autre
 exception reste `unresolved`. Les observations des autres configurations et
 scénarios continuent d’être conservées.
+
+Un écart rationnel exact d’assemblage non représentable en quantité numérique
+m/cm/mm reste non résolu, avec descripteur `unavailable_<scenario>.json` ; aucun
+arrondi correctif ni faux assemblage nominal n’est exporté à sa place. Les
+autres scénarios continuent. Cette limite du setter natif est explicite en v1.
 
 ## Calcul et interprétation
 

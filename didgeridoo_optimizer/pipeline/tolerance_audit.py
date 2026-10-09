@@ -6,6 +6,7 @@ execute() requires the same externally imposed resource limits as the worker.
 from __future__ import annotations
 
 import copy
+import cProfile
 import json
 import math
 import os
@@ -17,7 +18,7 @@ import threading
 import time
 
 from ..geometry.assemblies import Assembly, InvalidAssembly
-from ..geometry.tolerance_scenarios import parse_scenarios, perturb, check_mask
+from ..geometry.tolerance_scenarios import parse_scenarios, perturb, check_mask, ScenarioUnavailable
 from ..optimization.design_contract import Contract, read_request, obj, integer, InvalidRequest
 from ..optimization.assembly_contract import AssemblyContract, native_contract
 from .design_input import validate_design
@@ -187,7 +188,13 @@ def load_inputs(job):
     # Validate every finite geometry and required native mesh bound with no TMM/mesh.
     geometry_plan = []; minimum = dict(segments=0, frequencies=0, frequency_segment_product=0, spectral_calls=0)
     for scenario in parsed['scenarios']:
-        effective = perturb(nominal, parsed, scenario, kind)
+        try:
+            effective = perturb(nominal, parsed, scenario, kind)
+        except ScenarioUnavailable as exc:
+            for p in projections:
+                geometry_plan.append(dict(scenario=scenario['id'],projection=p['id'],
+                                          issue=dict(status='unresolved',reason=str(exc))))
+            continue
         check_mask(nominal, effective, parsed, kind)
         for p, design, metadata, issue in geometries(kind, effective, context, projections):
             if design is not None and kind == 'fixed':
@@ -279,10 +286,17 @@ def execute(prepared, plan, output):
     budget = Budget(limits); observations = []; interrupted = False
     expected = len(prepared['parsed']['scenarios'])*len(prepared['projections'])
     for scenario in prepared['parsed']['scenarios']:
-        effective = perturb(prepared['nominal'],prepared['parsed'],scenario,prepared['kind'])
-        check_mask(prepared['nominal'],effective,prepared['parsed'],prepared['kind'])
-        report.write_geometry(output,scenario['id'],effective,prepared['kind'],plan)
-        for p, design, metadata, issue in geometries(prepared['kind'],effective,prepared['context'],prepared['projections']):
+        try:
+            effective = perturb(prepared['nominal'],prepared['parsed'],scenario,prepared['kind'])
+        except ScenarioUnavailable as exc:
+            reason = str(exc)
+            report.write_unavailable_scenario(output,scenario,reason,plan)
+            generated = [(p,None,{},dict(status='unresolved',reason=reason)) for p in prepared['projections']]
+        else:
+            check_mask(prepared['nominal'],effective,prepared['parsed'],prepared['kind'])
+            report.write_geometry(output,scenario['id'],effective,prepared['kind'],plan)
+            generated = geometries(prepared['kind'],effective,prepared['context'],prepared['projections'])
+        for p, design, metadata, issue in generated:
             contract = p['template']; payload = {}; reason = None
             if issue is not None:
                 reason = issue['reason']
@@ -327,21 +341,21 @@ def worker(task):
         raise ValueError('worker exige limites mémoire/CPU imposées par le parent')
     baseline = report.source_files()
     report.verify_sources(task['sources'])
-    executed = {'tools/tolerance_audit.py'}
-    root_prefix = str(ROOT) + os.sep
-    def trace(frame,event,arg):
-        if event == 'call':
-            filename = frame.f_code.co_filename
-            if filename.startswith(root_prefix) and filename.endswith('.py'):
-                executed.add(filename[len(root_prefix):])
-    sys.setprofile(trace)
+    profiler = cProfile.Profile()
+    profiler.enable()
     try:
         prepared, plan = load_inputs(task['job'])
         if report.fingerprint(report.identity_plan(plan)) != task['identity']:
             raise ValueError('entrées/plan changés depuis préflight')
         result = execute(prepared,plan,Path(task['output']))
     finally:
-        sys.setprofile(None)
+        profiler.disable()
+    root_prefix = str(ROOT) + os.sep
+    executed = {'tools/tolerance_audit.py'}
+    for entry in profiler.getstats():
+        filename = getattr(entry.code,'co_filename','')
+        if filename.startswith(root_prefix) and filename.endswith('.py'):
+            executed.add(filename[len(root_prefix):])
     report.verify_sources(baseline)
     report.verify_sources(task['sources'])
     for label,source in prepared['sources'].items():
@@ -365,7 +379,7 @@ def _run(job, output_dir, dry_run):
                 sources=report.source_files())
     env = dict(os.environ,OPENBLAS_NUM_THREADS='1',OMP_NUM_THREADS='1',MKL_NUM_THREADS='1',
                NUMEXPR_NUM_THREADS='1',PYTHONDONTWRITEBYTECODE='1')
-    child = None; handlers = {}; response = None; started = time.monotonic()
+    child = None; handlers = {}; response = None; started = time.monotonic(); stdout = stderr = ''
     try:
         for signum in (signal.SIGINT,signal.SIGTERM): handlers[signum] = signal.signal(signum,interrupt_run)
         child = subprocess.Popen([sys.executable,'-B','-m','tools.tolerance_audit','--worker'],
@@ -381,6 +395,8 @@ def _run(job, output_dir, dry_run):
         response = dict(ok=False,status='interrupted' if isinstance(exc,(RunInterrupted,KeyboardInterrupt,subprocess.TimeoutExpired))
                         else 'failed',reason=str(exc),execution_complete=False,
                         child=dict(exit_code=None if child is None else child.returncode,reaped=True))
+        if stdout or stderr:
+            response['diagnostic'] = dict(stdout=stdout[-2000:],stderr=stderr[-4000:])
     finally:
         if child is not None and child.poll() is None: child.kill(); child.communicate()
         for signum,handler in handlers.items(): signal.signal(signum,handler)

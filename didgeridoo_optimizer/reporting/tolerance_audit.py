@@ -67,6 +67,12 @@ def write_geometry(output,scenario,raw,kind,plan):
     write_json(Path(output)/f'{kind}_{scenario}.json',raw,budget_bytes=_limit(plan))
 
 
+def write_unavailable_scenario(output,scenario,reason,plan):
+    write_json(Path(output)/f"unavailable_{scenario['id']}.json",
+        dict(scenario=scenario,status='unresolved',reason=reason,physical_geometry_available=False),
+        budget_bytes=_limit(plan))
+
+
 def write_profile(output,scenario,projection,raw,plan):
     write_json(Path(output)/profile_name(scenario,projection),raw,budget_bytes=_limit(plan))
 
@@ -204,7 +210,8 @@ def read_result(output):
             raise ValueError('garantie continue interdite')
         # Geometries/profiles have separate files and must all be manifest members.
         for o in observations:
-            if f"{plan['job']['input']['kind']}_{o['scenario']}.json" not in manifest:
+            if (f"{plan['job']['input']['kind']}_{o['scenario']}.json" not in manifest and
+                    not (o['geometry_status']=='unresolved' and f"unavailable_{o['scenario']}.json" in manifest)):
                 raise ValueError('géométrie physique manquante')
             if o['geometry_status']=='valid' and profile_name(o['scenario'],o['projection']) not in manifest:
                 raise ValueError('profil manquant')

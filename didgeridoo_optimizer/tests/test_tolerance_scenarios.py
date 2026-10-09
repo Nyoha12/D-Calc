@@ -9,7 +9,7 @@ import pytest
 
 from didgeridoo_optimizer.geometry.assemblies import Assembly, InvalidAssembly
 from didgeridoo_optimizer.geometry.tolerance_scenarios import (
-    check_mask, parse_scenarios, perturb,
+    ScenarioUnavailable, check_mask, parse_scenarios, perturb,
 )
 from didgeridoo_optimizer.materials.database import MaterialDatabase
 from didgeridoo_optimizer.optimization.design_contract import InvalidRequest, read_request
@@ -258,3 +258,41 @@ def test_assembly_derived_q_stays_constant_and_incompatible_link_is_rejected():
         'expression': {'field': 'pieces.inner.length'}}], 'offset': q(-.55)}
     with pytest.raises(InvalidRequest, match='relation dérivée incompatible'):
         parse_scenarios(job(['pieces.inner.length']), 'assembly', raw, c)
+
+
+
+def test_unrepresentable_exact_shift_is_unavailable_not_physical_failure():
+    raw = assembly(); original = copy.deepcopy(raw)
+    data = job(['pieces.inner.length'], q(1, 'mm'))
+    data['scenarios'][2]['coefficients']['size'] = .3333333333333333
+    # Independent rational oracle: none of the native m/cm/mm float notations
+    # represents this prescribed decimal result exactly.
+    expected = Fraction(3, 5) + Fraction('0.3333333333333333') / 1000
+    for factor in (Fraction(1), Fraction(1, 100), Fraction(1, 1000)):
+        assert Fraction(str(float(expected / factor))) * factor != expected
+    parsed = parse_scenarios(data, 'assembly', raw)
+    assert perturb(raw, parsed, parsed['scenarios'][0], 'assembly') == original
+    minus = perturb(raw, parsed, parsed['scenarios'][1], 'assembly')
+    assert minus['pieces']['inner']['length'] == q(.599)
+    with pytest.raises(ScenarioUnavailable, match='non représentable') as failure:
+        perturb(raw, parsed, parsed['scenarios'][2], 'assembly')
+    assert not isinstance(failure.value, InvalidAssembly)
+    assert raw == original
+
+
+def test_unavailable_scenario_does_not_hide_other_derived_incompatibility():
+    raw = assembly()
+    data = job(['pieces.inner.length'], q(1, 'mm'))
+    data['scenarios'][1]['coefficients']['size'] = .3333333333333333
+    constant = {'id': 'q_constant', 'field': 'configurations.short.q.slide',
+                'expression': {'constant': q(.05)}}
+    contract = SimpleNamespace(base=raw, variables=[], derived=[constant])
+    parsed = parse_scenarios(data, 'assembly', raw, contract)
+    with pytest.raises(ScenarioUnavailable):
+        perturb(raw, parsed, parsed['scenarios'][1], 'assembly')
+    constant['expression'] = {'affine': [{'coefficient': 1,
+        'expression': {'field': 'pieces.inner.length'}}], 'offset': q(-.55)}
+    # The unrepresentable middle scenario is skipped as unresolved. The next
+    # representable scenario still proves this declared link incompatible.
+    with pytest.raises(InvalidRequest, match='relation dérivée incompatible'):
+        parse_scenarios(data, 'assembly', raw, contract)
