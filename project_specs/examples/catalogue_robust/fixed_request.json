@@ -1,0 +1,99 @@
+{
+  "schema_version": "dcalc.design_request.v1",
+  "variables": [],
+  "derived": [],
+  "models": {
+    "loss_model": "zk",
+    "air_reference": "ck_dry20",
+    "radiation_model": "legacy"
+  },
+  "spectrum": {
+    "min_hz": 10,
+    "max_hz": 350,
+    "step_hz": 2,
+    "final_step_hz": 0.5,
+    "refinement_hz": 1e-06,
+    "h_cm": 2
+  },
+  "budgets": {
+    "evaluations": 160,
+    "iterations": 24,
+    "variables": 4,
+    "frequencies": 2000,
+    "segments": 512,
+    "history": 160,
+    "seconds": 150,
+    "frequency_segment_product": 1000000
+  },
+  "preference_method": "lexicographic",
+  "scope": {
+    "configurations": [
+      "nominal"
+    ]
+  },
+  "modes": [
+    {
+      "id": "m1",
+      "order": 1,
+      "window_hz": [
+        50,
+        95
+      ]
+    }
+  ],
+  "criteria": [
+    {
+      "id": "f1",
+      "observable": "resonance_frequency",
+      "mode": "m1",
+      "target": {
+        "value": 70,
+        "unit": "Hz"
+      },
+      "unit": "Hz",
+      "tolerance": {
+        "value": 1,
+        "unit": "cent"
+      },
+      "level": "passive",
+      "scope": {
+        "configurations": [
+          "nominal"
+        ]
+      },
+      "role": "hard"
+    },
+    {
+      "id": "envelope",
+      "observable": "geometry",
+      "expression": {
+        "total_length": true
+      },
+      "bounds": [
+        {
+          "value": 1.19,
+          "unit": "m"
+        },
+        {
+          "value": 1.21,
+          "unit": "m"
+        }
+      ],
+      "unit": "m",
+      "tolerance": {
+        "value": 1e-06,
+        "unit": "m"
+      },
+      "level": "geometry",
+      "scope": {
+        "configurations": [
+          "nominal"
+        ]
+      },
+      "role": "hard"
+    }
+  ],
+  "metadata": {
+    "origin": "Référence numérique passive prescrite R55 ; aucune mesure."
+  }
+}

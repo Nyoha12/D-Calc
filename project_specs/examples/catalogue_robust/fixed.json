@@ -1,0 +1,16 @@
+{
+  "schema_version": "dcalc.catalogue_robust.v1",
+  "adjustment_job": "fixed_policy.json",
+  "catalogue": [
+    {"id": "short", "geometry": "short.json"},
+    {"id": "centre", "geometry": "centre.json"},
+    {"id": "long", "geometry": "long.json"}
+  ],
+  "nominal_mask": [
+    {"field": "segments.0.length_cm", "unit": "cm", "bounds": [120, 121]}
+  ],
+  "preferences": [
+    {"field": "total_length", "unit": "cm", "direction": "min", "priority": 1}
+  ],
+  "budgets": {"seconds": 240, "output_mib": 200}
+}
