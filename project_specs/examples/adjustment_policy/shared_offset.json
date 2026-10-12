@@ -1,0 +1,36 @@
+{
+  "schema_version": "dcalc.adjustment_policy.v1",
+  "audit_job": "audit.json",
+  "policy": {
+    "kind": "shared_offset",
+    "block": "slide",
+    "q": {
+      "unit": "m",
+      "bounds": [
+        0.05,
+        0.35
+      ]
+    },
+    "delta": {
+      "unit": "m",
+      "bounds": [
+        -0.02,
+        0.02
+      ]
+    }
+  },
+  "information": "scenario_known",
+  "budgets": {
+    "candidates": 65,
+    "evaluations": 90,
+    "iterations": 12,
+    "projections": 360,
+    "spectral_calls": 10000,
+    "frequencies": 2000000,
+    "frequency_segment_product": 200000000,
+    "segments": 200000,
+    "seconds": 60,
+    "memory_mib": 700,
+    "output_mib": 20
+  }
+}
