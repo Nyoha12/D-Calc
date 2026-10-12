@@ -1,0 +1,12 @@
+{
+  "schema_version": "dcalc.catalogue_robust.v1",
+  "adjustment_job": "../adjustment_policy/shared_offset.json",
+  "catalogue": [
+    {"id": "supplied", "geometry": "../adjustment_policy/assembly.json"}
+  ],
+  "nominal_mask": [],
+  "preferences": [
+    {"field": "pieces.inner.length", "unit": "mm", "direction": "min", "priority": 1}
+  ],
+  "budgets": {"seconds": 210, "output_mib": 100}
+}

@@ -1,0 +1,28 @@
+{
+  "schema_version": "dcalc.tolerance_audit.v1",
+  "input": {
+    "kind": "fixed",
+    "config": "../constrained_design/config.yaml",
+    "design": "centre.json",
+    "request": "fixed_request.json"
+  },
+  "uncertainties": [
+    {
+      "id": "cut", "fields": ["segments.0.length_cm"],
+      "delta": {"value": 0.5, "unit": "mm"},
+      "origin": "Scénarios numériques prescrits R55 ; aucune distribution mesurée."
+    }
+  ],
+  "scenarios": [
+    {"id": "nominal", "coefficients": {"cut": 0}},
+    {"id": "plus", "coefficients": {"cut": 1}},
+    {"id": "minus", "coefficients": {"cut": -1}}
+  ],
+  "coverage": {"kind": "finite"},
+  "budgets": {
+    "uncertainties": 8, "scenarios": 65, "fields": 64, "scenario_fields": 4160,
+    "projections": 100, "spectral_calls": 2000, "frequencies": 1000000,
+    "frequency_segment_product": 100000000, "segments": 50000,
+    "seconds": 90, "memory_mib": 650, "output_mib": 30
+  }
+}

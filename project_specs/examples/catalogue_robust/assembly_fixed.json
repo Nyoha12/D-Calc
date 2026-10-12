@@ -1,0 +1,9 @@
+{
+  "schema_version": "dcalc.catalogue_robust.v1",
+  "adjustment_job": "assembly_fixed_policy.json",
+  "catalogue": [
+    {"id": "supplied", "geometry": "../adjustment_policy/assembly.json"}
+  ],
+  "nominal_mask": [],
+  "budgets": {"seconds": 210, "output_mib": 100}
+}
