@@ -141,6 +141,7 @@ def execute(prepared,plan,output):
                                     dict(trace,scenario=scenario['id'],projection=p['id'],trial=sequence),
                                     budget_bytes=report._limit(plan)))
                             payload=evaluator.evaluate_design(design,verify=True)
+                            budget.check()  # A final refinement returning late is not a timely witness.
                             rows=payload.pop('criteria')
                             payload.update(verified=True,completed_spectra=evaluator.completed_spectra)
                     except (BudgetExhausted,MemoryError) as exc:
@@ -173,7 +174,7 @@ def execute(prepared,plan,output):
                                  limits['seconds']-(time.monotonic()-budget.start))
                 search_result=search(contract,evaluate)
                 stop_reason=search_result['termination']
-            except (BudgetExhausted,MemoryError) as exc:
+            except (BudgetExhausted,MemoryError,ValueError,ArithmeticError) as exc:
                 interrupted=True;stop_reason=type(exc).__name__+': '+str(exc)
             witnesses=[r for r in local if r['verified']]
             # The native search ranks preferences, but a later failed poll cannot
@@ -227,7 +228,9 @@ def worker(task):
     execution_ready()
     if any(os.environ.get(k)!='1' for k in ('OPENBLAS_NUM_THREADS','OMP_NUM_THREADS','MKL_NUM_THREADS','NUMEXPR_NUM_THREADS')):
         raise ValueError('worker exige BLAS1 avant import')
-    if not 0<resource.getrlimit(resource.RLIMIT_AS)[0]<=768*1024**2 or not 0<resource.getrlimit(resource.RLIMIT_CPU)[0]<=175:
+    if (not 0<resource.getrlimit(resource.RLIMIT_AS)[0]<=768*1024**2 or
+            not 0<resource.getrlimit(resource.RLIMIT_CPU)[0]<=175 or
+            not 0<resource.getrlimit(resource.RLIMIT_FSIZE)[0]<=4*1024**2):
         raise ValueError('worker exige limites mémoire/CPU imposées par le parent')
     baseline=report.source_files();report.verify_sources(task['sources'])
     profiler=cProfile.Profile();profiler.enable()

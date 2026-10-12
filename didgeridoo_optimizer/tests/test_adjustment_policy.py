@@ -348,3 +348,24 @@ def test_loaded_code_must_match_declared_source(tmp_path,monkeypatch):
     exec(compile('def f(): return 1',str(tmp_path/'foreign.py'),'exec'),namespace)
     fake.f=namespace['f'];monkeypatch.setitem(sys.modules,fake.__name__,fake)
     with pytest.raises(ValueError,match='code chargé'):report.source_files()
+
+
+
+def test_late_final_verification_is_not_an_acoustic_witness(tmp_path,monkeypatch):
+    import didgeridoo_optimizer.pipeline.assembly_path as native
+    from types import SimpleNamespace
+    job=make_job(tmp_path,one=True,acoustic=True)
+    prepared,plan=api.load_inputs(job);clock=[0.]
+    monkeypatch.setattr(native,'time',SimpleNamespace(monotonic=lambda:clock[0]))
+    monkeypatch.setattr(api,'time',SimpleNamespace(monotonic=lambda:clock[0]))
+    def late(self,design,**kwargs):
+        assert kwargs['verify'] is True
+        rows=api.criterion_rows(self.contract,design,{})
+        for row in rows:row.update(status='satisfied',value_si=100.)
+        clock[0]=plan['budgets']['seconds']+1.
+        return dict(criteria=rows)
+    monkeypatch.setattr(api.audit.TracedProjectionEvaluator,'evaluate_design',late)
+    out=tmp_path/'late';out.mkdir();result=api.execute(prepared,plan,out)
+    assert not result['execution_complete'] and not result['witness_found']
+    assert result['observations'][0]['criteria'][1]['value_si'] is None
+    assert result['groups'][0]['status']=='search_not_resolved'
