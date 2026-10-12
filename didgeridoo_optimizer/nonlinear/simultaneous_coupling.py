@@ -17,6 +17,7 @@ from .lips import DimensionedLipParameters, LipModelV2
 from .onset_stability import validate_parameters
 from .lip_ports import validate_port_model, solve_port, uniqueness_feedback, history_pressure, flows
 from .passive_resonator import PassiveResonator, integer, real, vector
+from .passive_state import PassiveState, bounded_vector
 
 EPS = np.finfo(float).eps
 
@@ -66,7 +67,7 @@ def _residual(value, *terms):
 
 
 class SimultaneousCoupling:
-    """Independent complete state [x,v,q...,resonator_v...], one native fs.
+    """Independent state: modal [x,v,q...,resonator_v...] or flat [x,v,x_res...].
 
     Default initialization is the historical V2 normal start (0.02*h0, .001)
     with the resonator at rest. Explicit state overrides every physical state.
@@ -75,8 +76,9 @@ class SimultaneousCoupling:
     def __init__(self, model, *, params, rho, initial_state=None,
                  max_extensions=32, max_iterations=80, v2_port_model='jet-only'):
         self.v2_port_model = validate_port_model(v2_port_model)
-        if not isinstance(model, PassiveResonator):
-            raise ValueError('Simultaneous schedule requires PassiveResonator; no FIR fallback')
+        if not isinstance(model, (PassiveResonator, PassiveState)):
+            raise ValueError('Simultaneous schedule requires PassiveResonator or PassiveState; no FIR fallback')
+        self._flat_state = isinstance(model, PassiveState)
         validate_parameters(params, rho)
         model.verify_file_unchanged()
         self.params = params
@@ -90,8 +92,13 @@ class SimultaneousCoupling:
         self.max_iterations = integer(max_iterations, 'max_iterations', 1, 100)
         self._source = model
         self._backend = model.copy()
-        self.a, self.gamma, self.omega = model.a, model.gamma, model.omega
-        self.n = len(self.a)
+        if self._flat_state:
+            self.n = model.state_count
+            self._state_size = 2+self.n
+        else:
+            self.a, self.gamma, self.omega = model.a, model.gamma, model.omega
+            self.n = len(self.a)
+            self._state_size = 2+2*self.n
         self.m = params.mass_kg
         self.K = self.lip.stiffness_n_per_m()
         self.r = self.lip.damping_n_s_per_m()
@@ -100,18 +107,23 @@ class SimultaneousCoupling:
         self.Ad = -self.Au
         self.xt = params.min_opening_m-params.rest_opening_m
         with np.errstate(over='raise', invalid='raise', divide='raise'):
-            self.den = 1+self.tau*self.gamma+self.tau**2*self.omega**2
-            self.D = float(model.R0+np.sum(self.a*self.tau/self.den))
+            if self._flat_state:
+                self.D = self._backend.affine_port()[1]
+            else:
+                self.den = 1+self.tau*self.gamma+self.tau**2*self.omega**2
+                self.D = float(model.R0+np.sum(self.a*self.tau/self.den))
             self.k = params.flow_coefficient*params.lip_width_m*math.sqrt(2/self.rho)
             self.M = self.m+self.tau*self.r+self.tau**2*self.K
         if not np.all(np.isfinite([self.Pu, self.M, self.D, self.k])) or self.M <= 0:
             raise ValueError('Unrepresentable coupling coefficients')
-        normal = np.r_[.02*params.rest_opening_m, .001, np.zeros(2*self.n)]
+        normal = np.r_[.02*params.rest_opening_m, .001, np.zeros(self._state_size-2)]
         self.initialize(normal if initial_state is None else initial_state)
         self._initial = self.state
 
     @property
     def state(self):
+        if self._flat_state:
+            return np.r_[self._lip_state, self._backend.state]
         return np.r_[self._lip_state, *self._backend.state]
 
     @property
@@ -130,7 +142,8 @@ class SimultaneousCoupling:
     def checkpoint_identity(self):
         """Numerical compatibility, separate from a producer's source manifest."""
         from .passive_resonator import digest
-        return dict(schema='dcalc.simultaneous.identity.v1',
+        return dict(schema=('dcalc.simultaneous.passive_state.identity.v1' if self._flat_state
+                            else 'dcalc.simultaneous.identity.v1'),
                     model_sha256=digest(self._source.parameters()),
                     parameters=self.params.as_dict(), rho_kg_m3=self.rho,
                     sample_rate_hz=self.sample_rate_hz,
@@ -141,7 +154,8 @@ class SimultaneousCoupling:
         """Complete, independent JSON state, including reset and diagnostics."""
         from .passive_resonator import digest, json_copy
         self._source.verify_file_unchanged()
-        payload = dict(schema='dcalc.simultaneous.checkpoint.v1',
+        payload = dict(schema=('dcalc.simultaneous.passive_state.checkpoint.v1' if self._flat_state
+                               else 'dcalc.simultaneous.checkpoint.v1'),
                        identity=self.checkpoint_identity(),
                        initial_state=self._initial.tolist(), snapshot=self.snapshot())
         payload = json_copy(payload)
@@ -186,14 +200,15 @@ class SimultaneousCoupling:
         if checkpoint['sha256'] != digest(data):
             raise ValueError('Checkpoint checksum mismatch')
         if (type(data) is not dict or set(data) != {'schema', 'identity', 'initial_state', 'snapshot'}
-                or data['schema'] != 'dcalc.simultaneous.checkpoint.v1'
+                or data['schema'] != ('dcalc.simultaneous.passive_state.checkpoint.v1' if self._flat_state
+                                      else 'dcalc.simultaneous.checkpoint.v1')
                 or digest(data['identity']) != digest(self.checkpoint_identity())):
             raise ValueError('Checkpoint identity/schema mismatch')
         snap = data['snapshot']
         if type(snap) is not dict or set(snap) != {'state', 'time_s', 'last_dissipation_w', 'diagnostics'}:
             raise ValueError('Checkpoint snapshot mismatch')
         for state in (data['initial_state'], snap['state']):
-            if type(state) is not list or len(state) != 2+2*self.n:
+            if type(state) is not list or len(state) != self._state_size:
                 raise ValueError('Complete checkpoint state required')
         # initialize operates on independent candidate state, never on self.
         candidate = copy.copy(self)
@@ -278,14 +293,21 @@ class SimultaneousCoupling:
         return float((self.m*v*v+self.K*x*x)/2+self.potential(x))
 
     def initialize(self, state, *, time_s=0., last_dissipation_w=0.):
-        state = vector(state, 'complete state')
-        if state.shape != (2+2*self.n,):
+        state = (bounded_vector(state, 'complete state', 130, size=self._state_size)
+                 if self._flat_state else vector(state, 'complete state'))
+        if state.shape != (self._state_size,):
             raise ValueError('Complete state shape required')
         clock = real(time_s, 'time_s', minimum=0.)
         with np.errstate(over='raise', invalid='raise'):
-            backend = _private_state(self._backend, state[2:2+self.n], state[2+self.n:], last_dissipation_w)
+            if self._flat_state:
+                backend = self._backend.copy()
+                backend.initialize(state[2:], last_dissipation_w=last_dissipation_w)
+            else:
+                backend = _private_state(self._backend, state[2:2+self.n], state[2+self.n:], last_dissipation_w)
             if not np.isfinite(self.lip_energy(state)):
                 raise ValueError('Unrepresentable lip energy')
+        if self._flat_state:
+            self._source.verify_file_unchanged()
         self._backend, self._lip_state = backend, state[:2].copy()
         self.time_s, self._diagnostics = clock, None
 
@@ -338,8 +360,11 @@ class SimultaneousCoupling:
     def _step(self):
         self._source.verify_file_unchanged()
         x0, v0 = self._lip_state
-        q0, rv0 = self._backend.state
-        ph = float(np.sum(self.a*(rv0-self.tau*self.omega**2*q0)/self.den))
+        if self._flat_state:
+            ph, _ = self._backend.affine_port()
+        else:
+            q0, rv0 = self._backend.state
+            ph = float(np.sum(self.a*(rv0-self.tau*self.omega**2*q0)/self.den))
         feedback = self._feedback(x0, ph)
         margin = self.M-feedback
         # Account for products/subtraction/sum rounding; conservative sufficient
@@ -452,7 +477,10 @@ class SimultaneousCoupling:
             residuals=residuals, uniqueness_margin=margin, uniqueness_roundoff_guard=guard,
             bracket_extensions=extensions, iterations=iterations,
             **self._boundaries(x0, x1, vm, delta, ph_eff))
-        finite = [clock, *lip1, *trial.state[0], *trial.state[1], trial.last_dissipation_w]
+        if self._flat_state:
+            finite = [clock, *lip1, *trial.state, trial.last_dissipation_w]
+        else:
+            finite = [clock, *lip1, *trial.state[0], *trial.state[1], trial.last_dissipation_w]
         finite += [v for v in diag.values() if isinstance(v, (float, np.floating))]
         if not np.all(np.isfinite(finite)) or min(lip_loss, contact_loss, resonator_loss) < 0 or (self.v2_port_model == 'conjugate' and jet_loss < 0) or clock <= self.time_s:
             raise ValueError('Nonfinite/unrepresentable candidate state or diagnostics')
@@ -516,7 +544,8 @@ class SimultaneousCoupling:
             opening_m=[self.params.rest_opening_m+s[0] for s in states],
             velocity_m_s=[s[1] for s in states],
             lip_energy_j=[self.lip_energy(s) for s in states],
-            resonator_energy_j=[float(np.sum(self.a*(np.asarray(s[2+self.n:])**2+self.omega**2*np.asarray(s[2:2+self.n])**2))/2) for s in states],
+            resonator_energy_j=([self._backend.energy_of(s[2:]) for s in states] if self._flat_state else
+                [float(np.sum(self.a*(np.asarray(s[2+self.n:])**2+self.omega**2*np.asarray(s[2:2+self.n])**2))/2) for s in states]),
             step_statuses=[r['status'] for r in rows], steps=rows,
             contact_fraction=float(np.mean([r['contact_segment_fraction'] for r in rows])) if rows else None,
             event_localization='not_performed; discrete segments are not continuous event certificates',

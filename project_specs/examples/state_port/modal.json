@@ -1,0 +1,59 @@
+{
+  "parameters": {
+    "schema": "dcalc.passive_state.v1",
+    "units": {
+      "state": "m^3/s",
+      "flow": "m^3/s",
+      "pressure": "Pa",
+      "energy": "J",
+      "omega_ref": "rad/s",
+      "Zscale": "Pa.s/m^3",
+      "frequency": "Hz",
+      "J": "1",
+      "g": "1",
+      "L": "1"
+    },
+    "pressure_port": "midpoint",
+    "sample_rate_hz": 12000,
+    "domain": "continuous",
+    "J": [
+      [
+        0.0,
+        420.0
+      ],
+      [
+        -420.0,
+        0.0
+      ]
+    ],
+    "g": [
+      0.0,
+      447.21359549995793
+    ],
+    "L": [
+      [
+        0.0,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        8.366600265340756,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        3.1622776601683795
+      ]
+    ],
+    "omega_ref": 1.0,
+    "Zscale": 1.0,
+    "coefficient_origin": "Explicit synthetic numerical coefficients; not instrument data",
+    "provenance": {
+      "source": "STATE-PORT-01 analytical example; no fitted or measured data",
+      "status": "sourced"
+    }
+  },
+  "sha256": "e1fd8cc7b1ece5142c8001182c530fe8b1e719c27f7a1aee298bde9f277693e9"
+}
