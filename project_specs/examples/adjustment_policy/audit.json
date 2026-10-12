@@ -1,0 +1,59 @@
+{
+  "schema_version": "dcalc.tolerance_audit.v1",
+  "input": {
+    "kind": "assembly",
+    "config": "../assembly_path/config.yaml",
+    "assembly": "assembly.json",
+    "assembly_request": "request.json"
+  },
+  "uncertainties": [
+    {
+      "id": "cut",
+      "fields": [
+        "pieces.inner.length"
+      ],
+      "delta": {
+        "value": 2,
+        "unit": "mm"
+      },
+      "origin": "Fabrications synthétiques prescrites, même pièce pour toutes les configurations."
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "nominal",
+      "coefficients": {
+        "cut": 0
+      }
+    },
+    {
+      "id": "plus",
+      "coefficients": {
+        "cut": 1
+      }
+    },
+    {
+      "id": "minus",
+      "coefficients": {
+        "cut": -1
+      }
+    }
+  ],
+  "budgets": {
+    "uncertainties": 8,
+    "scenarios": 65,
+    "fields": 64,
+    "scenario_fields": 4160,
+    "projections": 4096,
+    "spectral_calls": 10000,
+    "frequencies": 2000000,
+    "frequency_segment_product": 200000000,
+    "segments": 200000,
+    "seconds": 60,
+    "memory_mib": 700,
+    "output_mib": 20
+  },
+  "coverage": {
+    "kind": "finite"
+  }
+}

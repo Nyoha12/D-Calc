@@ -1,0 +1,534 @@
+{
+  "schema_version": "dcalc.assembly_request.v1",
+  "variables": [],
+  "coverage": {
+    "kind": "discrete"
+  },
+  "budgets": {
+    "candidates": 3,
+    "evaluations": 70,
+    "projections": 150,
+    "spectral_calls": 1500,
+    "segments": 10000,
+    "frequencies": 500000,
+    "frequency_segment_product": 20000000,
+    "seconds": 140,
+    "memory_mib": 650,
+    "output_mib": 60
+  },
+  "projections": [
+    {
+      "id": "short",
+      "configuration": "short",
+      "request": {
+        "schema_version": "dcalc.design_request.v1",
+        "variables": [],
+        "criteria": [
+          {
+            "id": "length",
+            "observable": "geometry",
+            "expression": {
+              "total_length": true
+            },
+            "target": {
+              "value": 0.53,
+              "unit": "m"
+            },
+            "unit": "m",
+            "tolerance": {
+              "value": 0.01,
+              "unit": "mm"
+            },
+            "level": "geometry",
+            "scope": {},
+            "role": "hard"
+          },
+          {
+            "id": "f1",
+            "observable": "resonance_frequency",
+            "mode": "m1",
+            "bounds": [
+              {
+                "value": 70,
+                "unit": "Hz"
+              },
+              {
+                "value": 200,
+                "unit": "Hz"
+              }
+            ],
+            "unit": "Hz",
+            "tolerance": {
+              "value": 1,
+              "unit": "Hz"
+            },
+            "level": "passive",
+            "scope": {},
+            "role": "hard"
+          },
+          {
+            "id": "f2",
+            "observable": "resonance_frequency",
+            "mode": "m2",
+            "bounds": [
+              {
+                "value": 200,
+                "unit": "Hz"
+              },
+              {
+                "value": 600,
+                "unit": "Hz"
+              }
+            ],
+            "unit": "Hz",
+            "tolerance": {
+              "value": 1,
+              "unit": "Hz"
+            },
+            "level": "passive",
+            "scope": {},
+            "role": "hard"
+          },
+          {
+            "id": "f3",
+            "observable": "resonance_frequency",
+            "mode": "m3",
+            "bounds": [
+              {
+                "value": 350,
+                "unit": "Hz"
+              },
+              {
+                "value": 1000,
+                "unit": "Hz"
+              }
+            ],
+            "unit": "Hz",
+            "tolerance": {
+              "value": 1,
+              "unit": "Hz"
+            },
+            "level": "passive",
+            "scope": {},
+            "role": "hard"
+          },
+          {
+            "id": "ratio21",
+            "observable": "resonance_ratio",
+            "numerator": "m2",
+            "denominator": "m1",
+            "bounds": [
+              {
+                "value": 2,
+                "unit": "1"
+              },
+              {
+                "value": 4,
+                "unit": "1"
+              }
+            ],
+            "unit": "1",
+            "tolerance": {
+              "value": 0.01,
+              "unit": "1"
+            },
+            "level": "passive",
+            "scope": {},
+            "role": "hard"
+          }
+        ],
+        "modes": [
+          {
+            "id": "m1",
+            "order": 1,
+            "window_hz": [
+              70,
+              200
+            ]
+          },
+          {
+            "id": "m2",
+            "order": 2,
+            "window_hz": [
+              200,
+              600
+            ]
+          },
+          {
+            "id": "m3",
+            "order": 3,
+            "window_hz": [
+              350,
+              1000
+            ]
+          }
+        ],
+        "spectrum": {
+          "min_hz": 10.0,
+          "max_hz": 1100,
+          "step_hz": 5,
+          "final_step_hz": 2,
+          "refinement_hz": 1e-05,
+          "h_cm": 2.0
+        },
+        "budgets": {
+          "evaluations": 70,
+          "iterations": 12,
+          "variables": 8,
+          "frequencies": 4000,
+          "segments": 512,
+          "history": 70,
+          "seconds": 150,
+          "frequency_segment_product": 1000000
+        },
+        "models": {
+          "loss_model": "zk",
+          "air_reference": "ck_dry20",
+          "radiation_model": "legacy"
+        }
+      }
+    },
+    {
+      "id": "middle",
+      "configuration": "middle",
+      "request": {
+        "schema_version": "dcalc.design_request.v1",
+        "variables": [],
+        "criteria": [
+          {
+            "id": "length",
+            "observable": "geometry",
+            "expression": {
+              "total_length": true
+            },
+            "target": {
+              "value": 0.63,
+              "unit": "m"
+            },
+            "unit": "m",
+            "tolerance": {
+              "value": 0.01,
+              "unit": "mm"
+            },
+            "level": "geometry",
+            "scope": {},
+            "role": "hard"
+          },
+          {
+            "id": "f1",
+            "observable": "resonance_frequency",
+            "mode": "m1",
+            "bounds": [
+              {
+                "value": 70,
+                "unit": "Hz"
+              },
+              {
+                "value": 200,
+                "unit": "Hz"
+              }
+            ],
+            "unit": "Hz",
+            "tolerance": {
+              "value": 1,
+              "unit": "Hz"
+            },
+            "level": "passive",
+            "scope": {},
+            "role": "hard"
+          },
+          {
+            "id": "f2",
+            "observable": "resonance_frequency",
+            "mode": "m2",
+            "bounds": [
+              {
+                "value": 200,
+                "unit": "Hz"
+              },
+              {
+                "value": 600,
+                "unit": "Hz"
+              }
+            ],
+            "unit": "Hz",
+            "tolerance": {
+              "value": 1,
+              "unit": "Hz"
+            },
+            "level": "passive",
+            "scope": {},
+            "role": "hard"
+          },
+          {
+            "id": "f3",
+            "observable": "resonance_frequency",
+            "mode": "m3",
+            "bounds": [
+              {
+                "value": 350,
+                "unit": "Hz"
+              },
+              {
+                "value": 1000,
+                "unit": "Hz"
+              }
+            ],
+            "unit": "Hz",
+            "tolerance": {
+              "value": 1,
+              "unit": "Hz"
+            },
+            "level": "passive",
+            "scope": {},
+            "role": "hard"
+          },
+          {
+            "id": "ratio21",
+            "observable": "resonance_ratio",
+            "numerator": "m2",
+            "denominator": "m1",
+            "bounds": [
+              {
+                "value": 2,
+                "unit": "1"
+              },
+              {
+                "value": 4,
+                "unit": "1"
+              }
+            ],
+            "unit": "1",
+            "tolerance": {
+              "value": 0.01,
+              "unit": "1"
+            },
+            "level": "passive",
+            "scope": {},
+            "role": "hard"
+          }
+        ],
+        "modes": [
+          {
+            "id": "m1",
+            "order": 1,
+            "window_hz": [
+              70,
+              200
+            ]
+          },
+          {
+            "id": "m2",
+            "order": 2,
+            "window_hz": [
+              200,
+              600
+            ]
+          },
+          {
+            "id": "m3",
+            "order": 3,
+            "window_hz": [
+              350,
+              1000
+            ]
+          }
+        ],
+        "spectrum": {
+          "min_hz": 10.0,
+          "max_hz": 1100,
+          "step_hz": 5,
+          "final_step_hz": 2,
+          "refinement_hz": 1e-05,
+          "h_cm": 2.0
+        },
+        "budgets": {
+          "evaluations": 70,
+          "iterations": 12,
+          "variables": 8,
+          "frequencies": 4000,
+          "segments": 512,
+          "history": 70,
+          "seconds": 150,
+          "frequency_segment_product": 1000000
+        },
+        "models": {
+          "loss_model": "zk",
+          "air_reference": "ck_dry20",
+          "radiation_model": "legacy"
+        }
+      }
+    },
+    {
+      "id": "long",
+      "configuration": "long",
+      "request": {
+        "schema_version": "dcalc.design_request.v1",
+        "variables": [],
+        "criteria": [
+          {
+            "id": "length",
+            "observable": "geometry",
+            "expression": {
+              "total_length": true
+            },
+            "target": {
+              "value": 0.73,
+              "unit": "m"
+            },
+            "unit": "m",
+            "tolerance": {
+              "value": 0.01,
+              "unit": "mm"
+            },
+            "level": "geometry",
+            "scope": {},
+            "role": "hard"
+          },
+          {
+            "id": "f1",
+            "observable": "resonance_frequency",
+            "mode": "m1",
+            "bounds": [
+              {
+                "value": 70,
+                "unit": "Hz"
+              },
+              {
+                "value": 200,
+                "unit": "Hz"
+              }
+            ],
+            "unit": "Hz",
+            "tolerance": {
+              "value": 1,
+              "unit": "Hz"
+            },
+            "level": "passive",
+            "scope": {},
+            "role": "hard"
+          },
+          {
+            "id": "f2",
+            "observable": "resonance_frequency",
+            "mode": "m2",
+            "bounds": [
+              {
+                "value": 200,
+                "unit": "Hz"
+              },
+              {
+                "value": 600,
+                "unit": "Hz"
+              }
+            ],
+            "unit": "Hz",
+            "tolerance": {
+              "value": 1,
+              "unit": "Hz"
+            },
+            "level": "passive",
+            "scope": {},
+            "role": "hard"
+          },
+          {
+            "id": "f3",
+            "observable": "resonance_frequency",
+            "mode": "m3",
+            "bounds": [
+              {
+                "value": 350,
+                "unit": "Hz"
+              },
+              {
+                "value": 1000,
+                "unit": "Hz"
+              }
+            ],
+            "unit": "Hz",
+            "tolerance": {
+              "value": 1,
+              "unit": "Hz"
+            },
+            "level": "passive",
+            "scope": {},
+            "role": "hard"
+          },
+          {
+            "id": "ratio21",
+            "observable": "resonance_ratio",
+            "numerator": "m2",
+            "denominator": "m1",
+            "bounds": [
+              {
+                "value": 2,
+                "unit": "1"
+              },
+              {
+                "value": 4,
+                "unit": "1"
+              }
+            ],
+            "unit": "1",
+            "tolerance": {
+              "value": 0.01,
+              "unit": "1"
+            },
+            "level": "passive",
+            "scope": {},
+            "role": "hard"
+          }
+        ],
+        "modes": [
+          {
+            "id": "m1",
+            "order": 1,
+            "window_hz": [
+              70,
+              200
+            ]
+          },
+          {
+            "id": "m2",
+            "order": 2,
+            "window_hz": [
+              200,
+              600
+            ]
+          },
+          {
+            "id": "m3",
+            "order": 3,
+            "window_hz": [
+              350,
+              1000
+            ]
+          }
+        ],
+        "spectrum": {
+          "min_hz": 10.0,
+          "max_hz": 1100,
+          "step_hz": 5,
+          "final_step_hz": 2,
+          "refinement_hz": 1e-05,
+          "h_cm": 2.0
+        },
+        "budgets": {
+          "evaluations": 70,
+          "iterations": 12,
+          "variables": 8,
+          "frequencies": 4000,
+          "segments": 512,
+          "history": 70,
+          "seconds": 150,
+          "frequency_segment_product": 1000000
+        },
+        "models": {
+          "loss_model": "zk",
+          "air_reference": "ck_dry20",
+          "radiation_model": "legacy"
+        }
+      }
+    }
+  ]
+}
