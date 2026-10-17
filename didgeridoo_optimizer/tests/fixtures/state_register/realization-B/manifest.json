@@ -1,0 +1,14 @@
+{
+  "files": {
+    "certificate.json": "06362c9224682bc287f90ab596efe591856e6f3d7988ef4f59cdc2a420b2c732",
+    "diagnostics.json": "bf5250b416b35cf7328bc3ff52af1d2f6c98eb4a33b7c33c86ebd99ed745952a",
+    "model.json": "fe890413ef27f60027fe15533ba03e735f1014e743a95639249d951bb5418ba8",
+    "plan.json": "045e2e831a07f37d08bbcbf8c0fdd1825bdd8b097ecdd0af8c8d7f6547402afa",
+    "result.json": "0cb12b3fa80dc6c65c434fbd59245c447156556826cac91323ce7d1f9ac4a202",
+    "source.json": "86c92bdbd844075836dabaf0f1dd116eae064c55754a9aa8851e4e36f2c5d30a",
+    "stderr.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stdout.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "witness.json": "2b01eb40d356bb8556ac986fdd419c67a84952aa9bad172da87eff35d62274ff"
+  },
+  "schema": "dcalc.passive_realization.v1"
+}

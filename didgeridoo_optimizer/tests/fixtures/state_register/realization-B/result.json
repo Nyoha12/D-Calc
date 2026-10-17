@@ -1,0 +1,30 @@
+{
+  "certificate_sha256": "06362c9224682bc287f90ab596efe591856e6f3d7988ef4f59cdc2a420b2c732",
+  "model_sha256": "297a31465fb48b4826b937f2dd11ce74cd092c777a3d9d0c64c309e63bf14a60",
+  "physical_validation": "not_validated",
+  "producer_sources": {
+    "didgeridoo_optimizer/nonlinear/passive_realization.py": "b5e8c29ceb957af145ab3d5eabe1dadb010c40aa2cda923226e5bb6e68725a11",
+    "didgeridoo_optimizer/nonlinear/passive_state.py": "b7ef72dfc57cc9ac0db7d38d32b83f1ea7e6d1ea7f25461a336a1bba8b0dbf8f",
+    "didgeridoo_optimizer/nonlinear/scalar_passivity_certificate.py": "c5832bd4f1e5ef12c532f61549bf12d4508bd1009d9956d2a40cd2284647989e",
+    "didgeridoo_optimizer/pipeline/passive_realization.py": "9e784478350e505d5a1154b276ac4db0cea6df08e2a17165ab44c48ba7117c6e",
+    "didgeridoo_optimizer/pipeline/state_port_reference.py": "83945a88997384e04c02f50f69b51b2b234d7716ed6d47ec98b431632ec16578",
+    "didgeridoo_optimizer/reporting/passive_realization.py": "441f412cc6d627ca438838689b443cd815b778fac30294f6d54ab71f2626e350",
+    "didgeridoo_optimizer/reporting/state_port_reference.py": "32b512858767a3580c8454301784e438396daf3093a198ea2b30ea23fb74fc03",
+    "tools/passive_realization.py": "41126d7f442120b8ffe3d15dacce0a92267630856985cdb421f5e389ebe343ad",
+    "tools/state_port_reference.py": "f10c88d4419fc96021c31493928753c0fedc069e3d2fa3c939485b89b3a8bad5"
+  },
+  "schema": "dcalc.passive_realization.v1",
+  "source_roles": {
+    "didgeridoo_optimizer/nonlinear/passive_realization.py": "loaded_snapshot_verified",
+    "didgeridoo_optimizer/nonlinear/passive_state.py": "loaded_snapshot_verified",
+    "didgeridoo_optimizer/nonlinear/scalar_passivity_certificate.py": "loaded_snapshot_verified",
+    "didgeridoo_optimizer/pipeline/passive_realization.py": "loaded_snapshot_verified",
+    "didgeridoo_optimizer/pipeline/state_port_reference.py": "referenced",
+    "didgeridoo_optimizer/reporting/passive_realization.py": "loaded_snapshot_verified",
+    "didgeridoo_optimizer/reporting/state_port_reference.py": "referenced",
+    "tools/passive_realization.py": "loaded_snapshot_verified",
+    "tools/state_port_reference.py": "referenced"
+  },
+  "source_sha256": "86c92bdbd844075836dabaf0f1dd116eae064c55754a9aa8851e4e36f2c5d30a",
+  "status": "represented"
+}

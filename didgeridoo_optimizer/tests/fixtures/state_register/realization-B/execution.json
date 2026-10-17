@@ -1,0 +1,15 @@
+{
+  "cancelled": [],
+  "child": {
+    "collected": true,
+    "created": true,
+    "exit_code": 0,
+    "pid": 4031,
+    "pipes_closed": true,
+    "reaped": true
+  },
+  "error": null,
+  "manifest_sha256": "081d4e3b1976de3abf8c54987e06d0852d397f11a2753cf6d59b269565a1155a",
+  "ok": true,
+  "status": "represented"
+}
