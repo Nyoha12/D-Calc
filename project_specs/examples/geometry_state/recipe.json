@@ -1,0 +1,17 @@
+{
+  "backend": "certified_scalar_v1",
+  "sample_rate_hz": 12000,
+  "h_cm": 0.5,
+  "loss_model": "zk",
+  "air_reference": "ck_dry20",
+  "radiation_model": "legacy",
+  "top_hz": 3500,
+  "iterations": 12,
+  "max_order": 128,
+  "max_nodes": 12000,
+  "max_depth": 48,
+  "fit_seconds": 60,
+  "certificate_seconds": 60,
+  "seconds": 175,
+  "mesh_maxrel": 0.01
+}

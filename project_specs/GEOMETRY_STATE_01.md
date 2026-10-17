@@ -1,0 +1,29 @@
+# GEOMETRY-STATE-01
+
+Opt-in backend `fit.backend: certified_scalar_v1` constructs a **new scalar model for each exact generated profile**. Omitting `backend` retains the modal recipe and native defaults. The scalar recipe is a separate exact schema: see `examples/geometry_state/recipe.json`. Order is numerical cost, not pieces, notes or physical degrees of freedom.
+
+Public commands, from the checkout using the project's Python:
+
+```sh
+python -m tools.geometry_state --config project_specs/examples/geometry_state/config.yaml --design project_specs/examples/geometry_state/design.json --recipe project_specs/examples/geometry_state/recipe.json --output-dir /path/to/new-state --dry-run
+python -m tools.geometry_state --config project_specs/examples/geometry_state/config.yaml --design project_specs/examples/geometry_state/design.json --recipe project_specs/examples/geometry_state/recipe.json --output-dir /path/to/new-state
+python -m tools.geometry_state --read-result /path/to/new-state
+python -m tools.played_search --job project_specs/examples/geometry_state/job.yaml --output-dir /path/to/new-search
+python -m tools.played_search --read-result /path/to/new-search
+```
+
+Python API: `pipeline.geometry_state.preflight(config, design, recipe, output_dir=None)` and `run(config, design, recipe, output_dir, dry_run=False)`. Preflight parses bounded inputs and native geometry/model metadata only. Run supervises explicitly bounded, collected child processes; it does not change caller limits, signal handlers or timers. `reporting.geometry_state.read_result` is a synchronous algebraic reader; callers must give it a budget, or use the owned CLI reader. Reader inputs remain required. Integrity hashes are not authentication of an acquisition.
+
+Numerical recipe: native TMM with actual terminal radius, native air/loss/radiation and native zero-frequency ZK impedance. fs=12000 Hz; 384 log samples [.1,40), 6144 linear samples [40,top], top=3500 (A) or 5500 (B). Twelve real/conjugate VF relocations, normalized columns, rcond=1e-12, weight `1/max(abs(Z)/Zscale,1e-5)`, warped coordinate `2j*fs*tan(pi*f/fs)/omega_ref`, algebraically imposed DC. Resolved peaks seed pairs, four real relaxation poles and two terminal numerical pairs follow R59. Pole reflections are counted. Zero relocated poles and rank deficiency are refused; no post-freeze clipping, added loss or jitter.
+
+Source schema `dcalc.scalar_rational.v1` preserves `passivity=not_assessed`. Source and trace are written before audit targets. Reserved shifted audit grids contain 257/1201/401/1009/257 points in [.1,40], [40,3000], [3000,3500], [3500,5500], [5500,5990]. Every admitted band independently passes unchanged native NRMSE .005, maxrel .08, phase RMS .3 degrees on the executed discrete response. Extrapolation is retained and unadmitted. h/h2 comparison covers all admitted audit frequencies with declared maximum relative impedance error <=.01; this is numerical mesh convergence, not physical validation of 1D acoustics up to Nyquist.
+
+Independent exact certificate builder uses binary64 rational coefficients, outward 80-bit fixed-point interval enclosures, subdivision and an infinite-tail bound. It distinguishes nonpassive, unresolved and certified. Time/node/depth exhaustion does not imply physical impossibility. R61 independently verifies the certificate, performs its unchanged conversion and checks DC/direct/conditioning. Source, certificate, witness, diagnostics, model, plan, manifests and genuine collection receipts form a native-readable realization bundle. R62 evidence binds CONFIG/DESIGN/material DB/variant rules, the five-field native recipe, effective conditions, radius, source and model. Precommit source fingerprints explicitly describe working-tree bytes, not a future commit.
+
+Search templates require `saved_state` with `@CONFIG`, `@DESIGN`, `@REALIZATION`, `@EVIDENCE`. The five-field recipe is sample_rate_hz/h_cm/loss_model/radiation_model/air_reference. Targets stay outside fitting. Caches bind complete design bytes, CONFIG/DB/rules, entire recipe and producing source hashes; every hit is associated and read again. Failed fits produce no fabricated played score. Existing discrete configurations, locks, criteria and coordinate poll remain native.
+
+For scalar trajectories, `budgets.chunk_steps` also determines the maximum newly charged steps in one explicit native call. Each call is a counted trajectory attempt, so the global `trajectories` budget must cover partial/resume calls. The request and its global quotas are unchanged. Accepted steps are incremental deltas; accepted history is never re-executed. A stopped or unconfirmed child/reader remains partial. A read can cost up to 175 seconds; a complete child and read must fit remaining global time. Resume across independent searches is not supported. Native standalone resume remains available via `tools.register_target --resume ... --steps-this-run ...` with the unchanged plan.
+
+Bounds: <=128 scalar states, <=4096 fine mesh sections, <=8,000,000 frequency-section product, <=175 CPU/wall seconds per worker, 768 MiB, BLAS1 established before NumPy, <=4 MiB per geometry file (below the 8 MiB ceiling). Construction reserves acquisition/fit/certificate/conversion/fidelity within its declared total. All output is new; failed/partial files are retained. No SciPy/CVX/Matlab dependency, material calibration, acoustic formula or validation-policy change.
+
+The public short example tests product use on two new cylinders. 96 steps cannot establish played pitch conformity. It is not a solution of R49; R49 remains nonconforming in its previously evaluated trajectory. `examples/geometry_state/r49` is a preparation-only job, retaining original scientific controls, criteria and geometry locks; it must not be launched as part of this author block.

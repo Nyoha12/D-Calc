@@ -73,6 +73,9 @@ def validate_job(raw):
 
 def validate_fit(fit):
     """Scalar native option domains only; actual CONFIG/mesh preflight follows."""
+    if type(fit) is dict and 'backend' in fit:
+        from ..pipeline.geometry_state import validate_recipe
+        return validate_recipe(fit)
     obj(fit, FIT_KEYS, 'fit', FIT_KEYS)
     for k, lo, hi in [('sample_rate_hz', 1000, 12000), ('fit_points', 32, 8192),
                      ('guard_points', 32, 2048), ('audit_points', 32, 4096),
@@ -99,6 +102,9 @@ def validate_fit(fit):
 
 
 def recipe(fit):
+    if 'backend' in fit:
+        from ..pipeline.geometry_state import state_recipe
+        return state_recipe(fit)
     return {k: copy.deepcopy(fit[k]) for k in sorted(RECIPE)}
 
 
