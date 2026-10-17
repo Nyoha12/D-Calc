@@ -52,6 +52,51 @@ write_json=native.write_json
 atomic_bytes=native.atomic_bytes
 MAX_BYTES=160*1024**2
 
+# Deliberately finite, read-only compatibility for the acquired R49 producer.
+# No physics, core, observer, criterion or validation-policy file is exempted.
+READER_PRODUCER_SHA='9caefe691f285d71f64ea3ccad1383d915f62969'
+_READER_OLD_SOURCES={
+    'didgeridoo_optimizer/reporting/register_target.py':'71a720dbd7a8d9608064ab12c8fc20b9996219f8f4ae6f2fba192a10cb0c103b',
+    'didgeridoo_optimizer/reporting/state_register_context.py':'f5dc669645946dcc34c1639b7ee37498a0633d01eee3e11e4f2e1f07a0702cd5',
+    'didgeridoo_optimizer/pipeline/register_target.py':'3c3dd51edef50f6911ef58c2242423dcff029a883888b21921e47ed20943f6a3',
+    'tools/register_target.py':'673f1b784b04625c3e048fe4d44753767a914b35456bfe81c70795a8e5b07aa4',
+}
+
+
+class _ReaderIdentity:
+    """Per-call source policy, never installed in worker or module globals."""
+    def __init__(self, producer_sha):
+        if producer_sha is not None and producer_sha!=READER_PRODUCER_SHA:
+            raise ValueError('Unsupported read-only producer SHA')
+        self.producer_sha=producer_sha
+        self.current=sources()
+
+    def verify_current(self):
+        verify_sources(self.current)
+        # Keep the actual loaded-module snapshots, including late imports.
+        sources()
+
+    def verify(self, producer):
+        self.verify_current()
+        recorded=producer['loaded_sources_sha256']
+        if not REQUIRED_SOURCES<=set(recorded):raise ValueError('Incomplete source manifest')
+        if self.producer_sha is None:
+            verify_sources(recorded)
+        else:
+            expected=dict(sha=self.producer_sha,working_tree_dirty=False,
+                origin='git HEAD of verified worktree with tracked loaded D-Calc sources')
+            if producer['software']!=expected:raise ValueError('Read-only producer origin/SHA/clean checkout mismatch')
+            for name,sha in _READER_OLD_SOURCES.items():
+                if recorded.get(name)!=sha:raise ValueError('Read-only producer source fingerprint mismatch: '+name)
+            verify_sources({k:v for k,v in recorded.items() if k not in _READER_OLD_SOURCES})
+        if producer['versions']!=versions():raise ValueError('Checkpoint software versions')
+
+    def receipt(self, producer):
+        return dict(mode='strict' if self.producer_sha is None else 'historical_read_only',
+                    producer=producer,reader=dict(software=_software_source(),versions=versions(),
+                    loaded_sources_sha256=self.current),
+                    compatible_source_paths=[] if self.producer_sha is None else sorted(_READER_OLD_SOURCES))
+
 
 def sources():
     result=phase_sources();result.update(strict.sources())
@@ -121,7 +166,7 @@ def _zip_budget(path, n, states):
             if i.file_size>expected[i.filename]+512 or i.file_size<expected[i.filename]:raise ValueError('NPZ allocation quota')
 
 
-def inspect_checkpoint(path, *, expected_request=None):
+def inspect_checkpoint(path, *, expected_request=None, _reader=None):
     """Bounded read-only chain inspection; no model, eigensolve or array loading."""
     ref=reference(path);seen=set();chain=[];bytes_seen={};request_hash=None
     while ref is not None:
@@ -137,7 +182,8 @@ def inspect_checkpoint(path, *, expected_request=None):
             raise ValueError('Checkpoint context identity')
         producer=context['producer']
         if not REQUIRED_SOURCES<=set(producer['loaded_sources_sha256']):raise ValueError('Incomplete source manifest')
-        verify_sources(producer['loaded_sources_sha256'])
+        if _reader is None:verify_sources(producer['loaded_sources_sha256'])
+        else:_reader.verify(producer)
         if producer['versions']!=versions():raise ValueError('Checkpoint software versions')
         e=c['experiment'];core.exact(e,{'payload','sha256'},'experiment checkpoint')
         if e['sha256']!=digest(e['payload']):raise ValueError('Experiment checkpoint checksum')
@@ -258,9 +304,17 @@ def publish_completion(out):
     out=Path(out);os.link(out/'.pending-completion.json',out/'execution.completed.json',follow_symlinks=False)
 
 
-def read_result(out,expected_context=None):
+def read_result(out,expected_context=None,*,producer_sha=None):
+    """Verify acquired data; an explicit historical policy applies only here.
+
+    The original result and every file remain untouched. No ambient override,
+    resource limit, signal handler or timer is installed by this memory API.
+    """
     out=safe_path(out)
     try:
+        reader=_ReaderIdentity(producer_sha)
+        terminal_pins={str(out/name):file_sha256(out/name) for name in
+            ('manifest.json','execution.json','execution.closed.json','execution.completed.json')}
         marker=read_json(out/'execution.completed.json');execution=read_json(out/'execution.json')
         if marker!=dict(schema='dcalc.register_target.completion.v1',execution_sha256=file_sha256(out/'execution.json'),
                         closure_sha256=file_sha256(out/'execution.closed.json')):raise ValueError('Terminal marker')
@@ -273,6 +327,8 @@ def read_result(out,expected_context=None):
         for name,h in manifest.items():
             if Path(name).name!=name or file_sha256(out/name)!=h:raise ValueError('Artifact integrity')
         result=read_json(out/'result.json');context=read_json(out/'plan.json')
+        if producer_sha is not None and context['request']['case']['kind']!='saved_state':
+            raise ValueError('Historical reader compatibility requires saved_state')
         if result['schema']!=SCHEMA or result['plan']!=context:raise ValueError('Result context')
         if expected_context is not None and context['context_sha256']!=expected_context:raise ValueError('Unexpected context')
         analysis=result['analysis'];window_ids={w['id'] for w in context['request']['windows']}
@@ -282,19 +338,37 @@ def read_result(out,expected_context=None):
             read_json(out/name)
         expected_phase='phase.json' if context['request']['observation']['phase'] is not None else None
         if analysis['phase_file']!=expected_phase or (expected_phase is not None and expected_phase not in manifest):raise ValueError('Uncommitted PHASE artifact')
-        chain=inspect_checkpoint(verify_reference(result['checkpoint']),expected_request=context['request'])
+        reader.verify(context['producer'])
+        chain=inspect_checkpoint(verify_reference(result['checkpoint']),expected_request=context['request'],_reader=reader)
         if chain[-1][1]['context_sha256']!=context['context_sha256']:raise ValueError('Tip context')
+        # Pin the admitted artifacts too, including every ancestor. Persistent
+        # changes after array loading must not turn into a confirmed read.
+        pins={str(out/name):h for name,h in manifest.items()}
+        pins.update(terminal_pins)
+        for index,(path,item) in enumerate(chain):
+            ref=chain[index+1][1]['previous'] if index+1<len(chain) else result['checkpoint']
+            pins[str(path)]=ref['sha256']
+            if item['series'] is not None:
+                ref=item['series']['file'];pins[ref['path']]=ref['sha256']
+        from ..pipeline.register_target import check_inputs
+        def boundary():
+            check_inputs(context,_reader=reader)
         arrays=load_series(chain)
         # The native importer validates full reset, diagnostics and physical state.
         from ..pipeline.register_target import experiment_for
-        experiment=experiment_for(context);experiment.restore(chain[-1][1]['experiment'])
+        experiment=experiment_for(context,_reader=reader);experiment.restore(chain[-1][1]['experiment'])
         if result['accepted_steps']!=experiment.accepted or result['sums']!=experiment.sums or result['events']!=experiment.events:
             raise ValueError('Result/checkpoint counters or ledger')
         if context['request']['case']['kind']=='saved_state':
             from .state_register_context import verify_saved_analysis
-            verify_saved_analysis(out,result,arrays,experiment,chain)
+            verify_saved_analysis(out,result,arrays,experiment,chain,verify_inputs=boundary)
         total=sum(s['steps'] for s in context['request']['plateaus'])
         if execution['ok'] and (result['status']!='complete' or experiment.accepted!=total):raise ValueError('False trajectory completion')
-        return dict(ok=execution['ok'],status=result['status'],execution=execution,result=result)
+        reading=reader.receipt(context['producer'])
+        boundary()
+        for path,sha in pins.items():
+            if file_sha256(path)!=sha:raise ValueError('Saved artifact changed during reading')
+        reader.verify_current()
+        return dict(ok=execution['ok'],status=result['status'],execution=execution,result=result,reading=reading)
     except (OSError,ValueError,KeyError,TypeError,zipfile.BadZipFile) as exc:
         return dict(ok=False,status='unconfirmed',reason=str(exc))

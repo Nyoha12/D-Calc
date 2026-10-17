@@ -308,7 +308,7 @@ def validate_evidence(manifest, model, files):
         conditioning_scope='separate_native_realization_diagnostics')
 
 
-def verify_saved_analysis(out, result, arrays, experiment, chain):
+def verify_saved_analysis(out, result, arrays, experiment, chain, *, verify_inputs=None):
     """Verify acquired rows and observations without taking a temporal step.
 
     Residuals are evaluated on saved endpoints and native port/energy functions;
@@ -318,7 +318,14 @@ def verify_saved_analysis(out, result, arrays, experiment, chain):
     from ..nonlinear import register_target as core
     from ..nonlinear.simultaneous_coupling import SimultaneousCoupling, contact_forces
     from ..nonlinear.lip_ports import flows
-    r=result['plan']['request'];model=experiment.model
+    from ..nonlinear.passive_state import PassiveState
+    r=result['plan']['request'];original=experiment.model
+    def boundary():
+        original.verify_file_unchanged()
+        guard=getattr(experiment,'_reader_guard',getattr(experiment,'_context_guard',None))
+        if guard is not None: guard()
+        if verify_inputs is not None: verify_inputs()
+    boundary()
     if result.get('context_checks')!=experiment.context_checks: raise ValueError('Saved scientific checks differ')
     starts={}
     for path,item in chain:
@@ -352,11 +359,19 @@ def verify_saved_analysis(out, result, arrays, experiment, chain):
         import json
         for row in rows: writer.writerow([*[row.get(k) for k in fields],json.dumps(row,allow_nan=False,sort_keys=True)])
         if (Path(out)/name).read_bytes()!=text.getvalue().encode(): raise ValueError('Saved semantic table mismatch')
+    # One independent native realization after admission. Its coefficients are
+    # immutable; its solvers retain all native guards and port/energy methods.
+    # The file-backed original remains pinned at boundaries, never detached.
+    parameters=original.parameters()
+    model=PassiveState.from_parameters(parameters)
+    if model.parameters()!=parameters: raise ValueError('Reader native parameter copy differs')
+    boundary()
     solvers=[SimultaneousCoupling(model,params=core.active_parameters(r,i),rho=r['rho_kg_m3'],v2_port_model='conjugate') for i in range(len(r['plateaus']))]
-    A,B,C,D=model.A,model.B,model.C,model.D
+    A,B,C,D,L=model.A,model.B,model.C,model.D,model.L
     def close(a,b,name,atol=1e-14):
         if not np.allclose(a,b,rtol=2e-9,atol=atol): raise ValueError('Saved native '+name+' residual')
     for i,row in enumerate(arrays['values']):
+        if i % r['budgets']['chunk_steps']==0: boundary()
         s0,s1=arrays['states'][i:i+2];c=solvers[int(arrays['segments'][i])]
         saved=dict(zip(core.COLUMNS,row));vm=(s0[1]+s1[1])/2;xm=(s0[2:]+s1[2:])/2
         p=saved['pressure_pa'];ud=saved['downstream_flow_m3_s'];u=saved['jet_m3_s']
@@ -374,10 +389,11 @@ def verify_saved_analysis(out, result, arrays, experiment, chain):
         rhs=c.m*s0[1]-c.tau*c.K*s0[0]+c.tau*c.Au*c.Pu
         close(c.M*vm-c.tau*(fc+fd),rhs+c.tau*c.Ad*p,'mechanical',1e-15)
         el0,el1=c.lip_energy(s0),c.lip_energy(s1);er0,er1=model.energy_of(s0[2:]),model.energy_of(s1[2:])
-        dissipated=model.Zscale*float(np.linalg.norm(model.L.T@np.r_[xm,ud])**2)*c.dt
+        dissipated=model.Zscale*float(np.linalg.norm(L.T@np.r_[xm,ud])**2)*c.dt
         predicted=dict(lip_energy_j=el1,resonator_energy_j=er1,total_energy_j=el1+er1,
             lip_energy_change_j=el1-el0,resonator_energy_change_j=er1-er0,total_energy_change_j=el1-el0+er1-er0,
             pressure_work_j=c.dt*(c.Au*c.Pu+c.Ad*p)*vm,resonator_work_j=c.dt*p*ud,
             source_work_j=c.dt*c.Pu*saved['upstream_flow_m3_s'],jet_loss_j=c.dt*(c.Pu-p)*u,
             lip_loss_j=c.dt*c.r*vm*vm,contact_loss_j=-c.dt*fd*vm,resonator_loss_j=dissipated)
         for name,value in predicted.items(): close(saved[name],value,name,1e-16)
+    boundary()

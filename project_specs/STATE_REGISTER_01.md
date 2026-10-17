@@ -165,3 +165,66 @@ Le plan R49 préparé garde 36000 pas à 12000 Hz (3 s), 3500 Pa, les deux fenê
 [2,2.5]/[2.5,3] s, cible 70 Hz ±5 cents, activité >=100 Pa et durée >=.49 s,
 ainsi que tous les paramètres R49. Il est remis au pilote sans exécution de sa
 trajectoire complète. Une démonstration courte ne résout pas cette cible.
+
+## Lecteur C3 : coût borné et producteur historique explicite
+
+Après admission scientifique complète, le lecteur construit une seule copie
+native indépendante par `PassiveState.from_parameters` et vérifie l'égalité
+exacte des paramètres. Les coefficients natifs sont immuables ; cette copie et
+les copies locales des matrices (`L` comprise) ne survivent pas à l'appel.
+Les solveurs de relecture gardent les méthodes natives de port et d'énergie.
+Aucun `step`, `advance`, fit, TMM, conversion ou nouveau point de trajectoire
+n'est exécuté. Formules, tolérances, sommes, ordre des lignes et observations
+restent ceux du lecteur natif.
+
+Le modèle original chargé depuis son fichier reste épinglé. Les inputs, le
+plan, le bundle, les preuves et les sources sont contrôlés aux frontières,
+au début de chaque chunk du plan (32 à 1200 lignes), et obligatoirement après
+la dernière ligne avant confirmation. Les checkpoints et artefacts admis sont
+également revérifiés avant retour. Une altération persistante pendant la
+lecture refuse la confirmation, y compris dans le dernier chunk. Les contrôles
+natifs par opération restent actifs sur la copie en mémoire ; ils n'ont plus
+à re-hacher le gros fichier modèle pour chaque ligne.
+
+La lecture stricte des empreintes courantes reste le défaut. Pour les données
+acquises par le producteur exact `9caefe691f285d71f64ea3ccad1383d915f62969`,
+l'exception suivante est explicite et exclusivement réservée à `saved_state` :
+
+```bash
+python -m tools.register_target --read-result chemin/run-10 \
+  --reader-producer-sha 9caefe691f285d71f64ea3ccad1383d915f62969
+```
+
+```python
+from didgeridoo_optimizer.reporting.register_target import read_result
+reading = read_result("chemin/run-10",
+    producer_sha="9caefe691f285d71f64ea3ccad1383d915f62969")
+```
+
+Le producteur enregistré doit annoncer exactement ce SHA, l'origine native
+`git HEAD of verified worktree with tracked loaded D-Calc sources` et
+`working_tree_dirty=false`. Cette déclaration reste documentaire, non une
+signature d'acquisition. Seuls les quatre fichiers modifiés de plomberie et
+lecture ci-dessous peuvent porter leurs empreintes historiques exactes :
+
+| Fichier | SHA256 historique accepté |
+| --- | --- |
+| `didgeridoo_optimizer/reporting/register_target.py` | `71a720dbd7a8d9608064ab12c8fc20b9996219f8f4ae6f2fba192a10cb0c103b` |
+| `didgeridoo_optimizer/reporting/state_register_context.py` | `f5dc669645946dcc34c1639b7ee37498a0633d01eee3e11e4f2e1f07a0702cd5` |
+| `didgeridoo_optimizer/pipeline/register_target.py` | `3c3dd51edef50f6911ef58c2242423dcff029a883888b21921e47ed20943f6a3` |
+| `tools/register_target.py` | `673f1b784b04625c3e048fe4d44753767a914b35456bfe81c70795a8e5b07aa4` |
+
+Tout autre ancien hash, SHA, origine, source requise absente, version logicielle
+ou différence des autres sources (physique, core, observateurs, critères inclus)
+est refusé. Les instantanés des modules réellement chargés et les empreintes
+actuelles du lecteur restent vérifiés séparément. Aucun ancien code n'est
+importé ni exécuté depuis les données ou un checkout fourni par celles-ci.
+
+Le reçu ajoute `reading` à côté de `result` : il distingue le producteur
+historique du lecteur présent (SHA Git disponible, état dirty et empreintes
+courantes), et énumère les seuls chemins compatibles. `result` et les fichiers
+originaux ne sont ni réécrits ni re-hachés sur disque. L'exception est locale
+à l'appel ; worker, préflight, reprise et évolution restent stricts. Un objet
+expérience interne créé pour la lecture refuse `advance`. Les mêmes limites
+CLI 175 s / 768 Mio / 8 Mio s'appliquent ; l'API ne modifie pas les limites,
+handlers ou timers de son appelant.

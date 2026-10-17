@@ -15,6 +15,8 @@ _BLAS_KEYS=('OPENBLAS_NUM_THREADS','OMP_NUM_THREADS','MKL_NUM_THREADS','NUMEXPR_
 
 
 def _validate_modes(args):
+    if args.reader_producer_sha is not None and args.read_result is None:
+        raise ValueError('--reader-producer-sha requires --read-result; calculation/resume cannot use it')
     special=sum((args.read_result is not None,args.worker_plan is not None,args.worker))
     normal=(args.plan is not None or args.output_dir is not None or args.dry_run
             or args.resume is not None or args.steps_this_run is not None)
@@ -39,6 +41,7 @@ def main(argv=None):
     parser.add_argument('--steps-this-run',type=int,help='Arrêt partiel explicite sans modifier le PLAN ni ses quotas cumulés')
     parser.add_argument('--worker-plan',help=argparse.SUPPRESS)
     parser.add_argument('--read-result',help='Vérifier un résultat; inputs et preuves sources restent requis')
+    parser.add_argument('--reader-producer-sha',help='Compatibilité historique explicite, uniquement en lecture seule')
     parser.add_argument('--worker',action='store_true',help=argparse.SUPPRESS)
     args=parser.parse_args(argv)
     try:
@@ -58,7 +61,7 @@ def main(argv=None):
             from didgeridoo_optimizer.pipeline.register_target import _state_limits
             from didgeridoo_optimizer.reporting.register_target import read_result
             _state_limits();_state_worker_ready(blas_before_import);signal.alarm(175)
-            result=read_result(args.read_result)
+            result=read_result(args.read_result,producer_sha=args.reader_producer_sha)
         elif args.worker_plan is not None:
             _state_worker_ready(blas_before_import)
             from didgeridoo_optimizer.reporting.register_target import read_json

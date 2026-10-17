@@ -75,11 +75,12 @@ def preflight(plan_path,output_dir,*,resume=None,steps_this_run=None):
     return Plan(json.dumps(p,allow_nan=False,sort_keys=True))
 
 
-def check_inputs(p):
+def check_inputs(p, *, _reader=None):
     report.verify_sources(LOADED_SOURCES)
     Plan(json.dumps(p,allow_nan=False)).as_dict()
     if not report.REQUIRED_SOURCES<=set(p['producer']['loaded_sources_sha256']):raise ValueError('Incomplete source manifest')
-    report.verify_sources(p['producer']['loaded_sources_sha256'])
+    if _reader is None:report.verify_sources(p['producer']['loaded_sources_sha256'])
+    else:_reader.verify(p['producer'])
     if p['producer']['versions']!=report.versions():raise ValueError('Versions changed')
     if report.file_sha256(p['request_source']['path'])!=p['request_source']['sha256']:raise ValueError('Plan bytes changed')
     if set(p['input_files'])!={'config','design','materials','variant_rules'}:raise ValueError('Complete input manifest required')
@@ -93,8 +94,8 @@ def check_inputs(p):
     if report.file_sha256(p['request']['case']['model_in'])!=p['metadata']['model_sha256']:raise ValueError('Model changed')
 
 
-def experiment_for(p):
-    check_inputs(p)
+def experiment_for(p, *, _reader=None):
+    check_inputs(p,_reader=_reader)
     if p['request']['case']['kind']=='saved_state':
         from .state_register_context import load_verified
         model,checks,binding=load_verified(p['request']['case'],p['metadata'],p['request']['observation'],p['request']['rho_kg_m3'],binding=True)
@@ -106,7 +107,13 @@ def experiment_for(p):
         def guarded():
             native_guard()
             if report.file_sha256(p['request_source']['path'])!=p['request_source']['sha256']: raise ValueError('Plan changed before step')
-        experiment._context_guard=guarded
+        if _reader is None:
+            experiment._context_guard=guarded
+        else:
+            experiment._reader_guard=guarded
+            def read_only():
+                raise ValueError('Reader experiment cannot advance; use strict calculation admission')
+            experiment._context_guard=read_only
         return experiment
     case={k:v for k,v in p['request']['case'].items() if k!='kind'}
     metadata,_,_=_case_context(case,Path(p['output'])/'unused-read-only-context')
