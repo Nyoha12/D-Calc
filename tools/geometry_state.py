@@ -20,6 +20,17 @@ def main(argv=None):
         if special and not OWNED:raise ValueError('Worker/reader requires owned fresh CLI')
         if not special and not all((a.config,a.design,a.recipe,a.output_dir)):raise ValueError('CONFIG DESIGN recipe output required')
         if OWNED:
+            import signal
+            def cancelled(signum,frame): raise InterruptedError('Geometry CLI cancelled by signal '+str(signum))
+            for signum in (signal.SIGTERM,signal.SIGINT,signal.SIGALRM): signal.signal(signum,cancelled)
+            if special:
+                signal.alarm(175)
+                if a.read_result or a.verify_pending:
+                    import resource
+                    for kind,cap in ((resource.RLIMIT_AS,768*1024**2),(resource.RLIMIT_CPU,175),(resource.RLIMIT_FSIZE,4*1024**2)):
+                        soft,hard=resource.getrlimit(kind)
+                        bound=cap if hard==resource.RLIM_INFINITY else min(cap,hard)
+                        resource.setrlimit(kind,(bound,bound))
             if 'numpy' in sys.modules:raise ValueError('Fresh CLI required before NumPy')
             for k in ('OPENBLAS_NUM_THREADS','OMP_NUM_THREADS','MKL_NUM_THREADS','NUMEXPR_NUM_THREADS'):os.environ[k]='1'
         from didgeridoo_optimizer.pipeline import geometry_state as flow
@@ -27,10 +38,7 @@ def main(argv=None):
         from didgeridoo_optimizer.nonlinear import scalar_passivity_certificate as strict
         if ENTRY!=flow.ROOT/'tools/geometry_state.py' or strict.sha(ENTRY.read_bytes())!=ENTRY_SHA:raise ValueError('Copied/changed CLI')
         if special:
-            if a.read_result or a.verify_pending: flow.limits()
             flow.ready()
-            import signal
-            signal.alarm(175)
         if a.worker:value=flow.worker(strict.read_json(a.worker))
         elif a.read_result:value=report.read_result(a.read_result)
         elif a.verify_pending:value=report.read_payload(a.verify_pending)

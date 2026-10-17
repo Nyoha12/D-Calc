@@ -402,6 +402,7 @@ def launch(kind, task, out, budget, children, *, seconds, output_bytes, steps=0)
     env = dict(os.environ, OPENBLAS_NUM_THREADS='1', OMP_NUM_THREADS='1', MKL_NUM_THREADS='1',
                NUMEXPR_NUM_THREADS='1', PYTHONDONTWRITEBYTECODE='1')
     child = None; reason = None; collection_seconds = 0.; operation_seconds = 0.
+    source = stream = None
     try:
         # Both streams are files: a child that never reads cannot block sending.
         # Only this uniquely created temporary is removed by its context manager.
@@ -463,6 +464,10 @@ def launch(kind, task, out, budget, children, *, seconds, output_bytes, steps=0)
                        collection_seconds=collection_seconds, collection_limit_seconds=4,
                        timeout_or_error=reason, log=log.name, input_bytes=input_bytes,
                        steps_charged=steps if child else 0)
+        if task.get('kind') in ('geometry','read_geometry'):
+            receipt.update(limit_seconds=seconds,collected=child is not None and child.returncode is not None,
+                           pipes_closed=bool(source is not None and stream is not None and source.closed and stream.closed),
+                           log_bytes=log.stat().st_size if log.exists() else 0)
         children.append(receipt)
     try:
         if not log.exists(): raise ValueError('Child not launched')

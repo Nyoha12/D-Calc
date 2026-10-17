@@ -93,3 +93,40 @@ def test_failed_owned_child_is_collected_with_unchanged_caller_limits(tmp_path,m
     receipt=flow._child('worker','unused',tmp_path,.01)
     assert receipt['reaped'] and receipt['exit_code']==-15 and receipt['error'] and child.terminated
     assert before==[resource.getrlimit(k) for k in (resource.RLIMIT_AS,resource.RLIMIT_CPU,resource.RLIMIT_FSIZE)]
+
+
+from didgeridoo_optimizer.tests.test_geometry_state import synthetic_bundle
+
+
+def test_fresh_synthetic_reader_cli(synthetic_bundle):
+    value=subprocess.run([sys.executable,'-B','-m','tools.geometry_state','--read-result',str(synthetic_bundle)],
+        cwd=ROOT,env=ENV,capture_output=True,text=True,timeout=20)
+    assert value.returncode==0,value.stdout+value.stderr
+    assert json.loads(value.stdout)['status']=='geometry_state_verified'
+
+
+def test_public_child_cancellation_during_collection(tmp_path,monkeypatch):
+    from didgeridoo_optimizer.pipeline import geometry_state as flow
+    class Child:
+        pid=123;returncode=None;killed=False;calls=0
+        def wait(self,timeout):
+            self.calls+=1
+            if self.calls==1:raise SystemExit('cancelled after spawn')
+            self.returncode=-9;return -9
+        def poll(self):return self.returncode
+        def terminate(self):raise KeyboardInterrupt('during collection')
+        def kill(self):self.killed=True
+    child=Child();monkeypatch.setattr(flow.subprocess,'Popen',lambda *a,**kw:child)
+    receipt=flow._child('worker','unused',tmp_path,.01)
+    assert child.killed and receipt['reaped'] and receipt['collected'] and receipt['pipes_closed']
+    assert receipt['error'] and receipt['exit_code']==-9
+
+
+def test_public_late_success_is_partial_without_complete(tmp_path,monkeypatch):
+    from didgeridoo_optimizer.pipeline import geometry_state as flow
+    from didgeridoo_optimizer.tests.test_geometry_state import _receipt
+    recipe=json.loads((EXAMPLE/'recipe.json').read_text());out=tmp_path/'partial'
+    receipt=_receipt();receipt['operation_seconds']=175.;receipt['seconds']=175.2
+    monkeypatch.setattr(flow,'_child',lambda *a,**kw:receipt)
+    value=flow.run(EXAMPLE/'config.yaml',EXAMPLE/'design.json',recipe,out)
+    assert not value['ok'] and value['status']=='partial' and not (out/'complete.json').exists()

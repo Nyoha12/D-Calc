@@ -27,3 +27,38 @@ For scalar trajectories, `budgets.chunk_steps` also determines the maximum newly
 Bounds: <=128 scalar states, <=4096 fine mesh sections, <=8,000,000 frequency-section product, <=175 CPU/wall seconds per worker, 768 MiB, BLAS1 established before NumPy, <=4 MiB per geometry file (below the 8 MiB ceiling). Construction reserves acquisition/fit/certificate/conversion/fidelity within its declared total. All output is new; failed/partial files are retained. No SciPy/CVX/Matlab dependency, material calibration, acoustic formula or validation-policy change.
 
 The public short example tests product use on two new cylinders. 96 steps cannot establish played pitch conformity. It is not a solution of R49; R49 remains nonconforming in its previously evaluated trajectory. `examples/geometry_state/r49` is a preparation-only job, retaining original scientific controls, criteria and geometry locks; it must not be launched as part of this author block.
+
+Review correction C1/C2: plan admission requires the exact schema, typed budgets,
+all four input files, and a fixed minimum producer inventory covering the scalar
+modules, native acoustic/mesh/material/context code and R61/R62. Extra declared
+Python sources bind their bytes without requiring unrelated reader imports.
+Owned module snapshots are checked; native modules without snapshots also have
+loaded functions/methods compared with compiled source before admission. Base SHA
+and working-tree hashes retain separate meanings; no historical fingerprint
+compatibility is granted to archived author runs.
+
+A successful read checks every normative result field, exact acquisition counts,
+full-rank iteration records, and both collected receipt formats. Compute receipts
+must agree with `child.json` and their native realization projection. Errors,
+timeouts, late operations, invalid PID/exit types, missing collection/closed logs
+or inconsistent elapsed times refuse closure. The shared search receipt gains
+collection, closure, deadline and log-size facts only for geometry tasks; its
+legacy decisions remain unchanged. Publication rechecks acquired bytes after the
+fresh reader returns.
+
+Frozen scalar DC is evaluated independently by summing real/conjugate residues at
+zero and compared to the declared native DC at relative 2e-8. The native value is
+also reconstructed from the supplied geometry/mesh and existing ZK expression.
+The direct term retains its separate native representation check. No coefficient,
+material parameter, acoustic equation or acceptance tolerance is adjusted.
+
+Each additional NPZ load checks the admitted hash and exact headers on the same
+local bytes it loads. Final checks include all artifacts, model, proof, manifests,
+receipts, inputs and producer sources, including after the final closure block.
+Owned fresh CLI readers establish limits and their timer before scientific imports;
+in-memory APIs leave caller limits, handlers and timers unchanged. Collection is
+bounded to four seconds and reported separately from the operation deadline.
+Geometry files retain the 4 MiB limit; shared native logs retain 8 MiB. These are
+relative integrity checks, not an atomic filesystem transaction or authentication
+of an acquisition. Synthetic regression bundles do not replace the pilot's
+post-review, post-commit demonstrations on two geometries.

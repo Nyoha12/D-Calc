@@ -95,3 +95,21 @@ def test_real_cache_association_refuses_other_profile_recipe_and_db(tmp_path):
     plan['inputs']['materials']['path']=str(db);plan['sha256']=flow.digest({k:v for k,v in plan.items() if k!='sha256'})
     (saved/'plan.json').write_text(strict.strict_json(plan))
     with pytest.raises(ValueError,match='input changed'):flow.read_fit(saved,recipe,design,config)
+
+
+def test_geometry_shared_receipt_reports_actual_collection(tmp_path,monkeypatch):
+    from didgeridoo_optimizer.reporting import geometry_state as report
+    class Child:
+        pid=123;returncode=0
+        def poll(self):return self.returncode
+        def wait(self,timeout):return self.returncode
+    def launch(*args,**kw):
+        kw['stdout'].write(b'{"ok":true}\n');return Child()
+    monkeypatch.setattr(flow.subprocess,'Popen',launch)
+    limits=dict(candidates=1,scenarios=1,fits=1,trajectories=1,steps=96,seconds=180,
+        memory_mib=768,output_mib=80,child_seconds=175)
+    budget=flow.Budget(limits,tmp_path);children=[]
+    value,receipt=flow.launch('fit',dict(kind='geometry',plan={}),tmp_path,budget,children,seconds=10,output_bytes=1024)
+    assert value['ok'] and receipt['collected'] and receipt['pipes_closed'] and receipt['reaped']
+    assert receipt['log_bytes']==(tmp_path/receipt['log']).stat().st_size
+    assert report.validate_receipt(receipt,10)['pid']==123

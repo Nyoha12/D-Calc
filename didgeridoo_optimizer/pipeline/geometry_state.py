@@ -84,12 +84,39 @@ def preflight(config,design,recipe,output_dir=None):
 
 
 def verify_plan(p):
-    if p['sha256']!=digest({k:v for k,v in p.items() if k!='sha256'}): raise ValueError('Geometry plan fingerprint')
+    report.exact(p,{'schema','inputs','recipe','effective','physical_radius_m','mesh_segments_bound',
+                   'producer_sources','base_sha','source_status','acquisition','output','budgets','sha256'},'Geometry plan')
+    strict.bounded(p)
+    if p['schema']!='dcalc.geometry_state.plan.v1' or p['sha256']!=digest({k:v for k,v in p.items() if k!='sha256'}):
+        raise ValueError('Geometry plan fingerprint/schema')
     validate_recipe(p['recipe']);report.verify_sources(p['producer_sources'])
+    import re
+    if type(p['base_sha']) is not str or re.fullmatch('[0-9a-f]{40}',p['base_sha']) is None or p['source_status']!='working_tree_fingerprints_not_a_published_commit':
+        raise ValueError('Geometry source attribution')
+    report.exact(p['inputs'],{'config','design','materials','variant_rules'},'Four input inventory')
     for item in p['inputs'].values():
+        report.exact(item,{'path','sha256'},'Input reference');strict.hash_string(item['sha256'])
+        if type(item['path']) is not str or str(strict.safe_path(item['path']))!=item['path']: raise ValueError('Canonical input path required')
         if strict.sha(strict.read_bytes(item['path']))!=item['sha256']: raise ValueError('Geometry input changed')
-    if set(p['inputs'])!={'config','design','materials','variant_rules'}: raise ValueError('Four input inventory')
-    if p['acquisition']['nature']!='simulation_tmm' or p['acquisition']['sha']!=digest(p['producer_sources']): raise ValueError('Acquisition provenance')
+    report.exact(p['acquisition'],{'nature','date','sha','provenance'},'Acquisition')
+    if (p['acquisition']['nature']!='simulation_tmm' or p['acquisition']['sha']!=digest(p['producer_sources'])
+            or p['acquisition']['provenance']!='Native input_impedance; actual imported source fingerprints in geometry plan; no measured calibration'):
+        raise ValueError('Acquisition provenance')
+    if type(p['acquisition']['date']) is not str or datetime.fromisoformat(p['acquisition']['date']).tzinfo is None: raise ValueError('Acquisition date')
+    expected=dict(memory_mib=768,cpu_seconds=175,file_mib=4,output_mib=32,wall_seconds=p['recipe']['seconds'],blas_threads=1)
+    report.exact(p['budgets'],expected,'Geometry budgets')
+    if any(type(p['budgets'][k]) is not type(v) or p['budgets'][k]!=v for k,v in expected.items()): raise ValueError('Geometry budgets')
+    if p['output'] is not None and (type(p['output']) is not str or str(strict.safe_path(p['output'],exists=False))!=p['output']): raise ValueError('Canonical output path')
+    strict.integer(p['mesh_segments_bound'],'Mesh bound',1,4096)
+    raw,_=read_request(Path(p['inputs']['design']['path']))
+    if type(raw) is not dict or type(raw.get('segments')) is not list or not 1<=len(raw['segments'])<=128: raise ValueError('Geometry section budget')
+    ctx=load_fixed_context(p['inputs']['config']['path'],p['inputs']['design']['path'])
+    actual={k:dict(path=str(Path(v['path']).resolve()),sha256=v['sha256']) for k,v in ctx['provenance']['files'].items()}
+    bound=sum(max(1 if s.is_uniform else 2,math.ceil(s.length_cm/(p['recipe']['h_cm']/2))) for s in ctx['design'].segments)
+    if (actual!=p['inputs'] or strict.strict_json(models(ctx,p['recipe'])[3])!=strict.strict_json(p['effective']) or bound!=p['mesh_segments_bound']
+            or bound*6528>8_000_000 or type(p['physical_radius_m']) not in (int,float)
+            or p['physical_radius_m']!=ctx['design'].segments[-1].d_out_cm/200):
+        raise ValueError('Geometry effective context/mesh/radius')
 
 
 def limits():
@@ -110,7 +137,7 @@ def ready():
 
 
 def worker(plan):
-    ready();verify_plan(plan)
+    start=time.monotonic();ready();verify_plan(plan)
     from ..nonlinear.scalar_fit import grids,initial_poles,fit
     from ..nonlinear.scalar_certificate_builder import certify
     from ..nonlinear.passive_realization import convert
@@ -121,7 +148,7 @@ def worker(plan):
     from ..reporting import state_register_context as evidence
     from . import passive_realization as native
     import numpy as np
-    start=time.monotonic();r=plan['recipe'];out=Path(plan['output']);fit_started=False;tmm_calls=[]
+    r=plan['recipe'];out=Path(plan['output']);fit_started=False;tmm_calls=[]
     def remaining():
         value=r['seconds']-(time.monotonic()-start)
         if value<=0: raise TimeoutError('Complete geometry construction budget')
@@ -194,20 +221,40 @@ def worker(plan):
 
 def _child(mode,path,out,seconds):
     env=dict(os.environ,OPENBLAS_NUM_THREADS='1',OMP_NUM_THREADS='1',MKL_NUM_THREADS='1',NUMEXPR_NUM_THREADS='1',PYTHONDONTWRITEBYTECODE='1')
-    start=time.monotonic();child=None;error=None
-    with (out/(mode+'-stdout.txt')).open('xb') as stdout,(out/(mode+'-stderr.txt')).open('xb') as stderr:
-        try:
-            child=subprocess.Popen([sys.executable,'-B','-m','tools.geometry_state','--'+mode,str(path)],cwd=ROOT,env=env,stdout=stdout,stderr=stderr,preexec_fn=limits)
-            child.wait(timeout=seconds)
-            if time.monotonic()-start>=seconds: raise TimeoutError('Late worker completion')
-        except (Exception,KeyboardInterrupt) as exc:error=type(exc).__name__+': '+str(exc)
-        finally:
-            if child is not None and child.poll() is None:
-                child.terminate()
-                try:child.wait(timeout=1)
-                except subprocess.TimeoutExpired:child.kill();child.wait(timeout=1)
-    return dict(pid=child.pid if child else None,exit_code=child.returncode if child else None,reaped=child is not None and child.poll() is not None,
-                error=error,seconds=time.monotonic()-start)
+    start=time.monotonic();child=None;error=None;operation=0.;collection=0.;collected=False
+    stdout=stderr=None
+    try:
+        with (out/(mode+'-stdout.txt')).open('xb') as stdout,(out/(mode+'-stderr.txt')).open('xb') as stderr:
+            try:
+                child=subprocess.Popen([sys.executable,'-B','-m','tools.geometry_state','--'+mode,str(path)],cwd=ROOT,env=env,stdout=stdout,stderr=stderr,preexec_fn=limits)
+                child.wait(timeout=max(0.,seconds-(time.monotonic()-start)))
+                if time.monotonic()-start>=seconds: raise TimeoutError('Late worker completion')
+            except BaseException as exc:
+                error=type(exc).__name__+': '+str(exc)
+            finally:
+                operation=time.monotonic()-start;collect_start=time.monotonic()
+                if child is not None:
+                    try:
+                        if child.poll() is None: child.terminate()
+                        child.wait(timeout=2)
+                        collected=child.returncode is not None
+                    except BaseException as exc:
+                        if not isinstance(exc,subprocess.TimeoutExpired): error=error or type(exc).__name__+': '+str(exc)
+                        try:
+                            child.kill();child.wait(timeout=max(0.,4-(time.monotonic()-collect_start)))
+                            collected=child.returncode is not None
+                        except BaseException as cleanup:
+                            error=error or 'Owned child reap not confirmed: '+str(cleanup)
+                    collection=time.monotonic()-collect_start
+                stdout.flush();stderr.flush()
+    except BaseException as exc:
+        error=error or type(exc).__name__+': '+str(exc)
+    return dict(pid=child.pid if child else None,exit_code=child.returncode if child else None,
+                reaped=collected,collected=collected,pipes_closed=bool(stdout is not None and stderr is not None and stdout.closed and stderr.closed),
+                error=error,seconds=time.monotonic()-start,operation_seconds=operation,collection_seconds=collection,
+                collection_limit_seconds=4,limit_seconds=seconds,
+                stdout_bytes=(out/(mode+'-stdout.txt')).stat().st_size if stdout is not None else 0,
+                stderr_bytes=(out/(mode+'-stderr.txt')).stat().st_size if stderr is not None else 0)
 
 
 def run(config,design,recipe,output_dir,*,dry_run=False):
@@ -217,12 +264,14 @@ def run(config,design,recipe,output_dir,*,dry_run=False):
     start=time.monotonic();out=Path(plan['output']);out.mkdir(parents=True,exist_ok=False);report.json_new(out/'plan.json',plan)
     receipt=_child('worker',out/'plan.json',out,recipe['seconds'])
     report.json_new(out/'child.json',receipt)
-    if receipt['exit_code']!=0 or receipt['error'] or not receipt['reaped']:return dict(ok=False,status='partial',receipt=receipt,output=str(out))
+    try: report.validate_receipt(receipt,recipe['seconds'])
+    except ValueError: return dict(ok=False,status='partial',receipt=receipt,output=str(out))
     report.close(out,receipt)
     remaining=recipe['seconds']-(time.monotonic()-start)
     if remaining<=0:return dict(ok=False,status='partial',reason='No readback budget',output=str(out))
     read=_child('verify-pending',out,out,remaining)
-    ok=read['exit_code']==0 and read['reaped'] and read['error'] is None
+    try: report.validate_receipt(read,remaining,reader=True);ok=True
+    except ValueError: ok=False
     if ok:report.publish_complete(out,read)
     else:report.json_new(out/'reader-failure.json',read)
     return dict(ok=ok,status='geometry_state_verified' if ok else 'partial',output=str(out),receipt=receipt,reader=read)
