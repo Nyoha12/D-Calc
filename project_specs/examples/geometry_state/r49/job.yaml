@@ -1,0 +1,52 @@
+schema: dcalc.played_search.job.v1
+config: config.json
+input:
+  kind: fixed
+  design: design.json
+  request: static.json
+fit:
+  backend: certified_scalar_v1
+  sample_rate_hz: 12000
+  h_cm: 0.5
+  loss_model: zk
+  air_reference: ck_dry20
+  radiation_model: legacy
+  top_hz: 5500
+  iterations: 12
+  max_order: 128
+  max_nodes: 12000
+  max_depth: 48
+  fit_seconds: 60
+  certificate_seconds: 60
+  seconds: 175
+  mesh_maxrel: 0.01
+scenarios:
+- id: nominal3500
+  configuration: nominal
+  template: experiment.json
+search:
+  normalized_steps:
+  - 0.5
+  directions:
+  - 1
+  - -1
+  stop_on_witness: false
+budgets:
+  candidates: 1
+  scenarios: 8
+  fits: 1
+  trajectories: 64
+  steps: 36000
+  seconds: 3600
+  memory_mib: 768
+  output_mib: 240
+  child_seconds: 175
+scope:
+  coverage: finite
+  player_controls: prescribed
+  objective: feasibility
+  physiological_guarantee: false
+metadata:
+  execution: PREPARATION ONLY; not executed in R63 author block
+  scientific_origin: R49 original CONFIG/DESIGN/static/experiment; transport slots
+    and resource cap adapted

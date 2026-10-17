@@ -141,9 +141,10 @@ def load_inputs(job_path):
     if any(c['role']=='preference' for c in contract.criteria): unsupported.append('static preferences')
     # Native option interpretation; scalar validation was done before geometry.
     _, _, _, effective = models(contract.context, raw['fit'])
+    scalar = 'backend' in raw['fit']
     h = raw['fit']['h_cm']/2
     mesh_bound = math.ceil(max_length_cm/h)+2*sum(len(d.segments) for d in initial_designs)
-    if mesh_bound > 4096 or mesh_bound*max(raw['fit']['fit_points'], raw['fit']['audit_points']) > 8_000_000:
+    if mesh_bound > 4096 or mesh_bound*(6528 if scalar else max(raw['fit']['fit_points'], raw['fit']['audit_points'])) > 8_000_000:
         raise ValueError('Worst fit mesh/frequency budget before allocation')
     if raw['fit']['seconds'] > raw['budgets']['child_seconds']:
         raise ValueError('Fit child exceeds JOB child ceiling')
@@ -152,10 +153,12 @@ def load_inputs(job_path):
         if s['configuration'] not in configurations: raise ValueError('Unknown generated configuration')
         path = _relative(base, s['template']); template, source = _source(path)
         rtcore.validate_request(template)
-        if template['case']['kind'] != 'saved' or any(template['case'][k] != v for k,v in SLOTS.items()):
+        slots = dict(config='@CONFIG',design='@DESIGN',realization='@REALIZATION',evidence='@EVIDENCE') if scalar else SLOTS
+        if template['case']['kind'] != ('saved_state' if scalar else 'saved') or any(template['case'][k] != v for k,v in slots.items()):
             raise ValueError('Native saved template requires explicit @CONFIG/@DESIGN/@MODEL binding slots')
         if digest(template['case']['recipe']) != digest(core.recipe(raw['fit'])):
             raise ValueError('Template/model recipe differs from declared fresh fit')
+        if scalar and template['budgets']['child_seconds']>175: raise ValueError('Scalar trajectory worker ceiling 175 seconds')
         if template['budgets']['child_seconds'] > raw['budgets']['child_seconds']:
             raise ValueError('Trajectory child exceeds JOB ceiling')
         if sum(x['steps'] for x in template['plateaus']) > raw['budgets']['steps']:
@@ -171,7 +174,7 @@ def load_inputs(job_path):
                 inputs=inputs, kind=kind, configurations=configurations, alternatives=alternatives,
                 variables=contract.variables, initial=contract.initial, native_plan=native_plan,
                 scenarios=scenarios, fit_effective=effective, max_fit_mesh_segments=mesh_bound,
-                producer=report.provenance(), unsupported=unsupported,
+                producer=report.provenance(scalar=True) if scalar else report.provenance(), unsupported=unsupported,
                 limits=['finite declared scenarios only; no continuous/physiological certificate',
                         'static preferences retained unsupported; feasibility only',
                         'model-dependent PHASE/state and native storage checks repeated after each fresh fit',
@@ -215,6 +218,66 @@ def generated(contract, kind, values, alternative):
     return physical, items
 
 
+def recorded_evaluator(base, *args):
+    class Recording(base):
+        def spectrum(self, design, step, h, subdivide=False):
+            peaks,mesh=super().spectrum(design,step,h,subdivide)
+            self.acquired_spectra.append(dict(peaks=copy.deepcopy(peaks),step_hz=step,h_cm=h,subdivision_uniform=subdivide))
+            return peaks,mesh
+    value=Recording(*args);value.acquired_spectra=[]
+    return value
+
+
+def verify_static_detail(detail,contract,design,kind):
+    """Recompute native assignments and criterion arithmetic from acquired peaks."""
+    record=detail['geometry_state_acquisition']
+    if record['design_sha256']!=digest(design.as_dict()): raise ValueError('Static acquisition geometry differs')
+    acoustic=any(c['observable'] in ('resonance_frequency','resonance_ratio') and not c['unsupported_reason'] for c in contract.criteria)
+    spectra=record['spectra'];selected={};estimates={}
+    complete=not acoustic
+    if acoustic and len(spectra)==3:
+        expected=[(contract.spectrum['step_hz'],contract.spectrum['h_cm'],False),
+                  (contract.spectrum['final_step_hz'],contract.spectrum['h_cm'],False),
+                  (contract.spectrum['final_step_hz'],contract.spectrum['h_cm']/2,True)]
+        if [(x['step_hz'],x['h_cm'],x['subdivision_uniform']) for x in spectra]!=expected:
+            raise ValueError('Static refinement protocol differs')
+        initial=spectra[0]['peaks']
+        series=[fixed.assign_modes(x['peaks'],contract.modes,len(initial)) if kind=='fixed' else
+                assembly.track_modes(x['peaks'],contract.modes,None if i==0 else initial) for i,x in enumerate(spectra)]
+        if len(detail['refinement_levels'])!=2: raise ValueError('Static refinement count')
+        for level,acquired,modes in zip(detail['refinement_levels'],spectra[1:],series[1:]):
+            if level['peaks']!=acquired['peaks'] or level['selected_modes']!=modes: raise ValueError('Static acquired peak assignment changed')
+        selected=copy.deepcopy(series[-1])
+        for ident in contract.modes:
+            seq=[x[ident] for x in series];failures=[m for m in seq if m['status']!='resolved']
+            if failures:
+                reason=('mode perdu/ambigu lors du raffinement: '+ident+'; '+'; '.join(str(m['reason']) for m in failures)
+                        if kind=='fixed' else 'mode absent/ambigu au raffinement')
+                selected[ident].update(status='unresolved',reason=reason)
+            else:
+                fs=[m['peak']['frequency_hz'] for m in seq]
+                estimates[ident]=max(abs(fs[1]-fs[0]),abs(fs[2]-fs[1]))+sum(m['peak']['frequency_estimate_hz'] for m in seq)
+        if selected!=detail['selected_modes']: raise ValueError('Static final modes changed')
+        if kind=='fixed' and estimates!=detail['convergence_estimates_hz']: raise ValueError('Static convergence changed')
+        complete=True
+    if len(spectra)>3 or (not acoustic and spectra): raise ValueError('Static acquisition count')
+    native=fixed.criterion_rows(contract,design,selected,estimates)
+    if kind=='assembly':
+        for row,c in zip(native,contract.criteria):
+            row.update(target_si=c['target_si'],lower_si=c['lower_si'],upper_si=c['upper_si'],tolerance_si=c['tolerance_si'],tolerance_dimension=c['tolerance_dimension'])
+    if contract.options['radiation_model']!='legacy':
+        air=models(contract.context,contract.options)[0]
+        if 2*math.pi*contract.spectrum['max_hz']*(design.segments[-1].d_out_cm/200)/air.c>2:
+            for row in native:
+                if row['observable'] in ('resonance_frequency','resonance_ratio') and row['status']!='unsupported':
+                    row.update(status='out_of_domain',reason='radiation Silva: domaine déclaré dépasse |ka|=2')
+    if len(native)!=len(detail['criteria']): raise ValueError('Static criterion inventory')
+    for expected,actual in zip(native,detail['criteria']):
+        if (complete or expected['observable']=='geometry') and expected!=actual: raise ValueError('Static criterion arithmetic changed')
+        if not complete and expected['observable']!='geometry' and actual['status'] in ('satisfied','violated'):
+            raise ValueError('Static acoustic result without complete acquisition')
+
+
 def static_unit(task):
     check_plan(task['plan'])
     contract, _ = load_inputs(task['plan']['job_source']['path'])
@@ -229,7 +292,10 @@ def static_unit(task):
             configurations={},assembly=None)
     rows = []; details = {}; counts = {}
     if physical is None:
-        result = fixed.Evaluator(contract).verify(task['values'])
+        evaluator=recorded_evaluator(fixed.Evaluator,contract) if 'backend' in task['plan']['job']['fit'] else fixed.Evaluator(contract)
+        result = evaluator.verify(task['values'])
+        if 'backend' in task['plan']['job']['fit']:
+            result['geometry_state_acquisition']=dict(design_sha256=digest(items['nominal']['design'].as_dict()),spectra=evaluator.acquired_spectra)
         rows = core.static_rows(result['criteria'], contract.criteria, 'nominal')
         details['nominal'] = result
     else:
@@ -238,7 +304,10 @@ def static_unit(task):
             budget.consume(projections=1, evaluations=1)
             cid = p['configuration']; design = items[cid]['design']
             local = native_contract(p['request'], dict(contract.context, design=design))
-            result = assembly.ProjectionEvaluator(local, budget).evaluate_design(design, verify=True)
+            evaluator=recorded_evaluator(assembly.ProjectionEvaluator,local,budget) if 'backend' in task['plan']['job']['fit'] else assembly.ProjectionEvaluator(local,budget)
+            result=evaluator.evaluate_design(design,verify=True)
+            if 'backend' in task['plan']['job']['fit']:
+                result['geometry_state_acquisition']=dict(design_sha256=digest(design.as_dict()),spectra=evaluator.acquired_spectra)
             rows.extend(core.static_rows(result['criteria'], local.criteria, cid))
             details[p['id']] = result
         counts = budget.snapshot()
@@ -250,13 +319,22 @@ def static_unit(task):
 
 
 def worker(task):
+    if task['kind']=='read_geometry':
+        from ..reporting.geometry_state import read_result,read_payload
+        reader=read_payload if task.get('pending') is True else read_result
+        return reader(task['output'],config=task['config'],design=task['design'],recipe=task['recipe'])
+    if task['kind']=='geometry':
+        from .geometry_state import worker as geometry_worker
+        return geometry_worker(task['plan'])
     if task['kind']=='static': return static_unit(task)
     if task['kind']=='read':
         closed = rtreport.read_result(task['output'])
         if 'result' not in closed: return closed
         result = closed['result']
-        return dict(ok=closed['ok'], status=closed['status'], criteria=result['analysis']['criteria'],
+        value=dict(ok=closed['ok'], status=closed['status'], criteria=result['analysis']['criteria'],
                     accepted_steps=result['accepted_steps'], context_sha256=result['plan']['context_sha256'])
+        if result['plan']['request']['case']['kind']=='saved_state': value['read_confirmed']=True
+        return value
     raise ValueError('Unknown worker unit')
 
 
@@ -320,9 +398,11 @@ def launch(kind, task, out, budget, children, *, seconds, output_bytes, steps=0)
     out = report.safe_path(out)
     log = out/f'child-{index:04d}.log'
     module = {'fit':'tools.time_domain_reference', 'trajectory':'tools.register_target'}.get(kind, 'tools.played_search')
+    if task.get('kind')=='geometry': module='tools.played_search'
     env = dict(os.environ, OPENBLAS_NUM_THREADS='1', OMP_NUM_THREADS='1', MKL_NUM_THREADS='1',
                NUMEXPR_NUM_THREADS='1', PYTHONDONTWRITEBYTECODE='1')
     child = None; reason = None; collection_seconds = 0.; operation_seconds = 0.
+    source = stream = None
     try:
         # Both streams are files: a child that never reads cannot block sending.
         # Only this uniquely created temporary is removed by its context manager.
@@ -341,7 +421,7 @@ def launch(kind, task, out, budget, children, *, seconds, output_bytes, steps=0)
                 if report.size(budget.out)+output_bytes+2*MIB > budget.limits['output_mib']*MIB:
                     raise BudgetStop('child_does_not_fit_remaining_storage')
                 child = subprocess.Popen([sys.executable, '-B', '-m', module, '--worker'], cwd=ROOT, env=env,
-                                         stdin=source, stdout=stream, stderr=subprocess.STDOUT, preexec_fn=_limits)
+                                         stdin=source, stdout=stream, stderr=subprocess.STDOUT, preexec_fn=(__import__('didgeridoo_optimizer.pipeline.geometry_state',fromlist=['limits']).limits if task.get('kind')=='geometry' else _limits))
                 budget.launched(kind,steps)
                 while True:
                     # A late successful exit never outranks a deadline or stop.
@@ -384,6 +464,10 @@ def launch(kind, task, out, budget, children, *, seconds, output_bytes, steps=0)
                        collection_seconds=collection_seconds, collection_limit_seconds=4,
                        timeout_or_error=reason, log=log.name, input_bytes=input_bytes,
                        steps_charged=steps if child else 0)
+        if task.get('kind') in ('geometry','read_geometry'):
+            receipt.update(limit_seconds=seconds,collected=child is not None and child.returncode is not None,
+                           pipes_closed=bool(source is not None and stream is not None and source.closed and stream.closed),
+                           log_bytes=log.stat().st_size if log.exists() else 0)
         children.append(receipt)
     try:
         if not log.exists(): raise ValueError('Child not launched')
@@ -405,6 +489,15 @@ def launch(kind, task, out, budget, children, *, seconds, output_bytes, steps=0)
 
 def read_fit(directory, fit, design, config):
     """TD has no bundle reader; verify its native receipt, then native association."""
+    if 'backend' in fit:
+        from .state_register_context import case_context
+        from .geometry_state import verify_plan
+        fp=report.read_json(Path(directory)/'plan.json');verify_plan(fp)
+        if fp['recipe']!=fit: raise ValueError('Scalar recipe changed')
+        for key,path in [('config',config),('design',design)]:
+            if report.file_sha256(path)!=fp['inputs'][key]['sha256']: raise ValueError('Scalar geometry/context mismatch')
+        case=dict(kind='saved_state',id='geometry',config=str(config),design=str(design),realization=str(Path(directory)/'realization'),evidence=str(Path(directory)/'evidence.json'),recipe=core.recipe(fit))
+        return case_context(case)[0]
     directory = Path(directory); value = report.read_json(directory/'reference.json')
     receipt = report.read_json(directory/'child.json')
     if (receipt['exit_code'] != 0 or receipt['reaped'] is not True or not value.get('ok') or
@@ -438,7 +531,10 @@ def _unplayed(plan):
 
 def verify_candidate(plan, out, row, *, native_read):
     """Rebuild shared geometry and compare authoritative native scenario rows."""
-    contract, _ = load_inputs(plan['job_source']['path'])
+    contract, fresh = load_inputs(plan['job_source']['path'])
+    if 'backend' in plan['job']['fit']:
+        for key in ('job','job_source','paths','inputs','kind','configurations','alternatives','variables','initial','scenarios','fit_effective','max_fit_mesh_segments','unsupported'):
+            if plan[key]!=fresh[key]: raise ValueError('Reconstructed search context differs: '+key)
     if row.get('geometry_valid'):
         physical, items = generated(contract, plan['kind'], row['variables_si'], row['alternative'])
         for cid, info in row['configurations'].items():
@@ -454,6 +550,17 @@ def verify_candidate(plan, out, row, *, native_read):
         static = report.read_json(static_file)
         if observed != static['rows']:
             raise ValueError('Static criteria evidence differs')
+        if 'backend' in plan['job']['fit']:
+            recomputed=[]
+            projections=[('nominal',contract,items['nominal']['design'])] if plan['kind']=='fixed' else [
+                (p['id'],native_contract(p['request'],dict(contract.context,design=items[p['configuration']]['design'])),items[p['configuration']]['design']) for p in contract.projections]
+            for ident,local,design_obj in projections:
+                detail=static['details'][ident]
+                verify_static_detail(detail,local,design_obj,plan['kind'])
+                cid='nominal' if plan['kind']=='fixed' else next(p['configuration'] for p in contract.projections if p['id']==ident)
+                recomputed.extend(core.static_rows(detail['criteria'],local.criteria,cid))
+            if recomputed!=observed: raise ValueError('Static criterion export changed')
+
         definitions = ([("nominal",c['id'],c['role']) for c in contract.criteria] if plan['kind']=='fixed' else
                        [(p['configuration'],c['id'],c['role']) for p in contract.projections for c in p['template'].criteria])
         if [(r['configuration'],r['id'],r['role']) for r in observed] != definitions:
@@ -468,6 +575,9 @@ def verify_candidate(plan, out, row, *, native_read):
                                    report.local(out,unit['fit'])/'model.json')
             if native_plan['request'] != expected: raise ValueError('Scenario template/conditions changed')
             if native_read:
+                if 'backend' in plan['job']['fit']:
+                    from ..reporting.geometry_state import read_result as read_geometry
+                    read_geometry(report.local(out,unit['fit']),config=plan['paths']['config'],design=design,recipe=plan['job']['fit'])
                 closed = rtreport.read_result(report.local(out,unit['output']), unit['context_sha256'])
                 if not closed['ok']: raise ValueError('Native scenario bundle unconfirmed')
                 native = closed['result']['analysis']['criteria']
@@ -485,8 +595,51 @@ def verify_candidate(plan, out, row, *, native_read):
 
 def instantiate(template, config, design, model):
     value = copy.deepcopy(template)
-    value['case'].update(config=str(Path(config).resolve()), design=str(Path(design).resolve()), model_in=str(Path(model).resolve()))
+    if value['case']['kind']=='saved_state':
+        base=Path(model).resolve().parent
+        value['case'].update(config=str(Path(config).resolve()),design=str(Path(design).resolve()),realization=str(base/'realization'),evidence=str(base/'evidence.json'))
+    else:
+        value['case'].update(config=str(Path(config).resolve()), design=str(Path(design).resolve()), model_in=str(Path(model).resolve()))
     return value
+
+
+def state_trajectory(ep,dest,experiment,out,budget,children,plan):
+    """Explicit native partial calls, preserving request and accepted checkpoints."""
+    b=experiment['budgets'];total=sum(p['steps'] for p in experiment['plateaus'])
+    accepted=0;resume=None;segments=[];unit=dict(verified=False,status='partial')
+    while accepted<total:
+        local=dest if not segments else dest.with_name(dest.name+f'-resume-{len(segments):03d}')
+        quota=min(b['chunk_steps'],total-accepted)
+        rp=rt.preflight(ep,local,resume=resume,steps_this_run=quota).as_dict()
+        if rp['accepted_before']!=accepted: raise ValueError('Native resume counter mismatch')
+        local.mkdir();rtreport.write_json(local/'plan.json',rp,budget_bytes=b['output_mib']*MIB)
+        value,child=launch('trajectory',dict(plan=rp),out,budget,children,seconds=min(175,b['child_seconds']),output_bytes=b['output_mib']*MIB,steps=quota)
+        check_plan(plan)
+        got=value.get('accepted_steps',accepted)
+        if type(got) is not int or not accepted<=got<=accepted+quota: raise ValueError('Native accepted counter outside charged quota')
+        budget.counts['accepted_steps']+=got-accepted
+        if not (local/'result.json').is_file():
+            unit.update(reason='No collected native result');break
+        result=rtreport.read_json(local/'result.json')
+        rtreport.prepare_completion(local,dict(ok=value.get('ok') is True and child['exit_code']==0,
+            status=value.get('status','partial'),children=[child],reason=value.get('reason')),b['output_mib']*MIB)
+        rtreport.publish_completion(local)
+        closed,reader=launch('read',dict(kind='read',output=str(local)),out,budget,children,
+            seconds=min(175,plan['job']['budgets']['child_seconds']),output_bytes=MIB)
+        segments.append(dict(output=str(local.relative_to(out)),accepted_before=accepted,accepted_after=got,quota=quota,child=child,reader=reader))
+        unit.update(output=str(local.relative_to(out)),context_sha256=rp['context_sha256'],status=value.get('status','partial'),segments=segments)
+        if child['exit_code']!=0 or child['timeout_or_error'] or reader['exit_code']!=0 or reader['timeout_or_error'] or closed.get('status')=='unconfirmed':
+            unit.update(reason='Native child/reader unconfirmed');break
+        # Partial native read is confirmed by its full semantic result, despite ok=False.
+        if closed.get('accepted_steps')!=got or got<=accepted:
+            unit.update(reason='No confirmed native progress');break
+        accepted=got
+        if accepted==total:
+            unit.update(verified=closed.get('ok') is True,criteria=closed.get('criteria',[]));break
+        if result.get('reason') is not None:
+            unit.update(reason='Native interruption/budget: '+str(result['reason']));break
+        resume=result['checkpoint']['path']
+    return unit
 
 
 def execute(plan, out, budget, children):
@@ -546,18 +699,30 @@ def execute(plan, out, budget, children):
                             sources=plan['producer']['loaded_sources_sha256']))
                         fit_info=cache.get(key)
                         if fit_info is None:
+                            if 'backend' in plan['job']['fit']: budget.counts['fit_attempts']=budget.counts.get('fit_attempts',0)+1
                             fit_dir=folder/f'fit-{cid}'
-                            fp, ctx=td.preflight(plan['paths']['config'], design, fit_dir, **plan['job']['fit'])
-                            # Child is the actual native CLI worker, producing its native files.
-                            fit_dir.mkdir()
-                            tdreport.write_json(fit_dir/'plan.json',fp)
-                            value, child=launch('fit',fp,out,budget,children,seconds=fp['options']['seconds'],output_bytes=64*MIB)
-                            value['child']=child
-                            value.setdefault('statuses',tdreport.statuses())
-                            value.setdefault('options',fp['options'])
-                            value.setdefault('basis_completion',fp['basis_completion'])
-                            report.write_json(fit_dir/'child.json',child, **kw)
-                            tdreport.export(fit_dir,value)
+                            if 'backend' in plan['job']['fit']:
+                                from . import geometry_state as geometry
+                                from ..reporting import geometry_state as geometry_report
+                                fp=geometry.preflight(plan['paths']['config'],design,plan['job']['fit'],fit_dir)
+                                fit_dir.mkdir();geometry_report.json_new(fit_dir/'plan.json',fp)
+                                value,child=launch('fit',dict(kind='geometry',plan=fp),out,budget,children,
+                                    seconds=fp['recipe']['seconds'],output_bytes=32*MIB)
+                                report.write_json(fit_dir/'child.json',child,**kw)
+                                if value.get('ok') and child['exit_code']==0 and child['reaped']:
+                                    geometry_report.close(fit_dir,child)
+                            else:
+                                fp, ctx=td.preflight(plan['paths']['config'], design, fit_dir, **plan['job']['fit'])
+                                # Child is the actual native CLI worker, producing its native files.
+                                fit_dir.mkdir()
+                                tdreport.write_json(fit_dir/'plan.json',fp)
+                                value, child=launch('fit',fp,out,budget,children,seconds=fp['options']['seconds'],output_bytes=64*MIB)
+                                value['child']=child
+                                value.setdefault('statuses',tdreport.statuses())
+                                value.setdefault('options',fp['options'])
+                                value.setdefault('basis_completion',fp['basis_completion'])
+                                report.write_json(fit_dir/'child.json',child, **kw)
+                                tdreport.export(fit_dir,value)
                             check_plan(plan)
                             fit_info=dict(output=f'{folder.name}/{fit_dir.name}', ok=False, key=key)
                             try:
@@ -567,7 +732,7 @@ def execute(plan, out, budget, children):
                                 fit_info['reason']=str(exc)
                             cache[key]=fit_info
                             acquired.append(dict(kind='fit',file=f'{fit_info["output"]}/child.json',
-                                sha256=report.file_sha256(fit_dir/'child.json'), status='accepted' if fit_info['ok'] else 'rejected'))
+                                sha256=report.file_sha256(fit_dir/'child.json'), status=('computed_pending_reader' if 'backend' in plan['job']['fit'] else 'accepted') if fit_info['ok'] else 'rejected'))
                             save()
                         unit=dict(scenario=s['id'],configuration=cid,fit=fit_info['output'],verified=False)
                         row['units'].append(unit)
@@ -576,30 +741,49 @@ def execute(plan, out, budget, children):
                         fit_dir=report.local(out,fit_info['output'])
                         # Exact bytes/context/recipe are rechecked even on a cache hit.
                         read_fit(fit_dir,plan['job']['fit'],design,plan['paths']['config'])
+                        if 'backend' in plan['job']['fit']:
+                            checked,reader=launch('read',dict(kind='read_geometry',pending=not (fit_dir/'complete.json').exists(),output=str(fit_dir),config=plan['paths']['config'],design=str(design),recipe=plan['job']['fit']),out,budget,children,seconds=min(175,plan['job']['budgets']['child_seconds']),output_bytes=MIB)
+                            if not checked.get('ok'):
+                                fit_info.update(ok=False,reason=checked.get('reason','Geometry read unconfirmed'))
+                                unit.update(status='fit_reader_unconfirmed',reason=fit_info['reason']);continue
+                            if not (fit_dir/'complete.json').exists():
+                                from ..reporting.geometry_state import publish_complete
+                                publish_complete(fit_dir,reader)
+                            for item in acquired:
+                                if item['kind']=='fit' and item['file']==fit_info['output']+'/child.json': item['status']='accepted'
                         experiment=instantiate(s['template'],plan['paths']['config'],design,fit_dir/'model.json')
                         ep=folder/f'plan-{s["id"]}.json'; report.write_json(ep,experiment, **kw)
                         dest=folder/f'experiment-{s["id"]}'
-                        rp=rt.preflight(ep,dest).as_dict(); b=experiment['budgets']
-                        steps=sum(p['steps'] for p in experiment['plateaus'])
-                        dest.mkdir(); rtreport.write_json(dest/'plan.json',rp,budget_bytes=b['output_mib']*MIB)
-                        value, child=launch('trajectory',dict(plan=rp),out,budget,children,
-                            seconds=b['child_seconds'],output_bytes=b['output_mib']*MIB,steps=steps)
-                        check_plan(plan)
-                        budget.counts['accepted_steps'] += value.get('accepted_steps',0)
-                        unit.update(output=f'{folder.name}/{dest.name}',status=value.get('status','partial'),
-                                    context_sha256=rp['context_sha256'],child=child)
-                        if (dest/'result.json').is_file():
-                            rtreport.prepare_completion(dest,dict(ok=value.get('ok') is True and child['exit_code']==0,
-                                status=value.get('status','partial'),children=[child],reason=value.get('reason')),b['output_mib']*MIB)
-                            rtreport.publish_completion(dest)
-                            closed,_=launch('read',dict(kind='read',output=str(dest)),out,budget,children,
-                                            seconds=min(30,plan['job']['budgets']['child_seconds']),output_bytes=MIB)
-                            unit.update(verified=closed.get('ok') is True,reader_status=closed.get('status'))
-                            if 'criteria' in closed:
-                                replacement=core.played_rows(s['template'],closed['criteria'],cid,s['id'])
+                        if 'backend' in plan['job']['fit']:
+                            unit.update(state_trajectory(ep,dest,experiment,out,budget,children,plan))
+                            if unit.get('verified'):
+                                replacement=core.played_rows(s['template'],unit.pop('criteria'),cid,s['id'])
                                 row['criteria']=[r for r in row['criteria'] if r['scenario']!=s['id']]+replacement
-                            acquired.append(dict(kind='trajectory',file=f'{unit["output"]}/execution.completed.json',
-                                sha256=report.file_sha256(dest/'execution.completed.json'),status=unit['status']))
+                            if unit.get('output'):
+                                acquired.append(dict(kind='trajectory',file=f'{unit["output"]}/execution.completed.json',
+                                    sha256=report.file_sha256(report.local(out,unit['output'])/'execution.completed.json'),status=unit['status']))
+                        else:
+                            rp=rt.preflight(ep,dest).as_dict(); b=experiment['budgets']
+                            steps=sum(p['steps'] for p in experiment['plateaus'])
+                            dest.mkdir(); rtreport.write_json(dest/'plan.json',rp,budget_bytes=b['output_mib']*MIB)
+                            value, child=launch('trajectory',dict(plan=rp),out,budget,children,
+                                seconds=b['child_seconds'],output_bytes=b['output_mib']*MIB,steps=steps)
+                            check_plan(plan)
+                            budget.counts['accepted_steps'] += value.get('accepted_steps',0)
+                            unit.update(output=f'{folder.name}/{dest.name}',status=value.get('status','partial'),
+                                        context_sha256=rp['context_sha256'],child=child)
+                            if (dest/'result.json').is_file():
+                                rtreport.prepare_completion(dest,dict(ok=value.get('ok') is True and child['exit_code']==0,
+                                    status=value.get('status','partial'),children=[child],reason=value.get('reason')),b['output_mib']*MIB)
+                                rtreport.publish_completion(dest)
+                                closed,_=launch('read',dict(kind='read',output=str(dest)),out,budget,children,
+                                                seconds=min(175 if 'backend' in plan['job']['fit'] else 30,plan['job']['budgets']['child_seconds']),output_bytes=MIB)
+                                unit.update(verified=closed.get('ok') is True,reader_status=closed.get('status'))
+                                if 'criteria' in closed:
+                                    replacement=core.played_rows(s['template'],closed['criteria'],cid,s['id'])
+                                    row['criteria']=[r for r in row['criteria'] if r['scenario']!=s['id']]+replacement
+                                acquired.append(dict(kind='trajectory',file=f'{unit["output"]}/execution.completed.json',
+                                    sha256=report.file_sha256(dest/'execution.completed.json'),status=unit['status']))
                         save()
                     # Put criteria back in declared order, independent of partial execution.
                     row['criteria']=[r for r in row['criteria'] if r['kind']=='static']+[

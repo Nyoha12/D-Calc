@@ -31,15 +31,19 @@ def sources():
     return manifest
 
 
-def provenance():
+def provenance(*, scalar=False):
     software = _software_source()
-    if software['sha'] is None:
+    if software['sha'] is None and not scalar:
         raise ValueError('Tracked canonical source provenance required: '+software['origin'])
     # The native package guard includes loaded modules; explicitly guard this CLI too.
     import subprocess
     subprocess.run(['git', 'ls-files', '--error-unmatch', '--', *NEW_SOURCES], cwd=ROOT,
                    check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=5)
-    return dict(software=software, versions=versions(), loaded_sources_sha256=sources())
+    manifest=sources()
+    if scalar:
+        from .geometry_state import sources as geometry_sources
+        manifest.update(geometry_sources())
+    return dict(software=software, versions=versions(), loaded_sources_sha256=manifest)
 
 
 def size(root):
