@@ -130,3 +130,87 @@ def test_public_late_success_is_partial_without_complete(tmp_path,monkeypatch):
     monkeypatch.setattr(flow,'_child',lambda *a,**kw:receipt)
     value=flow.run(EXAMPLE/'config.yaml',EXAMPLE/'design.json',recipe,out)
     assert not value['ok'] and value['status']=='partial' and not (out/'complete.json').exists()
+
+
+import pytest
+
+
+def _copy_played_search_logs(bundle, destination, temporary_root):
+    """Copy only the shared dependencies named by the native fit/read receipts."""
+    from didgeridoo_optimizer.reporting import geometry_state as report
+    from didgeridoo_optimizer.nonlinear import scalar_passivity_certificate as strict
+
+    bundle = strict.safe_path(bundle)
+    temporary_root = strict.safe_path(temporary_root)
+    for name, reader in (('child.json', False), ('reader.json', True)):
+        receipt = strict.read_json(bundle / name)
+        if 'error' in receipt:
+            # Public receipts reference logs already inside the copied bundle.
+            continue
+        limit = 175 if reader else strict.read_json(bundle / 'plan.json')['recipe']['seconds']
+        report.validate_receipt(receipt, limit, reader=reader, out=bundle)
+        sources = report.receipt_logs(bundle, receipt, reader=reader)
+        targets = report.receipt_logs(destination, receipt, reader=reader)
+        for (source, size), (target, target_size) in zip(sources.items(), targets.items(), strict=True):
+            source = strict.safe_path(source)
+            target = strict.safe_path(target, exists=False)
+            assert source.parent == bundle.parent.parent
+            search = os.environ.get('DCALC_GEOMETRY_STATE_SEARCH')
+            if search:
+                assert source.parent == strict.safe_path(search)
+            assert target.is_relative_to(temporary_root), 'Log outside test temporary directory'
+            assert source.name == target.name and size == target_size
+            raw = report._log_bytes(source)
+            assert len(raw) == size
+            try:
+                with target.open('xb') as stream:
+                    stream.write(raw)
+            except FileExistsError:
+                pass
+            assert report._log_bytes(target) == raw, 'Conflicting existing test log'
+
+
+@pytest.fixture(name='tmp_path')
+def _geometry_copy_tmp_path(tmp_path, request):
+    """Keep two-level shared logs inside each affected test's own directory."""
+    affected = {
+        'test_rehashed_acquisition_still_refused',
+        'test_complete_copy_rehashed_acquisition_refused_for_provenance',
+    }
+    bundle = os.environ.get('DCALC_GEOMETRY_STATE_BUNDLE')
+    if not bundle or request.node.name not in affected:
+        return tmp_path
+    nested = tmp_path / 'case'
+    nested.mkdir()
+    _copy_played_search_logs(Path(bundle), nested / 'copy', tmp_path)
+    return nested
+
+
+def test_complete_copy_rehashed_acquisition_refused_for_provenance(tmp_path):
+    import shutil
+    from didgeridoo_optimizer.reporting import geometry_state as report
+    from didgeridoo_optimizer.nonlinear import scalar_passivity_certificate as strict
+
+    bundle = _product()
+    destination = tmp_path / 'copy'
+    shutil.copytree(bundle, destination)
+    # Repeated preparation must accept identical existing logs without replacing them.
+    _copy_played_search_logs(bundle, destination, tmp_path.parent)
+    assert report.read_result(destination)['ok']
+
+    value = strict.read_json(destination / 'evidence.json')
+    value['acquisition']['nature'] = 'measurement'
+    (destination / 'evidence.json').write_text(strict.strict_json(value))
+    manifest = strict.read_json(destination / 'manifest.json')
+    manifest['files']['evidence.json'] = strict.sha(strict.read_bytes(destination / 'evidence.json'))
+    (destination / 'manifest.json').write_text(strict.strict_json(manifest))
+    execution = strict.read_json(destination / 'execution.json')
+    execution['manifest_sha256'] = strict.sha(strict.read_bytes(destination / 'manifest.json'))
+    (destination / 'execution.json').write_text(strict.strict_json(execution))
+    execution_sha = strict.sha(strict.read_bytes(destination / 'execution.json'))
+    (destination / 'execution.closed.json').write_text(strict.strict_json(dict(execution_sha256=execution_sha)))
+    complete = strict.read_json(destination / 'complete.json')
+    complete.update(execution_sha256=execution_sha, manifest_sha256=execution['manifest_sha256'])
+    (destination / 'complete.json').write_text(strict.strict_json(complete))
+    with pytest.raises(ValueError, match='provenance'):
+        report.read_result(destination)
