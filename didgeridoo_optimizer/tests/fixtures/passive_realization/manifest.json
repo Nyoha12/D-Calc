@@ -1,0 +1,38 @@
+{
+  "date": "2026-10-17",
+  "nature": "Frozen original R59 numerical coefficients; separate original R60 exact scalar certificates. No physical validation. Audit subsets only, no TMM replay.",
+  "files": {
+    "A-coefficients.json": {
+      "sha256": "9d5cce809a148ada1a712b66244ac5e209c26b5c5b19d6120d01626c22a3a425",
+      "source": "R59-FREQUENCY-COVERAGE-20261017/case-A/coefficients.json",
+      "nature": "original numeric JSON bytes"
+    },
+    "A-certificate.json": {
+      "sha256": "673fa3804c12725915d3240bd502cb395cdda11d805c2be46a7eb55d8ced3019",
+      "source": "R60-SCALAR-PASSIVITY-20261017/case-A/certificate.json",
+      "nature": "original numeric JSON bytes"
+    },
+    "B-coefficients.json": {
+      "sha256": "86c92bdbd844075836dabaf0f1dd116eae064c55754a9aa8851e4e36f2c5d30a",
+      "source": "R59-FREQUENCY-COVERAGE-20261017/case-B/coefficients.json",
+      "nature": "original numeric JSON bytes"
+    },
+    "B-certificate.json": {
+      "sha256": "06362c9224682bc287f90ab596efe591856e6f3d7988ef4f59cdc2a420b2c732",
+      "source": "R60-SCALAR-PASSIVITY-20261017/case-B/certificate.json",
+      "nature": "original numeric JSON bytes"
+    },
+    "A-control-grid.npz": {
+      "sha256": "a97b71e680d43790a23f41eb137309f4f53f352d24af3eb9f9af1b756a82cb8f",
+      "source": "R59-FREQUENCY-COVERAGE-20261017/case-A/audit.npz",
+      "source_sha256": "a358ce065886816a14edcf6733a942379d8ee775aef39f3413ac8a1401e1a6f0",
+      "nature": "Original frequency and scalar-model arrays only; targets omitted"
+    },
+    "B-control-grid.npz": {
+      "sha256": "8d6951da03559a5945a66734eacbc39ba84f04694d3900b662f2bb7ba57b0c5d",
+      "source": "R59-FREQUENCY-COVERAGE-20261017/case-B/audit.npz",
+      "source_sha256": "ed94d29d9f4592797fc4deb7ccd898aa7e98dc61eb7c0dbf9dbf538b9dd03d9a",
+      "nature": "Original frequency and scalar-model arrays only; targets omitted"
+    }
+  }
+}

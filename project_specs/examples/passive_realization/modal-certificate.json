@@ -1,0 +1,62 @@
+{
+  "schema": "dcalc.scalar_interval.v1",
+  "coefficient_sha256": "618c42435a366363a12e9cb13691e175a311c80ff91790ef9fce7e51b41d9111",
+  "status": "certified_strict_positive_real_boundary",
+  "arithmetic": "exact_binary64_rationals_outward_fixed_point",
+  "fractional_bits": 80,
+  "order": 2,
+  "training_domain_hz": [
+    0.1,
+    5500.0
+  ],
+  "coefficient_domain": "continuous",
+  "physical_validation": "not_validated",
+  "no_state_or_time_computed": true,
+  "source_sha256": "179cff7fcc1f2de787f29ccd4a350301b9b0f3aeb8a1c3678b446df9a4615107",
+  "tail": {
+    "start": [
+      "256",
+      "1"
+    ],
+    "residue_l1_bound": [
+      "74365097871793441",
+      "144115188075855872"
+    ],
+    "pole_l1_bound": [
+      "77811757672001573",
+      "72057594037927936"
+    ],
+    "lower": [
+      "110102342865302079",
+      "18446744073709551616"
+    ],
+    "direct": [
+      "5764607523034235",
+      "576460752303423488"
+    ]
+  },
+  "reason": null,
+  "global_lower_units": 7215667142020437049344,
+  "leaves": [
+    {
+      "lo": [
+        "0",
+        "1"
+      ],
+      "hi": [
+        "256",
+        "1"
+      ],
+      "lower_units": 12089258196146291998720,
+      "upper_units": 227949170971457306380818300639
+    }
+  ],
+  "nodes": 1,
+  "max_depth_reached": 0,
+  "seconds": 0.0,
+  "remaining_intervals": 0,
+  "dc_units": [
+    12089258196146294522593,
+    12089258196146294522594
+  ]
+}
