@@ -10,12 +10,18 @@ from dataclasses import dataclass, replace
 import json
 import math
 import time
+import hashlib
+from pathlib import Path
+
+_LOADED_SOURCE_PATH=Path(__file__).resolve()
+_LOADED_SOURCE_SHA256=hashlib.sha256(_LOADED_SOURCE_PATH.read_bytes()).hexdigest()
 
 import numpy as np
 
 from .lips import DimensionedLipParameters
 from .onset_stability import validate_parameters
 from .passive_resonator import PassiveResonator, digest, json_copy, real, integer
+from .passive_state import PassiveState
 from .simultaneous_coupling import SimultaneousCoupling
 from .phase_reference import PhasePlan, analyze as phase_analyze
 from ..optimization.design_contract import obj, identifier, quantity, target_quantity
@@ -118,6 +124,15 @@ def validate_request(value, *, states=None):
         exact(case, {'kind','id','sample_rate_hz','description'}, 'synthetic case')
         if not isinstance(case['description'],str) or not case['description'].strip(): raise ValueError('Synthetic description')
         fs = case['sample_rate_hz']
+    elif case.get('kind') == 'saved_state':
+        if hashlib.sha256(_LOADED_SOURCE_PATH.read_bytes()).hexdigest()!=_LOADED_SOURCE_SHA256:
+            raise ValueError('Loaded register source changed since import')
+        exact(case, {'kind','id','config','design','realization','evidence','recipe'}, 'saved state case')
+        from ..pipeline.state_register_context import validate_recipe
+        validate_recipe(case['recipe'])
+        fs = case['recipe']['sample_rate_hz']
+        for k in ('config','design','realization','evidence'):
+            if type(case[k]) is not str or not case[k].strip(): raise ValueError('Explicit state input paths')
     elif case.get('kind') == 'saved':
         exact(case, {'kind','id','config','design','model_in','recipe'}, 'saved case')
         from ..pipeline.paired_onset import RECIPE
@@ -243,15 +258,43 @@ class Experiment:
     Checkpoint integrity is not authorship. File provenance/chain verification is
     the reporting layer's job. This API deliberately accepts small synthetic models.
     """
-    def __init__(self, model, request, *, source):
+    def __init__(self, model, request, *, source, _verified_context=None):
         r=request.as_dict() if isinstance(request,Request) else request
-        if not isinstance(model,PassiveResonator): raise ValueError('PassiveResonator required')
-        self.request=Request.validate(r,states=2+2*len(model.a))
+        if not isinstance(model,(PassiveResonator,PassiveState)): raise ValueError('Native passive model required')
+        state_model=isinstance(model,PassiveState)
+        self.request=Request.validate(r,states=2+model.state_count if state_model else 2+2*len(model.a))
         if model.sample_rate_hz!=sample_rate(r): raise ValueError('Native fs mismatch')
-        exact(source,{'kind','description','model_sha256'},'memory source')
-        if source['kind'] not in ('synthetic','verified_saved') or not source['description']:
+        phase=r['observation']['phase']
+        if state_model and phase is not None and phase['state_units']!=['m','m/s']+['m^3/s']*model.state_count:
+            raise ValueError('Complete native state units required')
+        exact(source,{'kind','description','model_sha256'} | ({'context_sha256'} if source.get('kind')=='verified_state' else set()),'memory source')
+        if source['kind'] not in ('synthetic','verified_saved','verified_state') or not source['description']:
             raise ValueError('Explicit source qualification required')
         if source['model_sha256']!=digest(model.parameters()): raise ValueError('Source model identity mismatch')
+        if r['case']['kind']=='saved_state' and (not state_model or source['kind']!='verified_state'):
+            raise ValueError('Saved state requires verified acoustic context')
+        if source['kind']=='verified_state':
+            from .scalar_passivity_certificate import hash_string
+            hash_string(source['context_sha256'])
+        if state_model and r['case']['kind']=='synthetic' and source['kind']!='synthetic':
+            raise ValueError('Synthetic state memory requires synthetic attribution')
+        if state_model and r['case']['kind']=='saved':
+            raise ValueError('PassiveState requires saved_state or explicit synthetic memory')
+        if source['kind']=='verified_state' and r['case']['kind']!='saved_state':
+            raise ValueError('Verified state requires saved_state context')
+        if r['case']['kind']=='saved_state':
+            from ..pipeline.state_register_context import case_context, load_verified, context_guard, _VerifiedBinding
+            metadata,context,_=case_context(r['case'],r['observation'],r['rho_kg_m3'])
+            if _verified_context is None:
+                verified,checks=load_verified(r['case'],metadata,r['observation'],r['rho_kg_m3'])
+                if digest(verified.parameters())!=digest(model.parameters()): raise ValueError('Experiment acoustic model identity')
+            elif type(_verified_context) is _VerifiedBinding:
+                checks=_verified_context.checked(model,metadata)
+            else: raise ValueError('Native verified binding required')
+            if source['context_sha256']!=metadata['acoustic_identity']:
+                raise ValueError('Experiment acoustic model/context identity')
+            self.context_checks=checks
+            self._context_guard=context_guard(metadata,context['provenance']['files'])
         self.source=json_copy(source);self.model=model
         self.coupling=SimultaneousCoupling(model,params=active_parameters(r,0),rho=r['rho_kg_m3'],v2_port_model='conjugate')
         self.initial=self.coupling.export_checkpoint();self.segment_reset=self.coupling.state.tolist()
@@ -358,6 +401,7 @@ class Experiment:
     def advance(self, count, *, seconds=170., stop=lambda:False):
         """One bounded memory chunk; a stop never loses an accepted sample."""
         from ..pipeline.regime_reference import advance
+        if hasattr(self,'_context_guard'): self._context_guard()
         r=self.request.as_dict();integer(count,'chunk count',0,r['budgets']['chunk_steps'])
         remaining=sum(s['steps'] for s in r['plateaus'])-self.accepted
         if count>remaining:raise ValueError('Cumulative quota; no repeated budget on resume')
@@ -375,14 +419,18 @@ class Experiment:
             values[j]=[row[k] for k in COLUMNS];segments[j]=self.segment
             for k in SUM_FIELDS:self.sums[k]+=row[k]
             self.accepted+=1
+        def checked_stop():
+            halted=stop()
+            if hasattr(self,'_context_guard'): self._context_guard()
+            return halted
         while self.accepted-start<count:
-            if stop():reason='stop_requested';break
+            if checked_stop():reason='stop_requested';break
             left=seconds-(time.monotonic()-t0)
             if left<=0:reason='chunk_time_budget';break
             self._transition()
             boundary=sum(s['steps'] for s in r['plateaus'][:self.segment+1])
             n=min(count-(self.accepted-start),boundary-self.accepted)
-            result=advance(self.coupling,n,seconds=left,stop=stop,after_accept=collect)
+            result=advance(self.coupling,n,seconds=left,stop=checked_stop,after_accept=collect)
             if not result['ok']:reason=result['reason'];break
         n=self.accepted-start
         return dict(ok=reason is None,reason=reason,start_step=start,stop_step=self.accepted,

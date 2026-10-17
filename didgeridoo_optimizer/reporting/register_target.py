@@ -4,8 +4,12 @@ from __future__ import annotations
 import csv
 import io
 import json
+import hashlib
 import os
 from pathlib import Path
+
+_LOADED_SOURCE_PATH=Path(__file__).resolve()
+_LOADED_SOURCE_SHA256=hashlib.sha256(_LOADED_SOURCE_PATH.read_bytes()).hexdigest()
 import zipfile
 
 import numpy as np
@@ -22,7 +26,14 @@ ROOT=Path(__file__).resolve().parents[2]
 SCHEMA='dcalc.register_target.result.v1'
 NEW_SOURCES=('didgeridoo_optimizer/nonlinear/register_target.py',
              'didgeridoo_optimizer/pipeline/register_target.py',
-             'didgeridoo_optimizer/reporting/register_target.py','tools/register_target.py')
+             'didgeridoo_optimizer/reporting/register_target.py','tools/register_target.py',
+             'didgeridoo_optimizer/pipeline/state_register_context.py',
+             'didgeridoo_optimizer/reporting/state_register_context.py',
+             'didgeridoo_optimizer/nonlinear/passive_state.py',
+             'didgeridoo_optimizer/nonlinear/scalar_passivity_certificate.py',
+             'didgeridoo_optimizer/reporting/passive_realization.py',
+             'didgeridoo_optimizer/nonlinear/passive_fit.py',
+             'didgeridoo_optimizer/pipeline/tolerance_audit.py')
 REQUIRED_SOURCES=set(NEW_SOURCES)|{
     'didgeridoo_optimizer/nonlinear/simultaneous_coupling.py',
     'didgeridoo_optimizer/nonlinear/passive_resonator.py',
@@ -45,6 +56,11 @@ MAX_BYTES=160*1024**2
 def sources():
     result=phase_sources();result.update(strict.sources())
     for name in NEW_SOURCES:result[name]=file_sha256(ROOT/name)
+    import sys
+    for name in NEW_SOURCES:
+        module=sys.modules.get(name[:-3].replace('/','.'))
+        snapshot=getattr(module,'_LOADED_SOURCE_SHA256',None)
+        if snapshot is not None and snapshot!=result[name]: raise ValueError('Loaded source changed since import: '+name)
     return result
 
 
@@ -274,6 +290,9 @@ def read_result(out,expected_context=None):
         experiment=experiment_for(context);experiment.restore(chain[-1][1]['experiment'])
         if result['accepted_steps']!=experiment.accepted or result['sums']!=experiment.sums or result['events']!=experiment.events:
             raise ValueError('Result/checkpoint counters or ledger')
+        if context['request']['case']['kind']=='saved_state':
+            from .state_register_context import verify_saved_analysis
+            verify_saved_analysis(out,result,arrays,experiment,chain)
         total=sum(s['steps'] for s in context['request']['plateaus'])
         if execution['ok'] and (result['status']!='complete' or experiment.accepted!=total):raise ValueError('False trajectory completion')
         return dict(ok=execution['ok'],status=result['status'],execution=execution,result=result)

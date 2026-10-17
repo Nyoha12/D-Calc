@@ -1,0 +1,130 @@
+{
+  "schema": "dcalc.state_register.evidence.v1",
+  "inputs": {
+    "config": "bb38aa1c8e2de5d3632f7282a4cbb9b5c85c90bf9878320d7408c7b89e5c7098",
+    "design": "607da6c716488bf5f65243e801c7a5929dc6c382a99526f3afea4c4bdb744154",
+    "materials": "c3d5b5213470da8525124173fdfa65e8ec43d636bb761ed64db903a8bdd20934",
+    "variant_rules": "fd2f1cc631e3744768ac27758a3470177317be3e13d0f10e880e6201668a3e18"
+  },
+  "recipe": {
+    "sample_rate_hz": 12000,
+    "h_cm": 0.5,
+    "loss_model": "zk",
+    "radiation_model": "legacy",
+    "air_reference": "ck_dry20"
+  },
+  "effective": {
+    "air": {
+      "rho": 1.2046925976462561,
+      "c": 343.3700171691432,
+      "mu": 1.807064e-05,
+      "kappa": 0.025735030880000002,
+      "cp": 1004.16,
+      "gamma": 1.402,
+      "temperature_c": 20.0,
+      "humidity_percent": 0.0,
+      "identifier": "CK_DRY_20C",
+      "provenance": "sourced nominal equations: Openwind Physics.Chaigne_Kergomard_expressions documentation; humidity/CO2 ignored; documentation SHA unspecified"
+    },
+    "original_air": {
+      "rho": 1.204,
+      "c": 343.0,
+      "temperature_c": 20.0,
+      "humidity_percent": 50.0
+    },
+    "air_substitution": "explicit CK diagnostic, in memory only",
+    "loss_model": "zwikker_kosten_circular",
+    "radiation": {
+      "name": "legacy",
+      "variant": "existing_low_frequency",
+      "version": "dcalc.legacy.v1",
+      "coefficients": null,
+      "source": "D-Calc acoustics/radiation.py unchanged",
+      "category": "low-frequency approximation; not measurement",
+      "reference_band": {
+        "abs_ka_max": null,
+        "description": "low-frequency asymptote; no quantified precision threshold"
+      },
+      "assumptions": [
+        "existing 0.613*a reactive term; no added length",
+        "historical helper radius floor 1e-9 m retained; ka_out describes the physical radius",
+        "exterior environment and wall thickness not established"
+      ]
+    }
+  },
+  "physical_radius_m": 0.03,
+  "source_sha256": "86c92bdbd844075836dabaf0f1dd116eae064c55754a9aa8851e4e36f2c5d30a",
+  "model_sha256": "297a31465fb48b4826b937f2dd11ce74cd092c777a3d9d0c64c309e63bf14a60",
+  "domain_hz": [
+    0.1,
+    5500.0
+  ],
+  "coefficient_domain": "discrete_prewarped",
+  "acquisition": {
+    "nature": "simulation_tmm",
+    "date": "2026-10-17",
+    "sha": "b6755d4eb2ec498b8de12d29d842437ccbcd2d10",
+    "provenance": "R59 finite TMM acquisition; not a measurement. Original acquisition files: {\"audit.npz\": \"ed94d29d9f4592797fc4deb7ccd898aa7e98dc61eb7c0dbf9dbf538b9dd03d9a\", \"intent.json\": \"f82347107756c78b2b81983c59ca359247289afde2b7d04562a9ba7389b06688\", \"manifest.json\": \"6bf705ed9968008318f1b4afe35872fb97a2c6cdca37112367bfd6eb4cb88039\", \"result.json\": \"3e63c0cbc0a88f59d72f6f72c290f59f668e3874efd58bd007bc59a3ec1438e6\", \"sources.json\": \"63756241dfce2d69bfd3ed5e8aebc2b0cef43f6b17a338ce453aa29b380e6611\", \"training.npz\": \"473022ae22905dcc99793e9dbc391f55cc83279b988ef1559e038986c4e33e05\"}; Test fixture CONFIG only relocates the two material paths. Original CONFIG SHA256 edb18250bd49d490f9aed336efeb25117c6fecb022ff825f4fe26bf97d4c256b. Physical CONFIG fields, DB bytes, DESIGN, scalar and recorded complex targets unchanged."
+  },
+  "gates": {
+    "complex_nrmse": 0.005,
+    "relative_max": 0.08,
+    "phase_rms_deg": 0.3
+  },
+  "bands": [
+    {
+      "id": "low",
+      "role": "audit",
+      "domain_hz": [
+        0.1,
+        40.0
+      ],
+      "points": 257
+    },
+    {
+      "id": "interior",
+      "role": "audit",
+      "domain_hz": [
+        40.0,
+        3000.0
+      ],
+      "points": 1201
+    },
+    {
+      "id": "guard",
+      "role": "audit",
+      "domain_hz": [
+        3000.0,
+        3500.0
+      ],
+      "points": 401
+    },
+    {
+      "id": "upper",
+      "role": "audit",
+      "domain_hz": [
+        3500.0,
+        5500.0
+      ],
+      "points": 1009
+    },
+    {
+      "id": "edge",
+      "role": "extrapolation",
+      "domain_hz": [
+        5500.0,
+        5990.0
+      ],
+      "points": 257
+    }
+  ],
+  "training": {
+    "file": "training.npz",
+    "sha256": "473022ae22905dcc99793e9dbc391f55cc83279b988ef1559e038986c4e33e05",
+    "points": 6528
+  },
+  "audit": {
+    "file": "audit.npz",
+    "sha256": "3a4271bd98d0eeb1876e9cfbb158177e9016924df79a879e592109002122eeb4"
+  }
+}
