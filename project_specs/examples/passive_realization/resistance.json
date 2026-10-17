@@ -1,0 +1,23 @@
+{
+  "schema": "dcalc.scalar_rational.v1",
+  "p_real": [],
+  "p_imag": [],
+  "residues": [],
+  "direct_normalized": 4.0,
+  "zscale": 3.0,
+  "wref": 2.0,
+  "sample_rate_hz": 12000,
+  "coefficient_domain": "continuous",
+  "training_domain_hz": [
+    0.1,
+    5500.0
+  ],
+  "order": 0,
+  "passivity": "not_assessed",
+  "physical_validation": "not_validated",
+  "coefficient_origin": "Synthetic analytical oracle; not instrument data",
+  "provenance": {
+    "nature": "synthetic",
+    "date": "2026-10-17"
+  }
+}
