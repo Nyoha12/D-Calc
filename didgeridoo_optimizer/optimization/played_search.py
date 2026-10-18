@@ -32,7 +32,7 @@ def validate_job(raw):
         integer(b[k], 1, hi, k)
     if b['memory_mib'] != 768:
         raise ValueError('v1 child memory is explicitly 768 MiB')
-    s = obj(raw['search'], {'normalized_steps', 'directions', 'stop_on_witness'}, 'search',
+    s = obj(raw['search'], {'normalized_steps', 'directions', 'stop_on_witness', 'starts'}, 'search',
             {'normalized_steps', 'directions', 'stop_on_witness'})
     steps = s['normalized_steps']
     if type(steps) is not list or not 1 <= len(steps) <= 24:
@@ -46,6 +46,26 @@ def validate_job(raw):
         raise ValueError('Explicit direction order required')
     if type(s['stop_on_witness']) is not bool:
         raise ValueError('stop_on_witness boolean required')
+    if 'starts' in s:
+        starts = obj(s['starts'], {'include_initial', 'mode', 'profiles'}, 'starts',
+                     {'include_initial', 'mode', 'profiles'})
+        if raw['input']['kind'] != 'fixed':
+            raise ValueError('starts requires fixed DESIGN; assembly with starts unsupported')
+        if type(starts['include_initial']) is not bool:
+            raise ValueError('starts.include_initial boolean required')
+        if starts['mode'] not in ('evaluate_only', 'poll'):
+            raise ValueError('starts.mode must be evaluate_only or poll')
+        if type(starts['profiles']) is not list or not 1 <= len(starts['profiles']) <= 8:
+            raise ValueError('starts.profiles requires 1..8 explicit profiles')
+        ids = {'initial', 'nominal', 'coordinate_poll'}
+        for profile in starts['profiles']:
+            obj(profile, {'id', 'design'}, 'start profile', {'id', 'design'})
+            ident = identifier(profile['id'], 'start.id')
+            if ident in ids:
+                raise ValueError('Duplicate or reserved start.id: '+ident)
+            ids.add(ident)
+            if type(profile['design']) is not str or not profile['design'].strip():
+                raise ValueError('start.design requires a relative DESIGN path')
     scope = obj(raw['scope'], {'coverage', 'player_controls', 'objective', 'physiological_guarantee'},
                 'scope', {'coverage', 'player_controls', 'objective', 'physiological_guarantee'})
     for k, choices in [('coverage', ('finite', 'continuous')), ('player_controls', ('prescribed', 'optimized')),
@@ -203,57 +223,99 @@ def better(a, b):
             ax is not None and bx is not None and ax < bx)
 
 
-def poll(variables, initial, alternatives, search, maximum, evaluate, *, descriptive=False, checkpoint=None):
+def poll(variables, initial, alternatives, search, maximum, evaluate, *, descriptive=False, checkpoint=None, starts=None):
     """Unique coordinate poll. Unknown evidence has no invented numeric penalty."""
-    history, decisions, seen = [], [], set()
+    history, decisions, seen = [], [], {}
+    seeded = starts is not None
+    origin = None
+    visited = set()
     best = witness = None
     termination = 'poll_exhausted'
+
+    def trace(**entry):
+        if seeded:
+            entry.update(start_origin=copy.deepcopy(origin))
+        decisions.append(entry)
 
     def call(point, alternative, stage):
         nonlocal best, witness
         key = (alternative, tuple(point))
         if key in seen:
-            decisions.append(dict(action='skip_duplicate', alternative=alternative, variables_si=list(point)))
-            return None
+            trace(action='skip_duplicate', alternative=alternative, variables_si=list(point),
+                  **(dict(stage=stage, duplicate_of=seen[key]['candidate'], reason='already_evaluated') if seeded else {}))
+            return seen[key] if seeded else None
         if len(history) >= maximum:
             raise StopIteration('candidate_budget')
-        seen.add(key)
-        row = evaluate(list(point), alternative, len(history)+1, stage)
+        if seeded and checkpoint: checkpoint(history, best, witness, decisions)
+        row = evaluate(list(point), alternative, len(history)+1, stage,
+                       **(dict(start_origin=copy.deepcopy(origin)) if seeded else {}))
+        if seeded: row['start_origin'] = copy.deepcopy(origin)
+        seen[key] = row
         row.update(candidate=len(history)+1, variables_si=list(point), alternative=alternative, stage=stage)
         history.append(row)
         selected = better(row, best)
         if selected: best = row
         if row['conforming'] and witness is None: witness = row
-        decisions.append(dict(candidate=row['candidate'], action='select' if selected else 'retain_incumbent',
-                              score=row['max_violation_normalized'], status=row['status']))
+        trace(candidate=row['candidate'], action='select' if selected else 'retain_incumbent',
+              score=row['max_violation_normalized'], status=row['status'],
+              **(dict(alternative=alternative, variables_si=list(point), stage=stage) if seeded else {}))
         if checkpoint: checkpoint(history, best, witness, decisions)
         if row.get('stop_reason'): raise StopIteration(row['stop_reason'])
         if row['conforming'] and search['stop_on_witness']: raise StopIteration('feasible_witness_found')
         return row
 
+    def coordinates(center, current, alternative):
+        for step in search['normalized_steps']:
+            # Fixed anchor and native variable/direction order, shared across starts.
+            anchor = list(center); winner = current
+            for j, variable in enumerate(variables):
+                for direction in search['directions']:
+                    point = list(anchor)
+                    point[j] += direction*step*(variable['high']-variable['low'])
+                    if not variable['low'] <= point[j] <= variable['high']:
+                        trace(action='skip_bounds', alternative=alternative,
+                              variables_si=point, variable=variable['id'], step=step,
+                              **(dict(reason='outside_variable_bounds', stage='coordinate_poll') if seeded else {}))
+                        continue
+                    row = call(point, alternative, 'coordinate_poll')
+                    if row is not None and better(row, winner): winner = row
+            if winner is not None:
+                current = winner; center = list(winner['variables_si'])
+
     try:
-        for alternative in alternatives:
-            center = list(initial)
-            current = call(center, alternative, 'initial')
-            if descriptive or not variables: continue
-            for step in search['normalized_steps']:
-                # Fixed anchor for this poll; no target-dependent direction generation.
-                anchor = list(center); winner = current
-                for j, variable in enumerate(variables):
-                    for direction in search['directions']:
-                        point = list(anchor)
-                        point[j] += direction*step*(variable['high']-variable['low'])
-                        if not variable['low'] <= point[j] <= variable['high']:
-                            decisions.append(dict(action='skip_bounds', alternative=alternative,
-                                                  variables_si=point, variable=variable['id'], step=step))
-                            continue
-                        row = call(point, alternative, 'coordinate_poll')
-                        if row is not None and better(row, winner): winner = row
-                if winner is not None:
-                    current = winner; center = list(winner['variables_si'])
+        if seeded:
+            if not search['starts']['include_initial']:
+                origin = starts['initial']['origin']
+                trace(action='not_attempted', reason='initial_excluded', alternative='nominal',
+                      variables_si=list(initial), stage='initial')
+            anchors = []
+            for start in starts['selected']:
+                origin = start['origin']
+                current = call(start['variables_si'], 'nominal', start['stage'])
+                visited.add(origin['id'])
+                anchors.append((start, current))
+            if not descriptive and variables and search['starts']['mode'] == 'poll':
+                for start, current in anchors:
+                    origin = start['origin']
+                    coordinates(start['variables_si'], current, 'nominal')
+            if search['starts']['mode'] == 'evaluate_only': termination = 'evaluation_only'
+        else:
+            for alternative in alternatives:
+                center = list(initial)
+                current = call(center, alternative, 'initial')
+                if not descriptive and variables:
+                    coordinates(center, current, alternative)
         if not variables: termination = 'evaluation_only'
         if descriptive: termination = 'descriptive_initials_only'
     except StopIteration as exc:
         termination = str(exc)
+        if seeded:
+            for start in starts['selected']:
+                # The stopping evaluation is already acquired even when call raised.
+                if start['origin']['id'] not in visited and not any(
+                        r.get('start_origin') == start['origin'] for r in history):
+                    origin = start['origin']
+                    trace(action='not_attempted', reason=termination, alternative='nominal',
+                          variables_si=list(start['variables_si']), stage=start['stage'])
     return dict(history=history, best=best, witness=witness, decisions=decisions, termination=termination,
                 global_optimum_proven=False, infeasibility_proven=False)

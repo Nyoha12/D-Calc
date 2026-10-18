@@ -264,3 +264,17 @@ Il ne contient pas un état complet du solveur. Relire ses données ne reprend p
 le poll. Une nouvelle recherche est une nouvelle exécution dans une destination
 neuve. Les checkpoints R46 demeurent utilisables avec leur protocole natif,
 indépendamment de cette restriction d'orchestration.
+
+## Extension opt-in SEEDED-SEARCH-01
+
+`search.starts` accepte désormais des profils fixes explicites sous le Contract
+original : `{include_initial: bool, mode: evaluate_only|poll, profiles: [{id, design}]}`.
+Les profils sont admis avant toute destination/science, puis évalués dans l'ordre
+déclaré avec budgets et déduplication communs. Les polls éventuels suivent les
+mêmes règles coordonnées natives. Sans `starts`, le comportement historique reste
+inchangé ; `assembly` avec `starts` est refusé explicitement.
+
+Voir [SEEDED_SEARCH_01.md](SEEDED_SEARCH_01.md) pour le schéma strict, la fidélité
+exacte des profils, la provenance contrôlée par les lecteurs, les limites de
+compatibilité par sources et les exemples publics scalar. Aucune direction couplée
+n'est générée, aucun ajustement adaptatif ni réaccord n'est ajouté.

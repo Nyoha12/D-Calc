@@ -81,11 +81,15 @@ def write_json(path, value, **kw):
     write_bytes(path, content, **kw)
 
 
-def table(path, rows, fields, **kw):
+def table_bytes(rows, fields):
     stream = io.StringIO(newline='')
     writer = csv.DictWriter(stream, fields, extrasaction='ignore')
     writer.writeheader(); writer.writerows(rows)
-    write_bytes(path, stream.getvalue().encode(), **kw)
+    return stream.getvalue().encode()
+
+
+def table(path, rows, fields, **kw):
+    write_bytes(path, table_bytes(rows, fields), **kw)
 
 
 def summary(row):
@@ -105,17 +109,59 @@ def manifest(out):
             not any(part.startswith('.pending') for part in p.relative_to(out).parts)}
 
 
+def start_records(plan):
+    records = [plan['starts']['initial']]
+    return records+[s for s in plan['starts']['selected'] if s['origin']['id'] != 'initial']
+
+
+def export_starts(out, plan, **kw):
+    folder = Path(out)/'starts'; folder.mkdir()
+    for start in start_records(plan):
+        origin = start['origin']; source = safe_path(origin['source']['path'])
+        target = folder/(origin['id']+'.supplied'+source.suffix)
+        if file_sha256(source, maximum=2*1024**2) != origin['source']['sha256']:
+            raise ValueError('Start source changed before export')
+        write_bytes(target, source.read_bytes(), **kw)
+        if file_sha256(target, maximum=2*1024**2) != origin['source']['sha256']:
+            raise ValueError('Start source changed during export')
+        write_json(folder/(origin['id']+'.native.json'), start['native_design'], **kw)
+
+
+def verify_starts(out, plan):
+    for start in start_records(plan):
+        origin = start['origin']; source = Path(origin['source']['path'])
+        if file_sha256(local(out, 'starts/'+origin['id']+'.supplied'+source.suffix), maximum=2*1024**2) != origin['source']['sha256']:
+            raise ValueError('Supplied start bytes differ')
+        if digest(read_json(local(out, 'starts/'+origin['id']+'.native.json'))) != digest(start['native_design']):
+            raise ValueError('Generated start representation differs')
+
+
+def start_columns(row):
+    origin = row.get('start_origin')
+    return {} if origin is None else dict(start_id=origin['id'], start_source_sha256=origin['source']['sha256'],
+        start_variables_si=json.dumps(origin['variables_si']), start_generated_sha256=origin['generated_sha256'],
+        start_mode=origin['mode'])
+
+
+def export_tables(result):
+    history = result['search']['history']
+    extra = ['start_id','start_source_sha256','start_variables_si','start_generated_sha256','start_mode'] if 'starts' in result['plan'] else []
+    variables = result['plan']['variables']
+    return [
+        ('criteria.csv', [dict(r, candidate=c['candidate'], **start_columns(c)) for c in history for r in c['criteria']], FIELDS+extra),
+        ('variables.csv', [dict(candidate=c['candidate'], alternative=c['alternative'],
+          variable=v['id'], value_si=x, low_si=v['low'], high_si=v['high'], **start_columns(c))
+          for c in history for v,x in zip(variables,c['variables_si'])],
+          ['candidate','alternative','variable','value_si','low_si','high_si']+extra),
+        ('candidates.csv', [dict(summary(c), **start_columns(c)) for c in history],
+          ['candidate','alternative','stage','status','conforming','units_complete','max_violation_normalized','file']+extra)]
+
+
 def export(out, result, **kw):
     out = Path(out)
     history = result['search']['history']
-    table(out/'criteria.csv', [dict(r, candidate=c['candidate']) for c in history for r in c['criteria']], FIELDS, **kw)
-    variables = result['plan']['variables']
-    table(out/'variables.csv', [dict(candidate=c['candidate'], alternative=c['alternative'],
-          variable=v['id'], value_si=x, low_si=v['low'], high_si=v['high'])
-          for c in history for v,x in zip(variables,c['variables_si'])],
-          ['candidate','alternative','variable','value_si','low_si','high_si'], **kw)
-    table(out/'candidates.csv', [summary(c) for c in history],
-          ['candidate','alternative','stage','status','conforming','units_complete','max_violation_normalized','file'], **kw)
+    for name, rows, fields in export_tables(result):
+        table(out/name, rows, fields, **kw)
     saved = dict(result, search=dict(result['search'], history=[summary(c) for c in history],
                    best=summary(result['search']['best']), witness=summary(result['search']['witness'])))
     write_json(out/'result.json', saved, **kw)
@@ -164,11 +210,19 @@ def read_checkpoint(out):
     if digest(payload) != record['sha256'] or payload['solver_state_complete'] is not False:
         raise ValueError('Invalid witness checkpoint')
     verify_sources(payload['producer']['loaded_sources_sha256'])
-    from ..pipeline.played_search import check_plan
+    from ..pipeline.played_search import check_plan, verify_search, verify_candidate
     check_plan(payload['plan'])
     for unit in payload.get('units', []):
         if unit.get('file') and file_sha256(local(out, unit['file'])) != unit['sha256']:
             raise ValueError('Checkpoint unit changed')
+    if 'starts' in payload['plan']:
+        verify_starts(out, payload['plan'])
+        verify_search(payload['plan'], payload, prefix=True, current=payload.get('current'))
+        for row in payload['history']:
+            full = read_json(local(out, row['file']))
+            if digest(summary(full)) != digest(row): raise ValueError('Checkpoint candidate summary differs')
+            verify_candidate(payload['plan'], out, full, native_read=False)
+        check_plan(payload['plan'])
     return payload
 
 
@@ -196,12 +250,15 @@ def read_result(out, expected_context=None):
             if file_sha256(local(out, name), maximum=800*1024**2) != sha:
                 raise ValueError('Artifact mismatch: '+name)
         result = read_json(out/'result.json'); plan = read_json(out/'plan.json')
-        if result['schema'] != SCHEMA or result['plan'] != plan:
+        if result['schema'] != SCHEMA or (digest(result['plan']) != digest(plan) if 'starts' in plan else result['plan'] != plan):
             raise ValueError('Result plan mismatch')
         if expected_context is not None and plan['context_sha256'] != expected_context:
             raise ValueError('Unexpected context')
-        from ..pipeline.played_search import check_plan, verify_candidate
+        from ..pipeline.played_search import check_plan, verify_candidate, verify_search
         check_plan(plan)
+        if 'starts' in plan:
+            verify_starts(out, plan)
+            verify_search(plan, result['search'])
         if any(c['reaped'] is not True for c in execution['children']):
             raise ValueError('Unreaped child')
         if result['conforming'] != (result['search']['witness'] is not None):
@@ -209,10 +266,19 @@ def read_result(out, expected_context=None):
         witness = result['search']['witness']
         if witness is not None and (witness not in result['search']['history'] or not witness['conforming'] or not witness['units_complete']):
             raise ValueError('Witness must be a complete conforming acquired candidate')
+        full_history = []
         for summary_row in result['search']['history']:
             row = read_json(local(out, summary_row['file']))
-            if summary(row) != summary_row: raise ValueError('Candidate summary mismatch')
+            if (digest(summary(row)) != digest(summary_row) if 'starts' in plan else summary(row) != summary_row):
+                raise ValueError('Candidate summary mismatch')
             verify_candidate(plan, out, row, native_read=True)
+            full_history.append(row)
+        if 'starts' in plan:
+            complete_rows = dict(result, search=dict(result['search'], history=full_history))
+            for name, rows, fields in export_tables(complete_rows):
+                if local(out, name).read_bytes() != table_bytes(rows, fields):
+                    raise ValueError('Seeded CSV correspondence changed: '+name)
+        check_plan(plan)
         return dict(ok=execution['ok'], status=result['status'], conforming=result['conforming'], result=result,
                     execution=execution)
     except (ValueError, OSError, KeyError, TypeError) as exc:
