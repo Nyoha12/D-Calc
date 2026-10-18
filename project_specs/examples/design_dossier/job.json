@@ -1,0 +1,15 @@
+{
+  "schema_version": "dcalc.design_dossier.job.v1",
+  "budgets": {
+    "experiments": 16, "native_reads": 20, "input_files": 4096,
+    "input_mib": 512, "child_seconds": 175, "total_seconds": 550,
+    "closure_seconds": 10, "memory_mib": 768, "file_mib": 8,
+    "output_mib": 160, "blas_threads": 1
+  },
+  "candidates": [
+    {"id": "exact", "passive": {"bundle": "proofs/audit", "scenario": "nominal", "projection": "fixed"},
+     "geometry": {"bundle": "proofs/exact/geometry"}, "played": [{"id": "hold", "bundle": "proofs/exact/played"}]},
+    {"id": "rounded", "passive": {"bundle": "proofs/audit", "scenario": "rounded", "projection": "fixed"},
+     "geometry": {"bundle": "proofs/rounded/geometry"}, "played": [{"id": "hold", "bundle": "proofs/rounded/played"}]}
+  ]
+}
