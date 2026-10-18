@@ -1,0 +1,56 @@
+schema: dcalc.played_search.job.v1
+config: ../geometry_state/config.yaml
+input:
+  kind: fixed
+  design: reference.json
+  request: request.yaml
+fit:
+  backend: certified_scalar_v1
+  sample_rate_hz: 12000
+  h_cm: 0.5
+  loss_model: zk
+  air_reference: ck_dry20
+  radiation_model: legacy
+  top_hz: 3500
+  iterations: 12
+  max_order: 128
+  max_nodes: 12000
+  max_depth: 48
+  fit_seconds: 60
+  certificate_seconds: 60
+  seconds: 175
+  mesh_maxrel: 0.01
+scenarios:
+- id: nominal3500
+  configuration: nominal
+  template: ../geometry_state/experiment.json
+search:
+  normalized_steps:
+  - 0.5
+  directions:
+  - 1
+  - -1
+  stop_on_witness: false
+  starts:
+    include_initial: false
+    mode: evaluate_only
+    profiles:
+    - id: reference_copy
+      design: reference.json
+    - id: other_diameter
+      design: same_length_wider.json
+budgets:
+  candidates: 3
+  scenarios: 8
+  fits: 2
+  trajectories: 4
+  steps: 192
+  seconds: 900
+  memory_mib: 768
+  output_mib: 100
+  child_seconds: 175
+scope:
+  coverage: finite
+  player_controls: prescribed
+  objective: feasibility
+  physiological_guarantee: false

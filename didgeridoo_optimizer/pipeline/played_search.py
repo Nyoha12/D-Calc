@@ -16,7 +16,8 @@ import time
 
 from ..optimization import played_search as core
 from ..optimization.assembly_contract import native_contract
-from ..optimization.design_contract import read_request
+from ..optimization.design_contract import read_request, field_info
+from .design_input import validate_design
 from ..geometry.assemblies import set_field, InvalidAssembly
 from ..optimization.design_contract import InvalidRequest
 from ..nonlinear import register_target as rtcore
@@ -92,6 +93,35 @@ def _relative(base, value):
     if type(value) is not str or not value.strip() or Path(value).is_absolute():
         raise ValueError('JOB references must be nonempty paths relative to JOB')
     return report.safe_path(base/value).resolve()
+
+
+def admit_starts(raw, base, contract, inputs):
+    """Represent explicit profiles in the original contract, without repair."""
+    spec = raw['search']['starts']
+
+    def record(ident, source, supplied, native, values, stage):
+        generated_design = contract.generate(values).as_dict()
+        if digest(generated_design) != digest(native):
+            raise ValueError('Start profile is not exactly representable by original Contract: '+ident)
+        origin = dict(id=ident, source=source, variables_si=list(values),
+                      generated_sha256=digest(generated_design), mode=spec['mode'])
+        return dict(origin=origin, variables_si=list(values), stage=stage,
+                    supplied_design=supplied, native_design=generated_design)
+
+    supplied, source = _source(_relative(base, raw['input']['design']))
+    initial = record('initial', source, supplied, contract.generate(contract.initial).as_dict(),
+                     contract.initial, 'initial')
+    profiles = []
+    for item in spec['profiles']:
+        supplied, source = _source(_relative(base, item['design']))
+        if type(supplied) is not dict or type(supplied.get('segments')) is not list or not 1 <= len(supplied['segments']) <= 128:
+            raise ValueError('Start DESIGN requires 1..128 physical sections')
+        native = validate_design(supplied, contract.context['material_db'], contract.context['config']).as_dict()
+        contract.check_locks(native)
+        values = [field_info(native, v['fields'][0])[0] for v in contract.variables]
+        profiles.append(record(item['id'], source, supplied, native, values, 'explicit_start'))
+        inputs['start_'+item['id']] = source
+    return dict(initial=initial, selected=([initial] if spec['include_initial'] else [])+profiles)
 
 
 def load_inputs(job_path):
@@ -181,8 +211,16 @@ def load_inputs(job_path):
                         'global checkpoint is witness only; global resume unsupported',
                         'coordinate poll: declared variable/catalogue/step/direction order, no seed, no clamp',
                         'fit cache: exact generated DESIGN bytes, CONFIG/DB, entire fit recipe, producing sources within this execution'])
+    if 'starts' in raw['search']:
+        plan['starts'] = admit_starts(raw, base, contract, inputs)
+        plan['limits'][4] = 'coordinate poll: declared variable/step/direction order; no implicit starts or directions, no clamp'
+        plan['limits'].append('explicit fixed starts first; shared coordinate polls in declared start/step/variable/direction order')
     plan['context_sha256'] = digest(plan)
-    check_plan(plan)
+    if 'starts' in plan and sum(map(len, _input_chunks(plan))) > 3*MIB:
+        raise ValueError('Seeded plan exceeds 3 MiB before destination/science')
+    if 'starts' in plan and len((json.dumps(plan, ensure_ascii=False, allow_nan=False, sort_keys=True, indent=2)+'\n').encode()) > 4*MIB:
+        raise ValueError('Seeded plan JSON record exceeds 4 MiB before destination/science')
+    check_plan(plan, reconstruct=False)
     return contract, plan
 
 
@@ -193,7 +231,7 @@ def preflight(job_path, output_dir=None):
     return load_inputs(job_path)[1]
 
 
-def check_plan(plan):
+def check_plan(plan, *, reconstruct=True):
     if plan['context_sha256'] != digest({k:v for k,v in plan.items() if k!='context_sha256'}):
         raise ValueError('Plan context changed')
     if plan['producer']['versions'] != report.versions(): raise ValueError('Versions changed')
@@ -204,6 +242,70 @@ def check_plan(plan):
         path = report.safe_path(source['path'], exists=source['sha256'] is not None)
         current = report.file_sha256(path, maximum=2*MIB) if path.is_file() else None
         if current != source['sha256']: raise ValueError('JOB/context input bytes changed')
+    raw, source = _source(plan['job_source']['path'])
+    if digest(raw) != digest(plan['job']) or source != plan['job_source']:
+        raise ValueError('Plan differs from original JOB bytes')
+    if reconstruct and ('starts' in raw['search'] or 'starts' in plan):
+        _, fresh = load_inputs(source['path'])
+        # Producer inventories record ambient imports, not the reader's imports.
+        # Keep their evidence and verify it, but compare calculation inputs only.
+        def calculation(value):
+            value = copy.deepcopy(value)
+            value.pop('producer'); value.pop('context_sha256')
+            value['native_plan'].pop('provenance')
+            return value
+        native_producer = plan['native_plan']['provenance']
+        report.verify_sources(native_producer['loaded_sources_sha256'])
+        if native_producer['versions'] != report.versions(): raise ValueError('Native versions changed')
+        if digest(calculation(plan)) != digest(calculation(fresh)):
+            raise ValueError('Reconstructed starts/context differs from original sources')
+    report.verify_sources(manifest)
+
+
+def verify_search(plan, search, *, prefix=False, current=None):
+    """Replay only scheduling/selection using recorded rows; no scientific work."""
+    if 'starts' not in plan:
+        return
+    history = search['history']
+    next_call = None
+
+    def replay(values, alternative, index, stage, *, start_origin):
+        nonlocal next_call
+        identity = dict(candidate=index, variables_si=values, alternative=alternative,
+                        stage=stage, start_origin=start_origin)
+        if index > len(history):
+            next_call = identity
+            raise StopIteration('recorded_prefix')
+        row = history[index-1]
+        if digest({k:row.get(k) for k in identity}) != digest(identity):
+            raise ValueError('Candidate start origin/order/vector differs from native sequence')
+        return copy.deepcopy(row)
+
+    no_hard = not any(c['role']=='hard' for c in plan['native_plan']['request']['criteria']) and not any(
+        c['role']=='hard' for s in plan['scenarios'] for c in s['template']['criteria'])
+    rebuilt = core.poll(plan['variables'], plan['initial'], plan['alternatives'], plan['job']['search'],
+                        plan['job']['budgets']['candidates'], replay, descriptive=no_hard, starts=plan['starts'])
+    if any(digest(rebuilt[k]) != digest(search[k]) for k in ('history', 'best', 'witness')):
+        raise ValueError('Search acquired history/selection differs')
+    if prefix:
+        decisions = search['decisions']
+        minimum = max((i+1 for i,d in enumerate(rebuilt['decisions']) if d.get('candidate') == len(history)), default=0)
+        if len(decisions) < minimum or digest(decisions) != digest(rebuilt['decisions'][:len(decisions)]):
+            raise ValueError('Checkpoint decisions differ from native sequence')
+        if current is not None and (next_call is None or digest({k:current.get(k) for k in next_call}) != digest(next_call)):
+            raise ValueError('Checkpoint current start differs from native sequence')
+    elif digest(rebuilt) != digest(search):
+        # A native budget check may stop before the next evaluation is created.
+        # Its reason is recorded by the scheduler, never replaced by a row.
+        reason = search['termination']
+        if rebuilt['termination'] != 'recorded_prefix' or reason not in (
+                'signal_interrupted', 'total_seconds', 'total_output'):
+            raise ValueError('Search decisions/termination differ from native sequence')
+        for decision in rebuilt['decisions']:
+            if decision.get('reason') == 'recorded_prefix': decision['reason'] = reason
+        rebuilt['termination'] = reason
+        if digest(rebuilt) != digest(search):
+            raise ValueError('Search budget sequence differs')
 
 
 def generated(contract, kind, values, alternative):
@@ -531,6 +633,11 @@ def _unplayed(plan):
 
 def verify_candidate(plan, out, row, *, native_read):
     """Rebuild shared geometry and compare authoritative native scenario rows."""
+    if 'starts' in plan:
+        check_plan(plan)
+        origins = [s['origin'] for s in plan['starts']['selected']]
+        if digest(row.get('start_origin')) not in [digest(origin) for origin in origins]:
+            raise ValueError('Candidate has no declared start origin')
     contract, fresh = load_inputs(plan['job_source']['path'])
     if 'backend' in plan['job']['fit']:
         for key in ('job','job_source','paths','inputs','kind','configurations','alternatives','variables','initial','scenarios','fit_effective','max_fit_mesh_segments','unsupported'):
@@ -538,7 +645,9 @@ def verify_candidate(plan, out, row, *, native_read):
     if row.get('geometry_valid'):
         physical, items = generated(contract, plan['kind'], row['variables_si'], row['alternative'])
         for cid, info in row['configurations'].items():
-            if report.read_json(report.local(out, info['design'])) != items[cid]['design'].as_dict():
+            saved_design = report.read_json(report.local(out, info['design']))
+            expected_design = items[cid]['design'].as_dict()
+            if (digest(saved_design) != digest(expected_design) if 'starts' in plan else saved_design != expected_design):
                 raise ValueError('Generated geometry/locks changed')
         if physical and report.read_json(report.local(out,row['assembly_file'])) != physical.raw:
             raise ValueError('Shared physical assembly changed')
@@ -591,6 +700,7 @@ def verify_candidate(plan, out, row, *, native_read):
     if row['units_complete'] and (len(row['units']) != len(plan['scenarios']) or not all(u['verified'] for u in row['units']) or not row.get('geometry_valid') or
             {u['scenario'] for u in row['units'] if u['verified']} != {s['id'] for s in plan['scenarios']}):
         raise ValueError('Missing required acquired unit')
+    if 'starts' in plan: check_plan(plan)
 
 
 def instantiate(template, config, design, model):
@@ -646,17 +756,23 @@ def execute(plan, out, budget, children):
     out = Path(out); kw = dict(root=out, limit=plan['job']['budgets']['output_mib']*MIB)
     contract, _ = load_inputs(plan['job_source']['path']); cache = {}; acquired = []; sequence = 0
     current = None; best_saved = None; witness_saved = None
+    saved_history = []; saved_decisions = []
     def save(history=(), best=None, witness=None, decisions=()):
-        nonlocal sequence, best_saved, witness_saved
+        nonlocal sequence, best_saved, witness_saved, saved_history, saved_decisions
         if history:
             budget.witness = report.summary(witness)
             best_saved = report.summary(best); witness_saved = report.summary(witness)
+        if 'starts' in plan:
+            if history or current is None:
+                saved_history = [report.summary(r) for r in history]
+                saved_decisions = copy.deepcopy(list(decisions))
+            history = saved_history; decisions = saved_decisions
         sequence += 1
         report.checkpoint(out,sequence,dict(plan=plan, producer=plan['producer'], current=report.summary(current),
             best=best_saved, witness=witness_saved, history=[report.summary(r) for r in history],
             counters=budget.snapshot(), units=acquired, decisions=list(decisions)), **kw)
 
-    def evaluate(values, alternative, index, stage):
+    def evaluate(values, alternative, index, stage, *, start_origin=None):
         nonlocal current
         try: budget.check()
         except BudgetStop as exc: raise StopIteration(str(exc)) from exc
@@ -664,6 +780,7 @@ def execute(plan, out, budget, children):
         folder = out/f'candidate-{index:03d}'; folder.mkdir()
         row = dict(candidate=index, stage=stage, variables_si=values, alternative=alternative, criteria=[], units=[],
                    configurations={}, geometry_valid=False, units_complete=False, errors=[], file=f'candidate-{index:03d}/candidate.json')
+        if start_origin is not None: row['start_origin'] = copy.deepcopy(start_origin)
         current = row; save()
         try:
             check_plan(plan)
@@ -806,7 +923,11 @@ def execute(plan, out, budget, children):
     no_hard=not any(c['role']=='hard' for c in contract.criteria) and not any(
         c['role']=='hard' for s in plan['scenarios'] for c in s['template']['criteria'])
     search=core.poll(plan['variables'],plan['initial'],plan['alternatives'],plan['job']['search'],
-                     plan['job']['budgets']['candidates'],evaluate,descriptive=no_hard,checkpoint=save)
+                     plan['job']['budgets']['candidates'],evaluate,descriptive=no_hard,checkpoint=save,
+                     starts=plan.get('starts'))
+    if 'starts' in plan:
+        verify_search(plan, search)
+        save(search['history'], search['best'], search['witness'], search['decisions'])
     check_plan(plan)
     # Verify locks and native associations without additional fits or trajectory steps.
     for row in search['history']:
@@ -833,6 +954,9 @@ def run(job_path, output_dir, *, dry_run=False):
     out=report.safe_path(output_dir,exists=False); out.mkdir(parents=True,exist_ok=False)
     kw=dict(root=out,limit=plan['job']['budgets']['output_mib']*MIB)
     report.write_json(out/'plan.json',plan, **kw)
+    if 'starts' in plan:
+        check_plan(plan)
+        report.export_starts(out, plan, **kw)
     flags=[]; old={}; children=[]; result=None
     budget=Budget(plan['job']['budgets'],out,lambda:bool(flags)); budget.start=started
     alarm_handler=signal.getsignal(signal.SIGALRM); alarm_timer=signal.getitimer(signal.ITIMER_REAL)
