@@ -112,11 +112,26 @@ def extract_peaks(evaluate,spectrum,step,max_frequencies=10000):
         precision_limited |= (np.ptp(values,axis=1)<=1.e-12*np.max(values,axis=1))
         active &= ~precision_limited
         maxima=(values[:,1:-1]>values[:,:-2]) & (values[:,1:-1]>values[:,2:])
-        ambiguous |= active & (np.sum(maxima,axis=1)!=1)
+        counts=np.sum(maxima,axis=1)
         best=np.argmax(values,axis=1)
-        ambiguous |= active & ((best==0)|(best==32))
         j=np.clip(best,1,31); rows=np.arange(len(peaks))
-        a=np.where(active,local[rows,j-1],a); b=np.where(active,local[rows,j+1],b)
+        left=j-1; right=j+1; edge=(best==0)|(best==32)
+        # Exact equal runs count as one sampled maximum only when both
+        # neighbours are lower. Keep the whole top and its neighbours;
+        # a sampled plateau does not establish a unique continuous maximum.
+        for row in np.flatnonzero(active & np.any(values[:,1:]==values[:,:-1],axis=1)):
+            v=values[row]
+            starts=np.r_[0,np.flatnonzero(v[1:]!=v[:-1])+1]
+            ends=np.r_[starts[1:]-1,32]
+            interior=(starts>0)&(ends<32)
+            lo=starts[interior]; hi=ends[interior]
+            counts[row]=np.count_nonzero((v[lo]>v[lo-1])&(v[hi]>v[hi+1]))
+            k=np.searchsorted(starts,best[row],side='right')-1
+            if ends[k]>starts[k]:
+                left[row]=max(0,starts[k]-1); right[row]=min(32,ends[k]+1)
+                edge[row]=(v[0]==v[best[row]])|(v[-1]==v[best[row]])
+        ambiguous |= active & ((counts!=1)|edge)
+        a=np.where(active,local[rows,left],a); b=np.where(active,local[rows,right],b)
     f=(a+b)/2
     eps=np.maximum(.002,f*1.e-5)
     center=np.abs(evaluate(f)); lm=np.abs(evaluate(f-eps)); rm=np.abs(evaluate(f+eps))
