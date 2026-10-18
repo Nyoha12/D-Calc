@@ -106,8 +106,8 @@ checkpoints et séries. Les profils sont copiés octet pour octet. `geometry.csv
 décrit chaque section physique (longueur et diamètres en cm), sans discrétisation.
 `criteria.csv`, `comparison.csv` et `summary.txt` rendent le dossier en français.
 Les réponses natives et stderr sont conservés ; manifeste, exécution, clôture et
-reçu terminal sont liés par hashes. Un marqueur terminal signifie clôture, et seul
-`execution.ok` signifie exécution complète. Aucun timeout n'est un succès.
+reçu terminal sont liés par hashes. Un marqueur terminal signifie clôture ; son `ok` et le reçu préparatoire doivent
+concorder (voir les champs v2 ci-dessous). Aucun timeout n'est un succès.
 
 La relecture vérifie les reçus, les sources pinnées, relit les preuves par les mêmes
 lecteurs neufs, recompose les obligations/comparaisons et compare les vues. Une
@@ -124,3 +124,65 @@ pour les associations et doubles de lecteurs, un audit natif purement géométri
 pour un vrai enfant, et de vraies CLI pour admission/refus/relecture partielle.
 Ils ne fabriquent pas de preuve instrumentale, certificat, conversion, fit ou
 trajectoire. La démonstration complète sur preuves acquises reste séparée.
+
+## Correction C1/C2 : délais, reçus v2 et code chargé
+
+Le JOB reste en v1 et l'exemple public reste inchangé. Les nouveaux dossiers,
+manifestes et marqueurs terminaux utilisent `dcalc.design_dossier.v2` ; les reçus
+utilisent `dcalc.design_dossier.child.v2` et `dcalc.design_dossier.execution.v2`.
+Les archives v1 ne sont ni réparées ni réétiquetées : cette relecture les refuse.
+
+L'échéance d'opération part de l'entrée API et vaut `total_seconds -
+closure_seconds`. Elle couvre admission, lecteurs, composition et exports. Les
+contrôles précèdent et suivent les frontières utiles, y compris une réponse de
+`wait` tardive sans exception. La publication et son contrôle final disposent de
+la réserve, sous l'échéance publique `total_seconds`. La relecture contrôle aussi
+son retour, après fermeture de son répertoire temporaire. Aucun délai implicite
+« durée enfant +5s » n'autorise une opération réussie.
+
+Chaque collecte dispose d'une seule échéance cumulative d'au plus 4s, bornée aussi
+par l'échéance publique. TERM puis KILL concernent uniquement la session créée ;
+tous les `wait` ont un timeout calculé sur le temps restant. Les tentatives sont
+finies même sous annulations répétées. `operation_seconds`, `collection_seconds`,
+`collection_limit_seconds` et leur somme `seconds` décrivent le processus et la
+fermeture de ses descripteurs. `reaped` exige un code de retour confirmé ;
+`collection_confirmed` exige également une fermeture confirmée dans le délai.
+Une erreur de lancement garde `launched=false`, PID/code nuls et la cause. Un
+échec de collecte garde les faits observés, sans prétendre que l'enfant a disparu.
+Les limites, timers et handlers de l'hôte API ne sont pas modifiés.
+
+Ces bornes sont supervisées et contrôlées aux frontières : elles ne peuvent pas
+préempter un appel système de l'hôte bloqué dans le noyau ni un double Python qui
+ignore son timeout. Un tel retour tardif est refusé ; il ne produit aucune autorité
+de succès. Les délais demandés et les durées réellement constatées restent séparés.
+
+Le reçu d'exécution porte `candidate_complete` et `status=ready|partial` : il
+n'est pas une autorité de succès. Seul le marqueur final lié porte `ok`. En cas de
+timeout, annulation ou échec tardif, l'appel retire uniquement son propre nouveau
+marqueur `execution.completed.json` et conserve `execution.failed.json`, les
+causes et les reçus disponibles. Si le retrait échoue, le marqueur d'échec
+invalide explicitement cette publication. Aucune relecture ne réécrit un dossier.
+La relecture refuse toute fausse clôture, les booléens numériques, les durées
+contradictoires (y compris leur somme cumulée) et toute preuve issue d'un timeout,
+d'un code non nul ou d'une collecte non confirmée. Un résultat natif partiel mais
+relativement vérifié, rendu par un processus confirmé de code zéro, conserve ses
+violations et reste lisible.
+
+Les modules possédés capturent leurs octets au chargement, avant admission. Leur
+identité n'est jamais recalculée pour accepter une mutation. Les fonctions natives
+`played_rows` et `state_recipe`, leurs dépendances scalaires et constantes sont
+contrôlées explicitement contre le code compilé des fichiers épinglés ; les
+captures natives existantes sont également contrôlées. La compilation seule
+n'exécute aucun calcul, ajusteur ou lecteur. Un module déjà chargé avec d'anciens
+codes ou constantes est refusé avant admission. Les vrais lecteurs restent en
+processus neufs ; les substitutions pytest de lecteur restent des doubles
+synthétiques, sans valeur de provenance instrumentale.
+
+Les 60 cas auteur sont conservés avec leurs assertions. Seuls leurs helpers de
+reçus synthétiques et de rehash jetable sont adaptés mécaniquement aux champs v2
+(durées séparées, lancement/collecte, `candidate_complete`, `ok` terminal et durée
+publique). Les tests ajoutés couvrent horloge/enfant simulés, délais cumulés,
+seconde expiration, retour tardif, lancement/fermeture refusés, annulations
+répétées, provenance après import et falsification malgré rehash. Les petits tests
+réels d'annulation/timeout et le lecteur natif sans acoustique restent distincts
+de toute démonstration instrumentale R64/R66.

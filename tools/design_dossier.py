@@ -35,6 +35,7 @@ def main(argv=None):
                 raise KeyboardInterrupt('annulation CLI')
             signal.signal(signal.SIGTERM, cancel)
         from didgeridoo_optimizer.reporting import design_dossier_schema as s
+        s.loaded_sources()
         if ENTRY != s.ROOT/'tools/design_dossier.py' or s.sha(ENTRY) != ENTRY_SHA:
             raise ValueError('entrée CLI copiée/modifiée refusée')
         if args.read_result:

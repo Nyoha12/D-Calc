@@ -9,9 +9,15 @@ from pathlib import Path
 import re
 import stat
 
+import hashlib
+_LOADED_SOURCE_PATH = Path(__file__).resolve()
+_LOADED_SOURCE_SHA256 = hashlib.sha256(_LOADED_SOURCE_PATH.read_bytes()).hexdigest()
+
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMA = 'dcalc.design_dossier.job.v1'
-RESULT_SCHEMA = 'dcalc.design_dossier.v1'
+RESULT_SCHEMA = 'dcalc.design_dossier.v2'
+CHILD_SCHEMA = 'dcalc.design_dossier.child.v2'
+EXECUTION_SCHEMA = 'dcalc.design_dossier.execution.v2'
 MIB = 1024 ** 2
 FILE_LIMIT = 8 * MIB
 LIMITS = dict(experiments=64, native_reads=80, input_files=4096, input_mib=512,
@@ -280,8 +286,104 @@ def static_association(candidate, base):
                 model_sha256=sha(gb/'realization/model.json'))
 
 
+_COMPOSITION_SOURCES = {}
+_NATIVE_CODE_CACHE = {}
+
+
+def loaded_sources():
+    """Compare disk with import-time identities; never refresh to fit new bytes."""
+    import importlib
+    import sys
+    result = {}
+    for name in OWN_SOURCES:
+        module = importlib.import_module(name[:-3].replace('/', '.'))
+        modules = [module]
+        main = sys.modules.get('__main__')
+        if getattr(main, '__file__', None) and Path(main.__file__).resolve() == ROOT/name:
+            modules.append(main)
+        h = sha(ROOT/name)
+        for item in modules:
+            require(Path(item.__file__).resolve() == ROOT/name, 'module possédé étranger: '+name)
+            snapshot = getattr(item, '_LOADED_SOURCE_SHA256', getattr(item, 'ENTRY_SHA', None))
+            require(snapshot == h, 'source modifiée après import: '+name)
+        result[name] = h
+    return result
+
+
+def composition_sources():
+    """Verify the exact loaded native helpers and their scalar dependencies.
+
+    Compilation compares code, without running producers or replacing sys.modules.
+    Literal globals used by these functions are checked too. Test reader doubles
+    are outside this check and remain explicitly synthetic test substitutions.
+    """
+    import ast
+    import importlib
+    import sys
+    from types import CodeType, FunctionType
+    played = importlib.import_module('didgeridoo_optimizer.optimization.played_search')
+    geometry = importlib.import_module('didgeridoo_optimizer.pipeline.geometry_state')
+    rt = importlib.import_module('didgeridoo_optimizer.nonlinear.register_target')
+    pending = [played.played_rows, geometry.state_recipe, rt.metric_target, rt.metric_quantity]
+    seen = set(); sources = {}; compiled = {}; literals = {}
+    while pending:
+        function = pending.pop()
+        require(isinstance(function, FunctionType), 'fonction native substituée')
+        if id(function) in seen: continue
+        seen.add(id(function))
+        module = sys.modules[function.__module__]
+        path = ROOT/(function.__module__.replace('.', '/')+'.py')
+        require(Path(module.__file__).resolve() == path and Path(function.__code__.co_filename).resolve() == path,
+                'origine fonction native incohérente')
+        name = path.relative_to(ROOT).as_posix()
+        if name not in sources:
+            raw = data(path); h = hashlib.sha256(raw).hexdigest()
+            snapshot = getattr(module, '_LOADED_SOURCE_SHA256', h)
+            require(h == snapshot, 'source native modifiée après import: '+name)
+            require(_COMPOSITION_SOURCES.get(name, h) == h, 'source de composition modifiée: '+name)
+            sources[name] = h
+            if (name, h) not in _NATIVE_CODE_CACHE:
+                codes = {}
+                def collect(code):
+                    codes[code.co_qualname] = code
+                    for item in code.co_consts:
+                        if isinstance(item, CodeType): collect(item)
+                collect(compile(raw, str(path), 'exec', dont_inherit=True, optimize=sys.flags.optimize))
+                constants = {}
+                for node in ast.parse(raw).body:
+                    if isinstance(node, ast.Assign):
+                        try: value = ast.literal_eval(node.value)
+                        except (ValueError, TypeError): continue
+                        for target in node.targets:
+                            if isinstance(target, ast.Name): constants[target.id] = value
+                _NATIVE_CODE_CACHE[name, h] = codes, constants
+            compiled[name], literals[name] = _NATIVE_CODE_CACHE[name, h]
+            # Refuse other stale functions in the same native module too.
+            for item in vars(module).values():
+                if isinstance(item, FunctionType) and item.__module__ == module.__name__:
+                    require(item.__code__ == compiled[name].get(item.__qualname__),
+                            'module natif préchargé incohérent: '+name)
+        require(function.__code__ == compiled[name].get(function.__qualname__),
+                'code natif préchargé incohérent: '+name)
+        for key in function.__code__.co_names:
+            value = function.__globals__.get(key)
+            if key in literals[name]:
+                require(value == literals[name][key], 'constante native préchargée incohérente: '+key)
+            if isinstance(value, FunctionType) and value.__module__.startswith('didgeridoo_optimizer.'):
+                pending.append(value)
+    # played_rows accesses the native module's DIMENSIONS via rt.
+    require(played.rt is rt and rt.DIMENSIONS == literals['didgeridoo_optimizer/nonlinear/register_target.py']['DIMENSIONS'],
+            'dimensions natives préchargées incohérentes')
+    for name,h in sources.items():
+        require(sha(ROOT/name) == h, 'source modifiée pendant contrôle composition')
+    _COMPOSITION_SOURCES.update({name:h for name,h in sources.items() if name not in _COMPOSITION_SOURCES})
+    return sources
+
+
 def preflight(job, output=None):
     """Bounded documentary inspection only. No destination, arrays or native reader."""
+    own = loaded_sources()
+    native = composition_sources()
     job_path = safe(job)
     raw = validate_job(read(job_path, 256 * 1024)); b = raw['budgets']
     base = job_path.parent
@@ -300,13 +402,14 @@ def preflight(job, output=None):
     require((len(bundles)+2)*256*1024 <= b['output_mib']*MIB, 'budget représentation sortie')
     inv = Inventory(b)
     inv.add(job_path, follow=False)
-    for rel in OWN_SOURCES:
-        inv.add(ROOT/rel, follow=False)
+    for rel,h in {**own, **native}.items():
+        inv.add(ROOT/rel, h, follow=False)
     for bundle in bundles:
         bundle['files'] = inv.bundle(bundle['path'])
     associations = [static_association(c, base) for c in raw['candidates']]
     destinations(output, [Path(x['path']) for x in bundles], inv.pins)
     verify_pins(inv.pins)
+    loaded_sources(); composition_sources()
     plan = dict(schema=SCHEMA, job_path=str(job_path), job_sha256=sha(job_path), job=raw,
                 bundles=bundles, associations=associations, pins=inv.pins, sizes=inv.sizes,
                 input_bytes=inv.total, native_read_count=len(bundles), science_performed=False)

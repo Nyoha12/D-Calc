@@ -6,6 +6,10 @@ import io
 from itertools import combinations
 from pathlib import Path
 
+import hashlib
+_LOADED_SOURCE_PATH = Path(__file__).resolve()
+_LOADED_SOURCE_SHA256 = hashlib.sha256(_LOADED_SOURCE_PATH.read_bytes()).hexdigest()
+
 from . import design_dossier_schema as s
 
 SCOPE = ('Comparaison descriptive de points numériques acquis. Aucune nouvelle acquisition, '
@@ -134,6 +138,7 @@ def compare(candidates):
 
 def compose(plan, verified, errors):
     """Deterministic derivation, reused at readback against fresh native results."""
+    s.loaded_sources(); s.composition_sources()
     from ..optimization.played_search import played_rows
     from ..pipeline.geometry_state import state_recipe
     base = Path(plan['job_path']).parent
@@ -262,10 +267,17 @@ def read_result(output, *, total_seconds=None):
     No historical override or persistent cache. Original sources remain required.
     This checks relative integrity, not authentication of wholly rewritten evidence.
     """
-    from ..pipeline.design_dossier import read_native, boundary
+    from ..pipeline.design_dossier import read_native, boundary, confirmed, remaining
     import tempfile
     import time
     start = time.monotonic(); out = s.safe(output)
+    s.loaded_sources()
+    # Bound even malformed dossier inspection by the public cap.
+    cap = s.LIMITS['total_seconds'] if total_seconds is None else total_seconds
+    s.require(type(cap) in (int, float) and 0 < s.number(cap, 'budget relecture') <= s.LIMITS['total_seconds'], 'budget relecture')
+    public_deadline = start+cap
+    remaining(public_deadline)
+    s.require(not (out/'execution.failed.json').exists(), 'exécution sans autorité finale')
     terminal_pins = {str(out/name):s.sha(out/name) for name in
                      ('manifest.json','execution.json','execution.closed.json','execution.completed.json')}
     manifest = s.read(out/'manifest.json'); receipt = s.read(out/'execution.json')
@@ -273,13 +285,17 @@ def read_result(output, *, total_seconds=None):
     s.require(manifest['schema'] == s.RESULT_SCHEMA, 'schéma manifeste')
     s.require(receipt['manifest_sha256'] == s.sha(out/'manifest.json'), 'manifest altéré')
     s.require(s.same(s.read(out/'execution.closed.json'), dict(execution_sha256=s.sha(out/'execution.json'), children_collected=True)), 'clôture dossier')
-    s.require(s.read(out/'execution.completed.json') == dict(schema=s.RESULT_SCHEMA,
+    terminal = s.read(out/'execution.completed.json')
+    s.exact(terminal, ('schema','ok','seconds','manifest_sha256','execution_sha256','closure_sha256'), 'reçu terminal')
+    s.require(type(terminal['ok']) is bool and s.same(terminal, dict(schema=s.RESULT_SCHEMA,
+        ok=receipt['candidate_complete'], seconds=terminal['seconds'],
         manifest_sha256=s.sha(out/'manifest.json'), execution_sha256=s.sha(out/'execution.json'),
-        closure_sha256=s.sha(out/'execution.closed.json')), 'reçu terminal dossier')
+        closure_sha256=s.sha(out/'execution.closed.json'))), 'reçu terminal dossier')
     required = {'plan.json','preflight.json','result.json','criteria.csv','geometry.csv','comparison.csv','summary.txt'}
     s.require(type(manifest['files']) is dict and required <= set(manifest['files']) and len(manifest['files']) <= 512, 'inventaire dossier')
     total = 0
     for name,h in manifest['files'].items():
+        remaining(public_deadline)
         s.require(Path(name).name == name, 'nom artefact dossier')
         total += (out/name).stat().st_size
         s.require(total <= 160*s.MIB and s.sha(out/name) == h, 'artefact dossier altéré: ' + name)
@@ -300,57 +316,76 @@ def read_result(output, *, total_seconds=None):
     s.require(result['reader']['source_status'] == 'working_tree_fingerprints_not_a_published_commit', 'statut source lecteur')
     s.require(type(result['reader']['python']) is str and re.fullmatch(r'\d+\.\d+\.\d+', result['reader']['python']), 'version Python lecteur')
     s.require(datetime.fromisoformat(result['created_utc']).tzinfo is not None, 'date création avec fuseau requise')
-    s.exact(receipt, ('ok','status','children','manifest_sha256'), 'reçu exécution')
-    s.require(type(receipt['ok']) is bool and receipt['status'] == ('complete' if receipt['ok'] else 'partial'), 'statut reçu')
+    s.exact(receipt, ('schema','candidate_complete','status','children','operation_seconds','operation_limit_seconds','public_limit_seconds','manifest_sha256'), 'reçu exécution')
+    s.require(receipt['schema'] == s.EXECUTION_SCHEMA and type(receipt['candidate_complete']) is bool
+              and receipt['status'] == ('ready' if receipt['candidate_complete'] else 'partial'), 'statut reçu')
+    b = plan['job']['budgets']
+    s.require(sum(p.stat().st_size for p in out.iterdir()) <= b['output_mib']*s.MIB, 'budget sortie dossier')
+    s.require(s.number(receipt['operation_limit_seconds'], 'limite opération') == b['total_seconds']-b['closure_seconds']
+              and s.number(receipt['public_limit_seconds'], 'limite publique') == b['total_seconds'], 'limites reçu')
+    s.require(0 <= s.number(receipt['operation_seconds'], 'durée opération') <= receipt['operation_limit_seconds'], 'durée opération dossier')
+    s.require(receipt['operation_seconds'] <= s.number(terminal['seconds'], 'durée publique') <= b['total_seconds'], 'durée publique dossier')
     s.require(type(receipt['children']) is list and len(receipt['children']) <= len(plan['bundles']), 'reçus enfants')
     admitted = {_key(b['kind'], b['path']) for b in plan['bundles']}
     seen = set(); successful_files = {}; usable_files = {}
-    child_keys = {'kind','bundle','pid','exit_code','reaped','pipes_closed','timed_out','cancelled','seconds',
+    child_keys = {'schema','launched','collection_confirmed','operation_seconds','collection_seconds','collection_limit_seconds','errors','kind','bundle','pid','exit_code','reaped','pipes_closed','timed_out','cancelled','seconds',
         'wall_limit_seconds','memory_mib','file_bytes_limit','blas_threads','fresh_interpreter','stdout','stdout_sha256','stderr','stderr_sha256'}
     for child in receipt['children']:
         s.exact(child, child_keys, 'reçu enfant')
         key = _key(child['kind'], child['bundle'])
         s.require(key in admitted and key not in seen, 'enfant étranger/dupliqué'); seen.add(key)
+        s.require(child['schema'] == s.CHILD_SCHEMA and child['launched'] is True, 'schéma/lancement enfant')
+        s.require(type(child['errors']) is list and all(type(e) is str for e in child['errors']), 'causes enfant')
         s.require(type(child['pid']) is int and child['pid'] > 0 and type(child['exit_code']) is int, 'PID/code enfant')
-        s.require(child['reaped'] is True and child['pipes_closed'] is True and child['fresh_interpreter'] is True, 'collecte enfant')
+        s.require(child['reaped'] is True and child['pipes_closed'] is True and child['fresh_interpreter'] is True and child['collection_confirmed'] is True, 'collecte enfant')
         s.require(type(child['timed_out']) is bool and type(child['cancelled']) is bool, 'timeout/annulation booléens')
         s.require(0 < s.number(child['wall_limit_seconds'], 'délai') <= plan['job']['budgets']['child_seconds'], 'délai enfant')
-        s.require(0 <= s.number(child['seconds'], 'durée') <= child['wall_limit_seconds'] + 5, 'durée enfant')
+        operation = s.number(child['operation_seconds'], 'durée opération enfant')
+        collection = s.number(child['collection_seconds'], 'durée collecte')
+        collection_limit = s.number(child['collection_limit_seconds'], 'limite collecte')
+        s.require(0 <= collection <= collection_limit <= 4 and operation >= 0, 'budget cumulatif collecte')
+        s.require(abs(s.number(child['seconds'], 'durée') - operation - collection) <= 1e-8, 'durées enfant contradictoires')
+        s.require(operation <= child['wall_limit_seconds'] or child['timed_out'] is True, 'retour tardif non déclaré')
         s.require(type(child['memory_mib']) is int and child['memory_mib'] == plan['job']['budgets']['memory_mib']
                   and type(child['blas_threads']) is int and child['blas_threads'] == 1, 'limites enfant')
-        s.require(type(child['file_bytes_limit']) is int and 0 < child['file_bytes_limit'] <= s.FILE_LIMIT, 'limite fichier enfant')
+        s.require(type(child['file_bytes_limit']) is int and 0 < child['file_bytes_limit'] <= b['file_mib']*s.MIB, 'limite fichier enfant')
         for stream in ('stdout','stderr'):
             name = child[stream]
             s.require(name in manifest['files'] and manifest['files'][name] == child[stream+'_sha256']
                       and (out/name).stat().st_size <= child['file_bytes_limit'], 'flux/reçu enfant')
-        if child['exit_code'] == 0 and not child['timed_out'] and not child['cancelled']:
+        if confirmed(child):
             successful_files[key] = child['stdout']
         try:
             native_response = s.read(out/child['stdout'])
         except (ValueError, OSError):
             native_response = {}
-        if type(native_response) is dict and usable(child['kind'], native_response):
+        if key in successful_files and type(native_response) is dict and usable(child['kind'], native_response):
             usable_files[key] = child['stdout']
-        if receipt['ok']:
+        if receipt['candidate_complete']:
             s.require(key in successful_files, 'faux succès enfant')
+    s.require(sum(c['seconds'] for c in receipt['children']) <= receipt['operation_seconds'] + 1e-8, 'durées cumulées enfants/dossier contradictoires')
     limit = plan['job']['budgets']['total_seconds'] if total_seconds is None else total_seconds
     s.require(type(limit) in (int,float) and 0 < limit <= plan['job']['budgets']['total_seconds'], 'budget relecture')
     deadline = start + limit - plan['job']['budgets']['closure_seconds']
+    public_deadline = start+limit
+    remaining(deadline)
     bundles = {_key(b['kind'], b['path']):b for b in plan['bundles']}
     verified = {}; rereceipts = []
     s.require(type(result['native_results']) is dict and set(result['native_results']) <= set(bundles), 'lectures étrangères')
     s.require(all(successful_files.get(k) == v for k,v in result['native_results'].items()), 'lectures/reçus non liés')
     s.require(result['native_results'] == usable_files, 'observation native vérifiée omise')
-    if receipt['ok']:
+    if receipt['candidate_complete']:
         s.require(set(result['native_results']) == set(bundles), 'succès sans toutes les lectures')
     try:
+        remaining(deadline)
         with tempfile.TemporaryDirectory(prefix='dcalc-dossier-read-') as tmp:
             for index, (key, name) in enumerate(result['native_results'].items()):
                 s.require(name in manifest['files'], 'lecture native absente du manifeste')
-                boundary(plan)
+                remaining(deadline); boundary(plan); remaining(deadline)
                 response, child = read_native(bundles[key], Path(tmp), index, plan['job']['budgets'], deadline)
                 rereceipts.append(child)
-                s.require(usable(bundles[key]['kind'], response), 'relecture native non confirmée: ' + key)
+                remaining(deadline)
+                s.require(confirmed(child) and usable(bundles[key]['kind'], response), 'relecture native non confirmée: ' + key)
                 # Native reader provenance is kept separately; semantic payloads
                 # and saved snapshots are still bound to the actual native bytes.
                 stored = s.read(out/name)
@@ -365,19 +400,23 @@ def read_result(output, *, total_seconds=None):
                         s.require(plan['pins'].get(str(s.ROOT/rel)) == digest, 'source lecteur natif enregistrée')
                 s.require(s.same(native_content(response), native_content(stored)), 'réponse native différente des preuves pinnées')
                 verified[key] = response
+            remaining(deadline)
             rebuilt = compose(plan, verified, result['payload']['errors'])
+            remaining(deadline)
             s.require(s.same(rebuilt, result['payload']), 'cohérence sémantique dossier')
             for name, raw in views(rebuilt).items():
+                remaining(deadline)
                 s.require(s.data(out/name) == raw, 'vue dérivée incohérente: ' + name)
             for c,a in zip(rebuilt['candidates'], plan['associations']):
                 s.require(s.data(out/c['profile_file']) == s.data(a['profile']), 'profil natif copié différent')
-            s.require(receipt['ok'] is rebuilt['execution_complete'], 'complétude du reçu')
-            boundary(plan)
+            s.require(receipt['candidate_complete'] is rebuilt['execution_complete'], 'complétude du reçu')
+            remaining(deadline); boundary(plan); remaining(deadline)
             for name,h in manifest['files'].items():
                 s.require(s.sha(out/name) == h, 'dossier modifié pendant relecture')
             s.verify_pins(terminal_pins)
             s.require({p.name for p in out.iterdir()} == expected_files, 'inventaire modifié pendant relecture')
-    except (ValueError, TimeoutError, OSError) as exc:
+        remaining(public_deadline)
+    except (Exception, KeyboardInterrupt) as exc:
         return dict(ok=False, status='unconfirmed', reason=str(exc), children=rereceipts, scope=SCOPE)
     return dict(ok=rebuilt['execution_complete'], status='verified' if rebuilt['execution_complete'] else 'partial',
                 semantic_verified=True, payload=rebuilt, children=rereceipts, scope=SCOPE)

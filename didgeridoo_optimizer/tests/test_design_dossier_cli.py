@@ -47,3 +47,16 @@ def test_real_cli_refused_native_proofs_retained_and_reread(tmp_path):
     assert p.returncode==1,p.stdout+p.stderr
     result=json.loads(p.stdout);assert result['status']=='partial' and result['semantic_verified']
     assert result['payload']['candidates'][0]['hard_status']=='unknown'
+
+
+def test_loaded_cli_refuses_source_mutation_before_admission(tmp_path,monkeypatch,capsys):
+    """Explicit simulated disk view; no shared source is modified."""
+    from tools import design_dossier as entry
+    job=synthetic_job(tmp_path);out=tmp_path/'out';original=s.data
+    def changed(path,limit=s.FILE_LIMIT):
+        raw=original(path,limit)
+        return raw+b'\n# simulated mutation\n' if path==entry.ENTRY else raw
+    monkeypatch.setattr(s,'data',changed)
+    assert entry.main(['--job',str(job),'--output-dir',str(out),'--dry-run'])==1
+    value=json.loads(capsys.readouterr().out)
+    assert not value['ok'] and 'import' in value['reason'] and not out.exists()
