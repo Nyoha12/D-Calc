@@ -183,6 +183,7 @@ def load_inputs(job_path):
         if s['configuration'] not in configurations: raise ValueError('Unknown generated configuration')
         path = _relative(base, s['template']); template, source = _source(path)
         rtcore.validate_request(template)
+        core.validate_steps_per_call(s, template)
         slots = dict(config='@CONFIG',design='@DESIGN',realization='@REALIZATION',evidence='@EVIDENCE') if scalar else SLOTS
         if template['case']['kind'] != ('saved_state' if scalar else 'saved') or any(template['case'][k] != v for k,v in slots.items()):
             raise ValueError('Native saved template requires explicit @CONFIG/@DESIGN/@MODEL binding slots')
@@ -231,6 +232,10 @@ def preflight(job_path, output_dir=None):
     return load_inputs(job_path)[1]
 
 
+def batched(plan):
+    return any('steps_per_call' in s for s in plan['job']['scenarios'])
+
+
 def check_plan(plan, *, reconstruct=True):
     if plan['context_sha256'] != digest({k:v for k,v in plan.items() if k!='context_sha256'}):
         raise ValueError('Plan context changed')
@@ -245,7 +250,7 @@ def check_plan(plan, *, reconstruct=True):
     raw, source = _source(plan['job_source']['path'])
     if digest(raw) != digest(plan['job']) or source != plan['job_source']:
         raise ValueError('Plan differs from original JOB bytes')
-    if reconstruct and ('starts' in raw['search'] or 'starts' in plan):
+    if reconstruct and ('starts' in raw['search'] or 'starts' in plan or batched(plan)):
         _, fresh = load_inputs(source['path'])
         # Producer inventories record ambient imports, not the reader's imports.
         # Keep their evidence and verify it, but compare calculation inputs only.
@@ -631,6 +636,156 @@ def _unplayed(plan):
     return rows
 
 
+def batch_receipt(receipt, kind, quota=0):
+    """Strict receipt types for the opt-in path, including unlaunched attempts."""
+    if (receipt['kind'] != kind or type(receipt['launched']) is not bool or
+            receipt['reaped'] is not True or type(receipt['steps_charged']) is not int or
+            receipt['steps_charged'] != (quota if receipt['launched'] else 0) or
+            (type(receipt['exit_code']) is not int if receipt['launched'] else receipt['exit_code'] is not None)):
+        raise ValueError('Batch child/reader receipt types or charge differ')
+
+
+def batch_reader_response(out, reader):
+    """Read at most the native 8 MiB log ceiling, including a growing file."""
+    path = report.local(out, reader['log'])
+    if path.stat().st_size > 8*MIB:
+        raise ValueError('Batch reader log quota')
+    with path.open('rb') as stream:
+        content = stream.read(8*MIB+1)
+    if len(content) > 8*MIB:
+        raise ValueError('Batch reader log quota')
+    try:
+        response = json.loads(content.decode().splitlines()[-1], object_pairs_hook=_pairs, parse_constant=_constant)
+        json.dumps(response, allow_nan=False)
+    except (ValueError, IndexError, UnicodeError, RecursionError) as exc:
+        raise ValueError('Batch reader log malformed or empty') from exc
+    if type(response) is not dict:
+        raise ValueError('Batch reader response must be an object')
+    return response
+
+
+def verify_batch_unit(scenario, unit, out, expected, *, native_read):
+    """Tie explicit call quotas to native evidence, including partial attempts."""
+    core.validate_steps_per_call(scenario, expected)
+    total = sum(p['steps'] for p in expected['plateaus'])
+    accepted = 0; previous = None; stopped = False; last = None; last_output = None
+    segments = unit.get('segments', []); pins = {}; closed = None
+    for segment in segments:
+        if stopped or accepted == total:
+            raise ValueError('Batch segment after terminal/failed attempt')
+        quota = min(scenario.get('steps_per_call',expected['budgets']['chunk_steps']), total-accepted)
+        for key, lo, hi in [('quota', quota, quota), ('accepted_before', accepted, accepted),
+                            ('accepted_after', accepted, accepted+quota)]:
+            rtcore.integer(segment[key], key, lo, hi)
+        local = report.local(out, segment['output'])
+        pins[str(local/'plan.json')] = rtreport.file_sha256(local/'plan.json')
+        rp = report.read_json(local/'plan.json')
+        rt.check_inputs(rp)
+        rtcore.integer(rp['steps_this_run'], 'native quota', quota, quota)
+        rtcore.integer(rp['accepted_before'], 'native before', accepted, accepted)
+        if (digest(rp['request']) != digest(expected) or rp['steps_this_run'] != quota or
+                rp['accepted_before'] != accepted or rp['resume'] != previous):
+            raise ValueError('Batch native plan/quota/resume differs')
+        child = segment['child']
+        batch_receipt(child, 'trajectory', quota)
+        stopped = child['exit_code'] != 0 or bool(child['timeout_or_error']) or child['launched'] is not True
+        after = segment['accepted_after']
+        if not (local/'result.json').is_file():
+            if after != accepted or 'reader' in segment or unit['verified']:
+                raise ValueError('Batch progress without native result')
+            stopped = True
+            continue
+        result = report.read_json(local/'result.json')
+        if child['launched'] is not True:
+            raise ValueError('Batch native result without launched child')
+        pins[str(local/'result.json')] = rtreport.file_sha256(local/'result.json')
+        rtcore.integer(result['accepted_steps'], 'native after', after, after)
+        rtcore.integer(result['new_steps_this_run'], 'native new steps', after-accepted, after-accepted)
+        if (digest(result['plan']) != digest(rp) or result['accepted_steps'] != after or
+                result['new_steps_this_run'] != after-accepted):
+            raise ValueError('Batch result/segment bounds differ')
+        chain = rtreport.inspect_checkpoint(rtreport.verify_reference(result['checkpoint']), expected_request=expected)
+        if (chain[-1][1]['context_sha256'] != rp['context_sha256'] or
+                chain[-1][1]['experiment']['payload']['accepted_steps'] != after):
+            raise ValueError('Batch checkpoint bounds differ')
+        tip = chain[-1][1]['experiment']['payload']
+        if digest(result['sums']) != digest(tip['sums']) or digest(result['events']) != digest(tip['events']):
+            raise ValueError('Batch result/checkpoint ledger differs')
+        if (local/'execution.completed.json').exists() or 'reader' in segment:
+            pins.update(report.batch_artifact_pins(local, result, child))
+        reader = segment.get('reader')
+        if reader is None:
+            if unit['verified']: raise ValueError('Batch reader missing')
+            stopped = True
+        else:
+            batch_receipt(reader, 'read')
+            stopped = (stopped or reader['exit_code'] != 0 or bool(reader['timeout_or_error']) or
+                       reader['launched'] is not True)
+            if not stopped:
+                response = batch_reader_response(out, reader)
+                if response.get('status') == 'unconfirmed':
+                    stopped = True
+                elif (response.get('read_confirmed') is not True or type(response.get('accepted_steps')) is not int or
+                        response.get('accepted_steps') != after or
+                        response.get('context_sha256') != rp['context_sha256']):
+                    raise ValueError('Batch fresh reader proof differs')
+        stopped = stopped or after <= accepted or result.get('reason') is not None
+        if after != accepted+quota and not stopped:
+            raise ValueError('Batch unexplained loss of progress')
+        accepted = after; previous = result['checkpoint']; last = rp; last_output = segment['output']
+    if unit['verified'] and (not segments or accepted != total or stopped):
+        raise ValueError('Batch unit falsely complete')
+    if unit.get('output') and (not segments or unit['output'] != last_output or
+            last is None or unit['context_sha256'] != last['context_sha256']):
+        raise ValueError('Batch final locator/context differs')
+    if native_read and last_output is not None:
+        closed = rtreport.read_result(report.local(out, last_output), last['context_sha256'])
+        if 'result' not in closed:
+            raise ValueError('Batch native evidence unconfirmed')
+        if unit['verified'] and not closed['ok']:
+            raise ValueError('Batch final native completion unconfirmed')
+    for path, sha in pins.items():
+        if rtreport.file_sha256(path) != sha:
+            raise ValueError('Batch artifact changed during reading')
+    return closed
+
+
+def verify_batch_counters(plan, rows, counters, children):
+    """Reconcile common expenditure with receipts, without resetting per start."""
+    if not batched(plan): return
+    expected = dict(candidates=len(rows), children=0, fits=0, trajectories=0,
+                    steps_charged=0, accepted_steps=0, static_units=0, reader_units=0)
+    receipts = []
+    for row in rows:
+        for unit in row['units']:
+            for segment in unit.get('segments', []):
+                receipts.append(segment['child'])
+                expected['accepted_steps'] += segment['accepted_after']-segment['accepted_before']
+                if 'reader' in segment and segment['reader'] not in children:
+                    raise ValueError('Batch reader absent from execution')
+    trajectories = [c for c in children if c['kind'] == 'trajectory']
+    if sorted(map(digest, receipts)) != sorted(map(digest, trajectories)):
+        raise ValueError('Batch trajectory receipts differ from execution')
+    for child in children:
+        rtcore.integer(child['steps_charged'], 'charged receipt', 0, rtcore.MAX_STEPS)
+        if child['launched'] is not True: continue
+        expected['children'] += 1
+        expected['steps_charged'] += child['steps_charged']
+        key = dict(fit='fits', trajectory='trajectories', static='static_units', read='reader_units')[child['kind']]
+        expected[key] += 1
+    for key, value in expected.items():
+        if type(counters[key]) is not int or counters[key] != value:
+            raise ValueError('Batch counter differs: '+key)
+    reserved = dict(fits=sum(c['kind']=='fit' for c in children), trajectories=len(trajectories),
+                    children=len(children), steps_charged=sum(s['quota'] for r in rows
+                    for u in r['units'] for s in u.get('segments', [])))
+    for key in ('fits', 'trajectories', 'steps_charged', 'children'):
+        value = counters['reserved'][key]
+        cap = plan['job']['budgets'].get('steps' if key == 'steps_charged' else key)
+        if type(value) is not int or value != reserved[key] or (cap is not None and value > cap):
+            raise ValueError('Batch reserved counter differs: '+key)
+
+
 def verify_candidate(plan, out, row, *, native_read):
     """Rebuild shared geometry and compare authoritative native scenario rows."""
     if 'starts' in plan:
@@ -675,7 +830,13 @@ def verify_candidate(plan, out, row, *, native_read):
         if [(r['configuration'],r['id'],r['role']) for r in observed] != definitions:
             raise ValueError('Missing static obligation')
     for s in plan['scenarios']:
+        batch_closed = None
         unit = next((u for u in row['units'] if u['scenario']==s['id']), None)
+        if unit and batched(plan):
+            design = report.local(out,row['configurations'][s['configuration']]['design'])
+            expected = instantiate(s['template'],plan['paths']['config'],design,
+                                   report.local(out,unit['fit'])/'model.json')
+            batch_closed = verify_batch_unit(s,unit,out,expected,native_read=native_read)
         if unit and unit['verified']:
             design = report.local(out,row['configurations'][s['configuration']]['design'])
             read_fit(report.local(out,unit['fit']), plan['job']['fit'], design, plan['paths']['config'])
@@ -687,7 +848,7 @@ def verify_candidate(plan, out, row, *, native_read):
                 if 'backend' in plan['job']['fit']:
                     from ..reporting.geometry_state import read_result as read_geometry
                     read_geometry(report.local(out,unit['fit']),config=plan['paths']['config'],design=design,recipe=plan['job']['fit'])
-                closed = rtreport.read_result(report.local(out,unit['output']), unit['context_sha256'])
+                closed = batch_closed if batched(plan) else rtreport.read_result(report.local(out,unit['output']), unit['context_sha256'])
                 if not closed['ok']: raise ValueError('Native scenario bundle unconfirmed')
                 native = closed['result']['analysis']['criteria']
                 expected_rows = core.played_rows(s['template'],native,s['configuration'],s['id'])
@@ -713,36 +874,81 @@ def instantiate(template, config, design, model):
     return value
 
 
-def state_trajectory(ep,dest,experiment,out,budget,children,plan):
+def state_trajectory(ep,dest,experiment,out,budget,children,plan,*,steps_per_call=None,progress=None):
     """Explicit native partial calls, preserving request and accepted checkpoints."""
     b=experiment['budgets'];total=sum(p['steps'] for p in experiment['plateaus'])
     accepted=0;resume=None;segments=[];unit=dict(verified=False,status='partial')
+    if steps_per_call is not None:
+        core.validate_steps_per_call(dict(steps_per_call=steps_per_call),experiment)
+        if progress is not None:
+            unit=progress
+            unit.update(verified=False,status='partial')
+        unit['segments']=segments
     while accepted<total:
         local=dest if not segments else dest.with_name(dest.name+f'-resume-{len(segments):03d}')
-        quota=min(b['chunk_steps'],total-accepted)
+        quota=min(b['chunk_steps'] if steps_per_call is None else steps_per_call,total-accepted)
         rp=rt.preflight(ep,local,resume=resume,steps_this_run=quota).as_dict()
         if rp['accepted_before']!=accepted: raise ValueError('Native resume counter mismatch')
         local.mkdir();rtreport.write_json(local/'plan.json',rp,budget_bytes=b['output_mib']*MIB)
-        value,child=launch('trajectory',dict(plan=rp),out,budget,children,seconds=min(175,b['child_seconds']),output_bytes=b['output_mib']*MIB,steps=quota)
+        launched_before=len(children)
+        try:
+            value,child=launch('trajectory',dict(plan=rp),out,budget,children,seconds=min(175,b['child_seconds']),output_bytes=b['output_mib']*MIB,steps=quota)
+        except (BudgetStop,ValueError,OSError) as exc:
+            if steps_per_call is not None and len(children)>launched_before:
+                got=accepted
+                if (local/'result.json').is_file():
+                    got=rtreport.read_json(local/'result.json')['accepted_steps']
+                    rtcore.integer(got,'partial accepted',accepted,accepted+quota)
+                    unit.update(output=str(local.relative_to(out)),context_sha256=rp['context_sha256'])
+                budget.counts['accepted_steps']+=got-accepted
+                segments.append(dict(output=str(local.relative_to(out)),accepted_before=accepted,
+                    accepted_after=got,quota=quota,child=children[-1]))
+                unit['reason']=str(exc)
+            raise
+        segment=dict(output=str(local.relative_to(out)),accepted_before=accepted,accepted_after=accepted,quota=quota,child=child)
+        if steps_per_call is not None:
+            segments.append(segment)
+            batch_receipt(child, 'trajectory', quota)
         check_plan(plan)
+        if steps_per_call is not None and not (local/'result.json').is_file():
+            unit.update(reason='No collected native result');break
         got=value.get('accepted_steps',accepted)
         if type(got) is not int or not accepted<=got<=accepted+quota: raise ValueError('Native accepted counter outside charged quota')
         budget.counts['accepted_steps']+=got-accepted
+        segment['accepted_after']=got
         if not (local/'result.json').is_file():
             unit.update(reason='No collected native result');break
         result=rtreport.read_json(local/'result.json')
+        if steps_per_call is not None:
+            rtcore.integer(result['accepted_steps'], 'native accepted result', got, got)
         rtreport.prepare_completion(local,dict(ok=value.get('ok') is True and child['exit_code']==0,
             status=value.get('status','partial'),children=[child],reason=value.get('reason')),b['output_mib']*MIB)
         rtreport.publish_completion(local)
-        closed,reader=launch('read',dict(kind='read',output=str(local)),out,budget,children,
-            seconds=min(175,plan['job']['budgets']['child_seconds']),output_bytes=MIB)
-        segments.append(dict(output=str(local.relative_to(out)),accepted_before=accepted,accepted_after=got,quota=quota,child=child,reader=reader))
+        if steps_per_call is not None:
+            unit.update(output=str(local.relative_to(out)),context_sha256=rp['context_sha256'],status=value.get('status','partial'))
+        readers_before=len(children)
+        try:
+            closed,reader=launch('read',dict(kind='read',output=str(local)),out,budget,children,
+                seconds=min(175,plan['job']['budgets']['child_seconds']),output_bytes=MIB)
+        except (BudgetStop,ValueError,OSError) as exc:
+            if steps_per_call is not None:
+                if len(children)>readers_before: segment['reader']=children[-1]
+                unit['reason']=str(exc)
+            raise
+        segment['reader']=reader
+        if steps_per_call is not None:
+            batch_receipt(reader, 'read')
+        if steps_per_call is None: segments.append(segment)
         unit.update(output=str(local.relative_to(out)),context_sha256=rp['context_sha256'],status=value.get('status','partial'),segments=segments)
         if child['exit_code']!=0 or child['timeout_or_error'] or reader['exit_code']!=0 or reader['timeout_or_error'] or closed.get('status')=='unconfirmed':
             unit.update(reason='Native child/reader unconfirmed');break
         # Partial native read is confirmed by its full semantic result, despite ok=False.
+        if steps_per_call is not None and type(closed.get('accepted_steps')) is not int:
+            raise ValueError('Batch reader accepted_steps must be an integer')
         if closed.get('accepted_steps')!=got or got<=accepted:
             unit.update(reason='No confirmed native progress');break
+        if steps_per_call is not None and got!=accepted+quota and result.get('reason') is None:
+            unit.update(reason='Native unexplained loss of progress');break
         accepted=got
         if accepted==total:
             unit.update(verified=closed.get('ok') is True,criteria=closed.get('criteria',[]));break
@@ -762,7 +968,7 @@ def execute(plan, out, budget, children):
         if history:
             budget.witness = report.summary(witness)
             best_saved = report.summary(best); witness_saved = report.summary(witness)
-        if 'starts' in plan:
+        if 'starts' in plan or batched(plan):
             if history or current is None:
                 saved_history = [report.summary(r) for r in history]
                 saved_decisions = copy.deepcopy(list(decisions))
@@ -770,7 +976,8 @@ def execute(plan, out, budget, children):
         sequence += 1
         report.checkpoint(out,sequence,dict(plan=plan, producer=plan['producer'], current=report.summary(current),
             best=best_saved, witness=witness_saved, history=[report.summary(r) for r in history],
-            counters=budget.snapshot(), units=acquired, decisions=list(decisions)), **kw)
+            counters=budget.snapshot(), units=acquired, decisions=list(decisions),
+            **(dict(children=copy.deepcopy(children)) if batched(plan) else {})), **kw)
 
     def evaluate(values, alternative, index, stage, *, start_origin=None):
         nonlocal current
@@ -872,7 +1079,9 @@ def execute(plan, out, budget, children):
                         ep=folder/f'plan-{s["id"]}.json'; report.write_json(ep,experiment, **kw)
                         dest=folder/f'experiment-{s["id"]}'
                         if 'backend' in plan['job']['fit']:
-                            unit.update(state_trajectory(ep,dest,experiment,out,budget,children,plan))
+                            options = (dict(steps_per_call=s.get('steps_per_call',experiment['budgets']['chunk_steps']),progress=unit)
+                                       if batched(plan) else {})
+                            unit.update(state_trajectory(ep,dest,experiment,out,budget,children,plan,**options))
                             if unit.get('verified'):
                                 replacement=core.played_rows(s['template'],unit.pop('criteria'),cid,s['id'])
                                 row['criteria']=[r for r in row['criteria'] if r['scenario']!=s['id']]+replacement
@@ -925,7 +1134,7 @@ def execute(plan, out, budget, children):
     search=core.poll(plan['variables'],plan['initial'],plan['alternatives'],plan['job']['search'],
                      plan['job']['budgets']['candidates'],evaluate,descriptive=no_hard,checkpoint=save,
                      starts=plan.get('starts'))
-    if 'starts' in plan:
+    if 'starts' in plan or batched(plan):
         verify_search(plan, search)
         save(search['history'], search['best'], search['witness'], search['decisions'])
     check_plan(plan)
@@ -939,6 +1148,7 @@ def execute(plan, out, budget, children):
     result=dict(schema=report.SCHEMA,plan=plan,status='complete' if complete else 'partial',
                 conforming=search['witness'] is not None,search=search,counters=budget.snapshot(),
                 checkpoint='witness',global_resume='unsupported',physical_validation=False)
+    verify_batch_counters(plan, search['history'], result['counters'], children)
     result['request_fully_covered'] = (bool(search['witness']) and not plan['unsupported'] and
         all(r['status'] in ('pass','satisfied','fail','violated') for r in search['witness']['criteria']))
     budget.check()

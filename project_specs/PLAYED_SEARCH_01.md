@@ -278,3 +278,18 @@ Voir [SEEDED_SEARCH_01.md](SEEDED_SEARCH_01.md) pour le schéma strict, la fidé
 exacte des profils, la provenance contrôlée par les lecteurs, les limites de
 compatibilité par sources et les exemples publics scalar. Aucune direction couplée
 n'est générée, aucun ajustement adaptatif ni réaccord n'est ajouté.
+
+## Extension opt-in TRAJECTORY-BATCH-01
+
+Pour `certified_scalar_v1` / `saved_state`, un scénario peut ajouter
+`steps_per_call: 2400` si son `chunk_steps` vaut 1200. Cet entier strict doit être
+un multiple positif du chunk, au moins égal au chunk et au plus égal à 72 000.
+Chaque appel reçoit `min(steps_per_call, remaining)`, même si la déclaration
+excède le total ; le dernier quota peut être plus court. Sans ce champ, le
+comportement et les champs historiques sont conservés. Le template scientifique,
+les checkpoints internes et les plafonds ne changent pas. Voir
+[TRAJECTORY_BATCH_01.md](TRAJECTORY_BATCH_01.md) pour budgets, preuves et limites.
+Dans ce mode, la vérification finale lit une fois la dernière chaîne native par
+unité et réutilise ses critères. Les traces intermédiaires restent contrôlées
+(plans, bornes, reçus, checkpoints, provenance et clôture/intégrité), sans verdict
+musical indépendant. Une preuve partielle ne devient pas une unité conforme.
