@@ -24,6 +24,53 @@ FIELDS = ['candidate', 'kind', 'configuration', 'scenario', 'window', 'id', 'obs
           'margin_unit', 'normalization_scale', 'violation_normalized', 'reason']
 
 
+def batch_artifact_pins(out, result, child):
+    """Check local native closure/integrity without a semantic trajectory read.
+
+    Only the terminal native reader determines the normative musical criteria.
+    Earlier publications remain intact traces, including their observation files.
+    """
+    native = register_report
+    out = native.safe_path(out)
+    names = ('manifest.json', 'execution.json', 'execution.closed.json', 'execution.completed.json')
+    pins = {str(out/name): native.file_sha256(out/name) for name in names}
+    execution = native.read_json(out/'execution.json')
+    marker = native.read_json(out/'execution.completed.json')
+    execution_sha = pins[str(out/'execution.json')]
+    if marker != dict(schema='dcalc.register_target.completion.v1', execution_sha256=execution_sha,
+                      closure_sha256=pins[str(out/'execution.closed.json')]):
+        raise ValueError('Batch native terminal marker differs')
+    if native.read_json(out/'execution.closed.json') != dict(execution_sha256=execution_sha):
+        raise ValueError('Batch native closure differs')
+    if digest(execution['children']) != digest([child]):
+        raise ValueError('Batch native child receipt differs')
+    if type(execution['ok']) is not bool or (execution['ok'] and
+            (child['exit_code'] != 0 or child['launched'] is not True or child['timeout_or_error'])):
+        raise ValueError('Batch native execution success differs')
+    manifest = native.read_json(out/'manifest.json')
+    if pins[str(out/'manifest.json')] != execution['manifest_sha256']:
+        raise ValueError('Batch native manifest differs')
+    if not {'plan.json', 'result.json', 'criteria.csv', 'controls.csv', 'events.csv', 'summary.txt'} <= set(manifest):
+        raise ValueError('Batch native artifact missing')
+    for name, sha in manifest.items():
+        if Path(name).name != name or native.file_sha256(out/name) != sha:
+            raise ValueError('Batch native artifact integrity')
+        pins[str(out/name)] = sha
+    if result['schema'] != native.SCHEMA:
+        raise ValueError('Batch native result schema')
+    request = result['plan']['request']; analysis = result['analysis']
+    if set(analysis['windows']) != {w['id'] for w in request['windows']}:
+        raise ValueError('Batch native observation references')
+    for wid, name in analysis['windows'].items():
+        if name != 'window-'+wid+'.json' or name not in manifest:
+            raise ValueError('Batch uncommitted observation')
+        native.read_json(out/name)
+    phase = 'phase.json' if request['observation']['phase'] is not None else None
+    if analysis['phase_file'] != phase or (phase is not None and phase not in manifest):
+        raise ValueError('Batch uncommitted PHASE')
+    return pins
+
+
 def sources():
     manifest = register_report.sources()
     for name in NEW_SOURCES:
@@ -210,18 +257,33 @@ def read_checkpoint(out):
     if digest(payload) != record['sha256'] or payload['solver_state_complete'] is not False:
         raise ValueError('Invalid witness checkpoint')
     verify_sources(payload['producer']['loaded_sources_sha256'])
-    from ..pipeline.played_search import check_plan, verify_search, verify_candidate
+    from ..pipeline.played_search import (check_plan, verify_search, verify_candidate, batched,
+                                         instantiate, verify_batch_unit, verify_batch_counters)
     check_plan(payload['plan'])
     for unit in payload.get('units', []):
         if unit.get('file') and file_sha256(local(out, unit['file'])) != unit['sha256']:
             raise ValueError('Checkpoint unit changed')
-    if 'starts' in payload['plan']:
-        verify_starts(out, payload['plan'])
+    if 'starts' in payload['plan'] or batched(payload['plan']):
+        if 'starts' in payload['plan']: verify_starts(out, payload['plan'])
         verify_search(payload['plan'], payload, prefix=True, current=payload.get('current'))
+        rows = []
         for row in payload['history']:
             full = read_json(local(out, row['file']))
             if digest(summary(full)) != digest(row): raise ValueError('Checkpoint candidate summary differs')
             verify_candidate(payload['plan'], out, full, native_read=False)
+            rows.append(full)
+        if batched(payload['plan']):
+            current = payload.get('current')
+            if current is not None:
+                for scenario in payload['plan']['scenarios']:
+                    unit = next((u for u in current['units'] if u['scenario']==scenario['id']),None)
+                    if unit:
+                        expected = instantiate(scenario['template'],payload['plan']['paths']['config'],
+                            local(out,current['configurations'][scenario['configuration']]['design']),
+                            local(out,unit['fit'])/'model.json')
+                        verify_batch_unit(scenario,unit,out,expected,native_read=False)
+                rows.append(current)
+            verify_batch_counters(payload['plan'],rows,payload['counters'],payload['children'])
         check_plan(payload['plan'])
     return payload
 
@@ -254,7 +316,7 @@ def read_result(out, expected_context=None):
             raise ValueError('Result plan mismatch')
         if expected_context is not None and plan['context_sha256'] != expected_context:
             raise ValueError('Unexpected context')
-        from ..pipeline.played_search import check_plan, verify_candidate, verify_search
+        from ..pipeline.played_search import check_plan, verify_candidate, verify_search, verify_batch_counters
         check_plan(plan)
         if 'starts' in plan:
             verify_starts(out, plan)
@@ -273,6 +335,7 @@ def read_result(out, expected_context=None):
                 raise ValueError('Candidate summary mismatch')
             verify_candidate(plan, out, row, native_read=True)
             full_history.append(row)
+        verify_batch_counters(plan, full_history, result['counters'], execution['children'])
         if 'starts' in plan:
             complete_rows = dict(result, search=dict(result['search'], history=full_history))
             for name, rows, fields in export_tables(complete_rows):

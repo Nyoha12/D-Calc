@@ -81,7 +81,11 @@ def validate_job(raw):
         raise ValueError('1..scenarios budget prescribed scenarios required')
     ids = set()
     for scenario in scenarios:
-        obj(scenario, {'id', 'configuration', 'template'}, 'scenario', {'id', 'configuration', 'template'})
+        obj(scenario, {'id', 'configuration', 'template', 'steps_per_call'}, 'scenario', {'id', 'configuration', 'template'})
+        if 'steps_per_call' in scenario:
+            integer(scenario['steps_per_call'], 1, rt.MAX_STEPS, 'steps_per_call')
+            if type(raw['fit']) is not dict or raw['fit'].get('backend') != 'certified_scalar_v1':
+                raise ValueError('steps_per_call requires certified_scalar_v1 / saved_state')
         ident = identifier(scenario['id'], 'scenario.id')
         identifier(scenario['configuration'], 'configuration')
         if ident in ids:
@@ -89,6 +93,17 @@ def validate_job(raw):
         ids.add(ident)
     validate_fit(raw['fit'])
     return unsupported
+
+
+def validate_steps_per_call(scenario, template):
+    """Optional call quota only; never change the native scientific request."""
+    if 'steps_per_call' not in scenario:
+        return
+    quota = scenario['steps_per_call']
+    integer(quota, 1, rt.MAX_STEPS, 'steps_per_call')
+    chunk = template['budgets']['chunk_steps']
+    if template['case']['kind'] != 'saved_state' or quota < chunk or quota % chunk:
+        raise ValueError('steps_per_call requires saved_state and a positive multiple of chunk_steps')
 
 
 def validate_fit(fit):
