@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import time
 
 import pytest
 
@@ -38,11 +39,22 @@ def scientific(out):
 def test_fresh_no_session_whole_and_two_pauses(job,tmp_path,mode,api,record_property):
     # All proposals violate a real geometric hard, preventing any tube fit.
     change(job.parent/'request.yaml',lambda r:r['criteria'][0].update(bounds=[dict(value=88.,unit='cm'),dict(value=89.,unit='cm')]))
+    if mode=='poll':
+        # Explicit static-only fixture, defined before any run. Unacquired
+        # played observations cannot certify feasibility or rank as hard rows.
+        # Keep native screening and verdicts; do not invent played results.
+        change(job.parent/'experiment.json',lambda r:[c.update(role='observe') for c in r['criteria']])
     third=json.loads((job.parent/'long_wide.json').read_text());third['segments'][0]['length_cm']=95.
     write(job.parent/'third.json',third)
     change(job,lambda r:(r['search']['starts'].update(mode=mode,profiles=r['search']['starts']['profiles']+[
         dict(id='duplicate',design='short_wide.json'),dict(id='third',design='third.json')]),
-        r['search'].update(normalized_steps=[.5,.25]),r['budgets'].update(candidates=4)))
+        r['search'].update(normalized_steps=[.5,.25],directions=[1,-1]),
+        r['budgets'].update(candidates=8 if mode=='poll' else 4)))
+    # Persist all prepared inputs before the first fresh process, and ensure
+    # every continuation uses these exact bytes (no retargeting between runs).
+    inputs={p.name:report.file_sha256(p) for p in job.parent.iterdir() if p.is_file()}
+    write(tmp_path/'fixture-prepared.json',dict(prepared_ns=time.time_ns(),mode=mode,
+        nature='native geometric rejection; no played conformity',inputs=inputs))
     outputs=[]
     for label,args in [('plain',()),('whole',('--session',)),('split',('--session','--pause-after',1))]:
         out=tmp_path/label;p,r=invoke(job,out,*args,api=api)
@@ -71,14 +83,26 @@ def test_fresh_no_session_whole_and_two_pauses(job,tmp_path,mode,api,record_prop
             assert again.returncode==2 and 'Terminal' in v['reason']
         counters=report.read_json(out/'result.json')['counters']
         assert counters['candidates']==counters['static_units'] and counters['fits']==counters['steps_charged']==0
+        assert counters['candidates']==(8 if mode=='poll' else 3)
+        assert counters['trajectories']==counters['accepted_steps']==counters.get('fit_attempts',0)==0
         record_property(label+'_candidates',counters['candidates'])
+    assert all(report.file_sha256(job.parent/name)==sha for name,sha in inputs.items())
     assert outputs[0]==outputs[1]==outputs[2]
+    assert not outputs[0]['conforming'] and not outputs[0]['covered']
     decisions=outputs[0]['search']['decisions']
     assert any(d['action']=='skip_duplicate' for d in decisions)
     if mode=='poll':
         assert any(r['stage']=='coordinate_poll' for r in outputs[0]['rows'])
         assert any(d['action']=='skip_bounds' for d in decisions)
         assert sum(d['action']=='select' for d in decisions)>1
+        assert any(d['action']=='select' and d['stage']=='coordinate_poll' for d in decisions)
+        # At step .5 the short_wide anchor improves from .93 to .91 m.
+        # Its .25 diameter neighbor must therefore use .91, not the old .93.
+        assert any(r['stage']=='coordinate_poll' and r['start_origin']['id']=='short_wide'
+                   and r['variables_si']==pytest.approx([.91,.03375]) for r in outputs[0]['rows'])
+        assert any(d['action']=='skip_bounds' and d['step']==.25 and d['variable']=='length'
+                   and d['variables_si']==pytest.approx([.90,.03125]) for d in decisions)
+        record_property('poll_decisions',json.dumps(decisions))
 
 
 def test_cli_strict_modes_before_destination(job,tmp_path):
