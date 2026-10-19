@@ -71,7 +71,11 @@ def batch_artifact_pins(out, result, child):
     return pins
 
 
+_IMPORTED_SEARCH_SOURCES = {name: file_sha256(ROOT/name) for name in NEW_SOURCES}
+
+
 def sources():
+    verify_sources(_IMPORTED_SEARCH_SOURCES)
     manifest = register_report.sources()
     for name in NEW_SOURCES:
         manifest[name] = file_sha256(ROOT/name)
@@ -221,7 +225,9 @@ def export(out, result, **kw):
              'Le fit et le calcul courant ont des identités distinctes ; modèles neufs par contexte exact.',
              'Pas d’optimum global, de preuve d’impossibilité, de garantie continue ou physiologique.',
              'Paramètres labiaux à calibrer ; aucune validation matérielle A–E.',
-             'Checkpoint = témoin et compteurs ; reprise globale unsupported. Les reprises natives gardent leur portée.',
+             ('Session explicite terminée ; frontières de candidats conservées, budgets cumulés.'
+              if saved.get('global_resume') == 'explicit_session' and saved['status'] == 'complete' else
+              'Checkpoint = témoin et compteurs ; reprise globale unsupported. Les reprises natives gardent leur portée.'),
              'Voir criteria.csv pour valeurs SI, résidus signés, cents et marges, et les bundles natifs liés.']
     lines.extend('Non couvert : '+s for s in saved['plan']['unsupported'])
     write_bytes(out/'summary.txt', ('\n'.join(lines)+'\n').encode(), **kw)
@@ -288,7 +294,7 @@ def read_checkpoint(out):
     return payload
 
 
-def read_result(out, expected_context=None):
+def read_result(out, expected_context=None, *, _session_checked=False):
     """Synchronous reader: native trajectory reader may allocate/eigensolve.
 
     A caller must bound this read like any native scientific read. No fits or
@@ -296,6 +302,11 @@ def read_result(out, expected_context=None):
     """
     try:
         out = safe_path(out)
+        if (out/'session.json').exists() and not _session_checked:
+            value = read_session(out)
+            if expected_context is not None and value.get('result', {}).get('plan', {}).get('context_sha256') != expected_context:
+                raise ValueError('Unexpected context')
+            return value
         execution = read_json(out/'execution.json')
         marker = dict(schema='dcalc.played_search.completion.v1',
             execution_sha256=file_sha256(out/'execution.json'), closure_sha256=file_sha256(out/'execution.closed.json'))
@@ -333,7 +344,7 @@ def read_result(out, expected_context=None):
             row = read_json(local(out, summary_row['file']))
             if (digest(summary(row)) != digest(summary_row) if 'starts' in plan else summary(row) != summary_row):
                 raise ValueError('Candidate summary mismatch')
-            verify_candidate(plan, out, row, native_read=True)
+            verify_candidate(plan, out, row, native_read=not _session_checked)
             full_history.append(row)
         verify_batch_counters(plan, full_history, result['counters'], execution['children'])
         if 'starts' in plan:
@@ -346,3 +357,161 @@ def read_result(out, expected_context=None):
                     execution=execution)
     except (ValueError, OSError, KeyError, TypeError) as exc:
         return dict(ok=False, status='unconfirmed', conforming=False, reason=str(exc))
+
+
+# Session records are separate from historical witness checkpoints. All names
+# are exclusive creations; interruption leaves evidence, never a rollback.
+SESSION_SCHEMA = 'dcalc.played_search.session.v1'
+
+
+def session_write(path, value, **kw):
+    """One append-only record, including failed/incomplete writes in inventory."""
+    content = (json.dumps(value, sort_keys=True, indent=2, allow_nan=False)+'\n').encode()
+    if len(content) > 4*1024**2: raise ValueError('Session record exceeds 4 MiB')
+    path = safe_path(path, exists=False)
+    if size(kw['root'])+len(content) > kw['limit']: raise ValueError('Session storage budget')
+    with path.open('xb') as stream:
+        stream.write(content); stream.flush(); os.fsync(stream.fileno())
+    fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+    try: os.fsync(fd)
+    finally: os.close(fd)
+
+
+def session_inventory(out):
+    """Include native pending aliases too; no unaccounted later acquisition."""
+    import stat
+    files = {}
+    for path in sorted(Path(out).rglob('*')):
+        safe_path(path)
+        mode = path.stat().st_mode
+        if stat.S_ISDIR(mode):
+            files[path.relative_to(out).as_posix()] = 'directory'
+            continue
+        if not stat.S_ISREG(mode): raise ValueError('Session requires regular files')
+        maximum = (4 if path.suffix == '.json' else 8)*1024**2
+        files[path.relative_to(out).as_posix()] = file_sha256(path, maximum=maximum)
+        if len(files) > 16000: raise ValueError('Session file inventory limit')
+    return files
+
+
+def session_lock(out, *, shared=False):
+    """Kernel lock on the directory, held only by the current invocation."""
+    import contextlib
+    import fcntl
+    @contextlib.contextmanager
+    def locked():
+        path = safe_path(out)
+        fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            try: fcntl.flock(fd, (fcntl.LOCK_SH if shared else fcntl.LOCK_EX) | fcntl.LOCK_NB)
+            except BlockingIOError as exc: raise ValueError('Session already has an active writer/reader') from exc
+            yield
+        finally: os.close(fd)
+    return locked()
+
+
+def inspect_session(out, *, resume=None, _active_start=None):
+    """Bounded metadata/hash admission, no models, TMM, fitting or steps."""
+    from ..pipeline.played_search import check_plan, verify_search, session_scope, verify_session_counters
+    out = safe_path(out)
+    header = read_json(out/'session.json'); plan = read_json(out/'plan.json')
+    if header != dict(schema=SESSION_SCHEMA, output=str(out), context_sha256=plan['context_sha256']):
+        raise ValueError('Session directory/identity differs; relocated branches unsupported')
+    session_scope(plan); check_plan(plan); verify_starts(out, plan)
+    starts = sorted(out.glob('invocation-*.json')); points = sorted(out.glob('session-*.json'))
+    if _active_start is not None: starts = [p for p in starts if p.name != _active_start]
+    if not points or len(starts) != len(points):
+        raise ValueError('Unclosed invocation: active/unknown cost; no older boundary fallback')
+    if len(points) > plan['job']['budgets']['candidates']+1:
+        raise ValueError('Session generation limit')
+    if resume is not None and safe_path(resume) != points[-1]:
+        raise ValueError('Stale session generation; latest explicit point required')
+    actual = session_inventory(out)
+    if _active_start is not None: actual.pop(_active_start)
+    prior = None; elapsed = 0.; previous_rows = []; latest = None
+    for number, (start_path, point_path) in enumerate(zip(starts, points), 1):
+        if start_path.name != f'invocation-{number:05d}.json' or point_path.name != f'session-{number:05d}.json':
+            raise ValueError('Session generation gap')
+        started = read_json(start_path); envelope = read_json(point_path); point = envelope['payload']
+        if file_sha256(out/f'boundary-{number:05d}.json') != file_sha256(point_path):
+            raise ValueError('Session boundary publication unconfirmed')
+        if envelope['sha256'] != digest(point) or type(point['generation']) is not int or point['generation'] != number:
+            raise ValueError('Session point checksum/generation differs')
+        if point['previous'] != prior or started['previous'] != prior or type(started['generation']) is not int or started['generation'] != number:
+            raise ValueError('Session ancestry differs')
+        if point['invocation_sha256'] != file_sha256(start_path): raise ValueError('Invocation receipt differs')
+        if started['schema'] != SESSION_SCHEMA or started['job_source'] != plan['job_source']:
+            raise ValueError('Invocation context differs')
+        verify_sources(started['producer']['loaded_sources_sha256'])
+        if started['producer']['versions'] != versions(): raise ValueError('Invocation versions differ')
+        duration = point['active_seconds']; charged = point['charged_seconds']
+        if (type(duration) not in (int,float) or duration < 0 or type(charged) not in (int,float) or
+                charged != duration+15 or point['closure_reserved_seconds'] != 15 or
+                duration != point['accounted_monotonic']-started['started_monotonic']):
+            raise ValueError('Session active-time accounting differs')
+        elapsed += charged
+        result = point['result']
+        if result['status'] not in ('paused','complete') or point['publication'] != ('paused' if result['status']=='paused' else 'final'):
+            raise ValueError('Session publication state differs')
+        if result['status']=='complete' and result['search']['termination']=='session_paused':
+            raise ValueError('Pause is not a complete result')
+        if digest(result['plan']) != digest(plan) or result['counters']['elapsed_seconds'] != elapsed:
+            raise ValueError('Session plan/cumulative time differs')
+        history = result['search']['history']
+        if digest(history[:len(previous_rows)]) != digest(previous_rows): raise ValueError('Session prefix changed')
+        if prior is not None and latest['result']['status'] != 'paused': raise ValueError('Terminal session reopened')
+        if not len(previous_rows) < len(history): raise ValueError('Session did not acquire a new candidate')
+        quota = started['pause_after']
+        if quota is not None and (type(quota) is not int or not 1 <= quota <= 16 or len(history)-len(previous_rows) > quota):
+            raise ValueError('Invocation pause quota differs')
+        verify_search(plan, result['search'], session=True)
+        if result['status'] == 'paused' and (result['search']['termination'] != 'session_paused' or
+                quota is None or len(history)-len(previous_rows) != quota):
+            raise ValueError('Invalid pause boundary')
+        verify_session_counters(plan, history, result['counters'], point['children'])
+        if [c['session_generation'] for c in point['children'] if 'session_generation' in c] != list(range(2, number+1)):
+            raise ValueError('Session admission receipts/generation differ')
+        if any(actual.get(name) != sha for name,sha in point['files'].items()):
+            raise ValueError('Session immutable artifact differs')
+        prior = dict(file=point_path.name, sha256=file_sha256(point_path)); previous_rows = history; latest = point
+    if set(actual) != set(latest['files']) | {points[-1].name, f'boundary-{len(points):05d}.json'}:
+        raise ValueError('Unaccounted session acquisition/publication after latest point')
+    if size(out) > plan['job']['budgets']['output_mib']*1024**2: raise ValueError('Session storage exhausted')
+    if latest['result']['status'] == 'paused' and any((out/name).exists() for name in ('result.json','execution.json','execution.completed.json')):
+        raise ValueError('Pause cannot publish final results')
+    check_plan(plan)
+    return dict(point=latest, reference=prior, plan=plan)
+
+
+def read_session(out, *, resume=None, _locked=False):
+    """Read full native evidence once per candidate, without new science."""
+    try:
+        out = safe_path(out)
+        if not _locked:
+            with session_lock(out, shared=True):
+                return read_session(out, resume=resume, _locked=True)
+        value = inspect_session(out, resume=resume)
+        from ..pipeline.played_search import load_inputs, verify_candidate, verify_session_state, check_plan
+        admitted = load_inputs(value['plan']['job_source']['path'])
+        rows = []
+        for row in value['point']['result']['search']['history']:
+            full = read_json(local(out, row['file']))
+            if digest(summary(full)) != digest(row): raise ValueError('Session candidate summary differs')
+            verify_candidate(value['plan'], out, full, native_read=True, admitted=admitted, session=True)
+            rows.append(full)
+        verify_session_state(value, out, rows)
+        check_plan(value['plan'])
+        point = value['point']; result = point['result']
+        if result['status'] == 'complete':
+            closed = read_result(out, _session_checked=True)
+            if not closed['ok'] or digest(closed['result']) != digest(result):
+                raise ValueError('Final session publication differs')
+        # Detect mutation during semantic reading too, without another native read.
+        if session_inventory(out) != dict(point['files'], **{value['reference']['file']:value['reference']['sha256'],
+                f"boundary-{point['generation']:05d}.json":value['reference']['sha256']}):
+            raise ValueError('Session changed during reading')
+        return dict(ok=result['status'] in ('paused','complete'), status=result['status'],
+                    conforming=result['conforming'], resumable=result['status']=='paused',
+                    result=result, resume_point=str(out/value['reference']['file']),generation=point['generation'])
+    except (ValueError,OSError,KeyError,TypeError,RecursionError) as exc:
+        return dict(ok=False,status='unconfirmed',conforming=False,resumable=False,reason=str(exc))

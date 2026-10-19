@@ -20,9 +20,13 @@ def main(argv=None):
     parser.add_argument('--dry-run',action='store_true')
     parser.add_argument('--worker',action='store_true',help=argparse.SUPPRESS)
     parser.add_argument('--read-result')
+    parser.add_argument('--session', action='store_true', help='Create a new candidate-boundary session')
+    parser.add_argument('--resume', help='Latest explicit session-NNNNN.json point')
+    parser.add_argument('--pause-after', type=int, help='Pause before the next candidate after N new acquisitions')
     args=parser.parse_args(argv)
     try:
-        if (args.worker and (args.job or args.output_dir or args.dry_run or args.read_result)) or (args.read_result and (args.job or args.output_dir or args.dry_run)):
+        session_options = args.session or args.resume is not None or args.pause_after is not None
+        if (args.worker and (args.job or args.output_dir or args.dry_run or args.read_result or session_options)) or (args.read_result and (args.job or args.output_dir or args.dry_run or session_options)):
             raise ValueError('Exclusive CLI modes')
         if OWNED and 'numpy' not in sys.modules:
             for key in ('OPENBLAS_NUM_THREADS','OMP_NUM_THREADS','MKL_NUM_THREADS','NUMEXPR_NUM_THREADS'):os.environ[key]='1'
@@ -42,8 +46,10 @@ def main(argv=None):
             result=worker(json.loads(raw,object_pairs_hook=_pairs,parse_constant=_constant))
         else:
             if not args.job or not args.output_dir: parser.error('--job et --output-dir requis')
-            result=run(args.job,args.output_dir,dry_run=args.dry_run)
+            result=run(args.job,args.output_dir,dry_run=args.dry_run,session=args.session,
+                       resume=args.resume,pause_after=args.pause_after)
         print(json.dumps(result,allow_nan=False,ensure_ascii=False))
+        if result.get('ok') and result.get('status')=='paused': return 3
         return 0 if result.get('ok') or (args.worker and result.get('read_confirmed') is True) else 1
     except (Exception,KeyboardInterrupt) as exc:
         print(json.dumps(dict(ok=False,status='refused',reason=type(exc).__name__+': '+str(exc)),allow_nan=False))

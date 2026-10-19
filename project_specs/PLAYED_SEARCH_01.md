@@ -293,3 +293,15 @@ Dans ce mode, la vérification finale lit une fois la dernière chaîne native p
 unité et réutilise ses critères. Les traces intermédiaires restent contrôlées
 (plans, bornes, reçus, checkpoints, provenance et clôture/intégrité), sans verdict
 musical indépendant. Une preuve partielle ne devient pas une unité conforme.
+
+## Extension opt-in SEARCH-RESUME-01
+
+Les nouvelles recherches fixes à départs explicites et backend scalar peuvent
+utiliser `run(..., session=True, pause_after=N)`, puis
+`run(..., resume=dernier_point, pause_after=N)` dans un processus neuf.
+Les options CLI correspondantes sont `--session`, `--pause-after` et `--resume`.
+Le code CLI 3 distingue une pause confirmée du résultat final complet (0).
+`read_session` et `--read-result` vérifient ces dossiers. Les anciens checkpoints
+« témoin » conservent leur portée et ne deviennent pas reprenables. Voir
+[SEARCH_RESUME_01.md](SEARCH_RESUME_01.md) pour la frontière confirmée, les refus,
+les coûts cumulatifs et la réserve de clôture facturée par invocation.

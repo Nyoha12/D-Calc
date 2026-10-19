@@ -237,6 +237,7 @@ def batched(plan):
 
 
 def check_plan(plan, *, reconstruct=True):
+    report.verify_sources(LOADED_SOURCES)
     if plan['context_sha256'] != digest({k:v for k,v in plan.items() if k!='context_sha256'}):
         raise ValueError('Plan context changed')
     if plan['producer']['versions'] != report.versions(): raise ValueError('Versions changed')
@@ -267,7 +268,7 @@ def check_plan(plan, *, reconstruct=True):
     report.verify_sources(manifest)
 
 
-def verify_search(plan, search, *, prefix=False, current=None):
+def verify_search(plan, search, *, prefix=False, current=None, session=False):
     """Replay only scheduling/selection using recorded rows; no scientific work."""
     if 'starts' not in plan:
         return
@@ -304,7 +305,7 @@ def verify_search(plan, search, *, prefix=False, current=None):
         # Its reason is recorded by the scheduler, never replaced by a row.
         reason = search['termination']
         if rebuilt['termination'] != 'recorded_prefix' or reason not in (
-                'signal_interrupted', 'total_seconds', 'total_output'):
+                'signal_interrupted', 'total_seconds', 'total_output') + (('session_paused',) if session else ()):
             raise ValueError('Search decisions/termination differ from native sequence')
         for decision in rebuilt['decisions']:
             if decision.get('reason') == 'recorded_prefix': decision['reason'] = reason
@@ -426,6 +427,18 @@ def static_unit(task):
 
 
 def worker(task):
+    if task['kind']=='read_session_prefix':
+        out=report.safe_path(task['output']); path=report.local(out,task['reference']['file'])
+        if report.file_sha256(path)!=task['reference']['sha256']: raise ValueError('Session point changed')
+        point=report.read_json(path)['payload']; plan=point['result']['plan']
+        check_plan(plan); admitted=load_inputs(plan['job_source']['path']); rows=[]
+        for row in point['result']['search']['history']:
+            full=report.read_json(report.local(out,row['file']))
+            if digest(report.summary(full))!=digest(row): raise ValueError('Session candidate summary differs')
+            verify_candidate(plan,out,full,native_read=True,admitted=admitted,session=True)
+            rows.append(full)
+        verify_session_state(dict(plan=plan,point=point),out,rows);check_plan(plan)
+        return dict(ok=True,status='prefix_verified',prefix_sha256=task['reference']['sha256'],candidates=len(rows))
     if task['kind']=='read_geometry':
         from ..reporting.geometry_state import read_result,read_payload
         reader=read_payload if task.get('pending') is True else read_result
@@ -750,9 +763,9 @@ def verify_batch_unit(scenario, unit, out, expected, *, native_read):
     return closed
 
 
-def verify_batch_counters(plan, rows, counters, children):
+def verify_batch_counters(plan, rows, counters, children, *, force=False):
     """Reconcile common expenditure with receipts, without resetting per start."""
-    if not batched(plan): return
+    if not batched(plan) and not force: return
     expected = dict(candidates=len(rows), children=0, fits=0, trajectories=0,
                     steps_charged=0, accepted_steps=0, static_units=0, reader_units=0)
     receipts = []
@@ -786,14 +799,14 @@ def verify_batch_counters(plan, rows, counters, children):
             raise ValueError('Batch reserved counter differs: '+key)
 
 
-def verify_candidate(plan, out, row, *, native_read):
+def verify_candidate(plan, out, row, *, native_read, admitted=None, session=False):
     """Rebuild shared geometry and compare authoritative native scenario rows."""
     if 'starts' in plan:
-        check_plan(plan)
+        if admitted is None: check_plan(plan)
         origins = [s['origin'] for s in plan['starts']['selected']]
         if digest(row.get('start_origin')) not in [digest(origin) for origin in origins]:
             raise ValueError('Candidate has no declared start origin')
-    contract, fresh = load_inputs(plan['job_source']['path'])
+    contract, fresh = load_inputs(plan['job_source']['path']) if admitted is None else admitted
     if 'backend' in plan['job']['fit']:
         for key in ('job','job_source','paths','inputs','kind','configurations','alternatives','variables','initial','scenarios','fit_effective','max_fit_mesh_segments','unsupported'):
             if plan[key]!=fresh[key]: raise ValueError('Reconstructed search context differs: '+key)
@@ -832,7 +845,7 @@ def verify_candidate(plan, out, row, *, native_read):
     for s in plan['scenarios']:
         batch_closed = None
         unit = next((u for u in row['units'] if u['scenario']==s['id']), None)
-        if unit and batched(plan):
+        if unit and (batched(plan) or session):
             design = report.local(out,row['configurations'][s['configuration']]['design'])
             expected = instantiate(s['template'],plan['paths']['config'],design,
                                    report.local(out,unit['fit'])/'model.json')
@@ -845,10 +858,10 @@ def verify_candidate(plan, out, row, *, native_read):
                                    report.local(out,unit['fit'])/'model.json')
             if native_plan['request'] != expected: raise ValueError('Scenario template/conditions changed')
             if native_read:
-                if 'backend' in plan['job']['fit']:
+                if 'backend' in plan['job']['fit'] and not session:
                     from ..reporting.geometry_state import read_result as read_geometry
                     read_geometry(report.local(out,unit['fit']),config=plan['paths']['config'],design=design,recipe=plan['job']['fit'])
-                closed = batch_closed if batched(plan) else rtreport.read_result(report.local(out,unit['output']), unit['context_sha256'])
+                closed = batch_closed if batched(plan) or session else rtreport.read_result(report.local(out,unit['output']), unit['context_sha256'])
                 if not closed['ok']: raise ValueError('Native scenario bundle unconfirmed')
                 native = closed['result']['analysis']['criteria']
                 expected_rows = core.played_rows(s['template'],native,s['configuration'],s['id'])
@@ -861,7 +874,7 @@ def verify_candidate(plan, out, row, *, native_read):
     if row['units_complete'] and (len(row['units']) != len(plan['scenarios']) or not all(u['verified'] for u in row['units']) or not row.get('geometry_valid') or
             {u['scenario'] for u in row['units'] if u['verified']} != {s['id'] for s in plan['scenarios']}):
         raise ValueError('Missing required acquired unit')
-    if 'starts' in plan: check_plan(plan)
+    if 'starts' in plan and admitted is None: check_plan(plan)
 
 
 def instantiate(template, config, design, model):
@@ -872,6 +885,12 @@ def instantiate(template, config, design, model):
     else:
         value['case'].update(config=str(Path(config).resolve()), design=str(Path(design).resolve()), model_in=str(Path(model).resolve()))
     return value
+
+
+def fit_cache_key(plan, design):
+    return digest(dict(design_bytes=report.file_sha256(design), fit=plan['job']['fit'],
+        context={k:v['sha256'] for k,v in plan['inputs'].items() if k.startswith('native_') and k!='native_design'},
+        sources=plan['producer']['loaded_sources_sha256']))
 
 
 def state_trajectory(ep,dest,experiment,out,budget,children,plan,*,steps_per_call=None,progress=None):
@@ -958,13 +977,23 @@ def state_trajectory(ep,dest,experiment,out,budget,children,plan,*,steps_per_cal
     return unit
 
 
-def execute(plan, out, budget, children):
+def execute(plan, out, budget, children, *, session=None):
     out = Path(out); kw = dict(root=out, limit=plan['job']['budgets']['output_mib']*MIB)
     contract, _ = load_inputs(plan['job_source']['path']); cache = {}; acquired = []; sequence = 0
+    prefix = [] if session is None else session.get('rows', [])
+    replay_started = time.monotonic()
+    if session is not None:
+        cache = copy.deepcopy(session.get('cache', {}))
+        acquired = copy.deepcopy(session.get('acquired', []))
+        session.update(cache=cache, acquired=acquired)
     current = None; best_saved = None; witness_saved = None
     saved_history = []; saved_decisions = []
     def save(history=(), best=None, witness=None, decisions=()):
         nonlocal sequence, best_saved, witness_saved, saved_history, saved_decisions
+        if session is not None:
+            # Invocation journal, not legacy witness checkpoints, owns recovery.
+            # A started invocation with no closed point is never resumable.
+            return
         if history:
             budget.witness = report.summary(witness)
             best_saved = report.summary(best); witness_saved = report.summary(witness)
@@ -981,6 +1010,19 @@ def execute(plan, out, budget, children):
 
     def evaluate(values, alternative, index, stage, *, start_origin=None):
         nonlocal current
+        if session is not None:
+            budget.check()
+            check_plan(plan, reconstruct=False)
+            if index <= len(prefix):
+                identity = dict(candidate=index, variables_si=values, alternative=alternative,
+                                stage=stage, start_origin=start_origin)
+                row = prefix[index-1]
+                if digest({k:row.get(k) for k in identity}) != digest(identity):
+                    raise ValueError('Session prefix identity/order/vector/origin differs')
+                return copy.deepcopy(row)
+            session.setdefault('reconstruction_seconds', time.monotonic()-replay_started)
+            if session.get('pause_after') is not None and index-len(prefix) > session['pause_after']:
+                raise StopIteration('session_paused')
         try: budget.check()
         except BudgetStop as exc: raise StopIteration(str(exc)) from exc
         budget.counts['candidates'] += 1
@@ -1018,9 +1060,7 @@ def execute(plan, out, budget, children):
                 else:
                     for s in plan['scenarios']:
                         cid=s['configuration']; design=report.local(out,row['configurations'][cid]['design'])
-                        key=digest(dict(design_bytes=report.file_sha256(design), fit=plan['job']['fit'],
-                            context={k:v['sha256'] for k,v in plan['inputs'].items() if k.startswith('native_') and k!='native_design'},
-                            sources=plan['producer']['loaded_sources_sha256']))
+                        key=fit_cache_key(plan, design)
                         fit_info=cache.get(key)
                         if fit_info is None:
                             if 'backend' in plan['job']['fit']: budget.counts['fit_attempts']=budget.counts.get('fit_attempts',0)+1
@@ -1065,7 +1105,7 @@ def execute(plan, out, budget, children):
                         fit_dir=report.local(out,fit_info['output'])
                         # Exact bytes/context/recipe are rechecked even on a cache hit.
                         read_fit(fit_dir,plan['job']['fit'],design,plan['paths']['config'])
-                        if 'backend' in plan['job']['fit']:
+                        if 'backend' in plan['job']['fit'] and (session is None or 'reader' not in fit_info):
                             checked,reader=launch('read',dict(kind='read_geometry',pending=not (fit_dir/'complete.json').exists(),output=str(fit_dir),config=plan['paths']['config'],design=str(design),recipe=plan['job']['fit']),out,budget,children,seconds=min(175,plan['job']['budgets']['child_seconds']),output_bytes=MIB)
                             if not checked.get('ok'):
                                 fit_info.update(ok=False,reason=checked.get('reason','Geometry read unconfirmed'))
@@ -1073,8 +1113,10 @@ def execute(plan, out, budget, children):
                             if not (fit_dir/'complete.json').exists():
                                 from ..reporting.geometry_state import publish_complete
                                 publish_complete(fit_dir,reader)
+                            if session is not None: fit_info['reader'] = copy.deepcopy(reader)
                             for item in acquired:
                                 if item['kind']=='fit' and item['file']==fit_info['output']+'/child.json': item['status']='accepted'
+                        if session is not None: unit['fit_reader'] = copy.deepcopy(fit_info['reader'])
                         experiment=instantiate(s['template'],plan['paths']['config'],design,fit_dir/'model.json')
                         ep=folder/f'plan-{s["id"]}.json'; report.write_json(ep,experiment, **kw)
                         dest=folder/f'experiment-{s["id"]}'
@@ -1124,6 +1166,8 @@ def execute(plan, out, budget, children):
         row['criteria']=[r for r in row['criteria'] if r['kind']=='static']+[
             r for s in plan['scenarios'] for r in row['criteria'] if r['scenario']==s['id']]
         row.update(core.verdict(row['criteria'],units_complete=row['units_complete'],unsupported=plan['unsupported']))
+        if session is not None and not session_candidate_complete(row):
+            row.setdefault('stop_reason', 'session_candidate_incomplete')
         # Static screened candidates retain a proved violation and no invented played penalty.
         report.write_json(folder/'candidate.json',row, **kw)
         current=None
@@ -1135,11 +1179,11 @@ def execute(plan, out, budget, children):
                      plan['job']['budgets']['candidates'],evaluate,descriptive=no_hard,checkpoint=save,
                      starts=plan.get('starts'))
     if 'starts' in plan or batched(plan):
-        verify_search(plan, search)
+        verify_search(plan, search, session=session is not None)
         save(search['history'], search['best'], search['witness'], search['decisions'])
     check_plan(plan)
     # Verify locks and native associations without additional fits or trajectory steps.
-    for row in search['history']:
+    for row in search['history'][len(prefix):]:
         budget.check()
         verify_candidate(plan,out,row,native_read=False)
     complete=search['termination'] in ('poll_exhausted','evaluation_only','descriptive_initials_only','feasible_witness_found','candidate_budget')
@@ -1152,10 +1196,19 @@ def execute(plan, out, budget, children):
     result['request_fully_covered'] = (bool(search['witness']) and not plan['unsupported'] and
         all(r['status'] in ('pass','satisfied','fail','violated') for r in search['witness']['criteria']))
     budget.check()
+    if session is not None:
+        session.setdefault('reconstruction_seconds', time.monotonic()-replay_started)
+        if search['termination'] == 'session_paused': result['status'] = 'paused'
+        result.update(checkpoint='candidate_boundary', global_resume='explicit_session')
+        return result
     return report.export(out,result, **kw)
 
 
-def run(job_path, output_dir, *, dry_run=False):
+def run(job_path, output_dir, *, dry_run=False, session=False, resume=None, pause_after=None):
+    if type(session) is not bool: raise ValueError('session must be a boolean')
+    if session or resume is not None or pause_after is not None:
+        return run_session(job_path, output_dir, dry_run=dry_run, session=session,
+                           resume=resume, pause_after=pause_after)
     started=time.monotonic()
     plan=preflight(job_path,output_dir)
     if dry_run: return dict(ok=True,status='planned',output_created=False,plan=plan)
@@ -1200,6 +1253,263 @@ def run(job_path, output_dir, *, dry_run=False):
         return dict(response,ok=False,status='partial',reason='signal_interrupted_no_terminal_commit')
     report.publish_completion(out)
     return response
+
+
+def session_scope(plan):
+    if (plan['kind'] != 'fixed' or 'starts' not in plan or
+            plan['job']['fit'].get('backend') != 'certified_scalar_v1' or
+            any(s['template']['case']['kind'] != 'saved_state' for s in plan['scenarios'])):
+        raise ValueError('Session requires new fixed / explicit starts / certified_scalar_v1 / saved_state')
+
+
+def session_candidate_complete(row):
+    screened = row.get('errors') == ['proved_static_violation; played_not_evaluated']
+    return row.get('geometry_valid') is True and not row.get('stop_reason') and (row.get('units_complete') is True or screened)
+
+
+def verify_session_counters(plan, rows, counters, children):
+    verify_batch_counters(plan, rows, counters, children, force=True)
+    if counters.get('fit_attempts', 0) != counters['reserved']['fits'] or type(counters.get('fit_attempts',0)) is not int:
+        raise ValueError('Session fit_attempts differs')
+    if counters['static_units'] != len(rows): raise ValueError('Session static acquisitions differ')
+    fits = {}; readers = []
+    for row in rows:
+        for unit in row['units']:
+            reader = unit['fit_reader']
+            if unit['fit'] in fits and fits[unit['fit']] != reader:
+                raise ValueError('Session shared fit reader differs')
+            fits[unit['fit']] = reader
+            readers.extend(segment['reader'] for segment in unit.get('segments', []))
+    readers.extend(fits.values())
+    admissions = [c for c in children if 'session_generation' in c]
+    if [c['session_generation'] for c in admissions] != list(range(2, 2+len(admissions))):
+        raise ValueError('Session admission generation sequence differs')
+    readers.extend(admissions)
+    if (len({digest(c) for c in readers}) != len(readers) or
+            sorted(map(digest, readers)) != sorted(digest(c) for c in children if c['kind']=='read')):
+        raise ValueError('Session reader acquisitions differ')
+    for index, child in enumerate(children, 1):
+        if 'session_generation' in child and (child['kind']!='read' or type(child['session_generation']) is not int or not 2<=child['session_generation']<=17):
+            raise ValueError('Session admission reader receipt differs')
+        batch_receipt(child, child['kind'], child['steps_charged'])
+        if child['launched'] is not True or child['exit_code'] != 0 or child['timeout_or_error']:
+            raise ValueError('Session boundary has an unsuccessful operation')
+        if child['log'] != f'child-{index:04d}.log': raise ValueError('Session child order differs')
+        if type(child['seconds']) not in (int,float) or not math.isfinite(child['seconds']) or child['seconds'] < 0:
+            raise ValueError('Session child duration differs')
+    for name, key in [('candidates','candidates'),('fits','fits'),('trajectories','trajectories'),('steps_charged','steps')]:
+        if counters[name] > plan['job']['budgets'][key]: raise ValueError('Session cumulative budget exceeded')
+    if counters['elapsed_seconds'] < sum(c['seconds'] for c in children):
+        raise ValueError('Session time cannot refund acquired children')
+
+
+def verify_session_state(value, out, rows):
+    plan = value['plan']; point = value['point']; result = point['result']
+    if not all(session_candidate_complete(r) for r in rows): raise ValueError('Incomplete candidate is not a resumable boundary')
+    if result['conforming'] is not (result['search']['witness'] is not None): raise ValueError('Session conformity differs')
+    cache = {}; acquired = []; fits = set()
+    statics = iter(c for c in point['children'] if c['kind']=='static')
+    for row in rows:
+        receipt = next(statics)
+        if digest(batch_reader_response(out, receipt)) != digest(report.read_json(Path(out)/Path(row['file']).parent/'static.json')):
+            raise ValueError('Session static child evidence differs')
+        for unit in row['units']:
+            fit = unit['fit']; design = report.local(out,row['configurations'][unit['configuration']]['design'])
+            key = fit_cache_key(plan,design)
+            if fit not in fits:
+                fits.add(fit)
+                child_path = report.local(out, fit)/'child.json'
+                child = report.read_json(child_path)
+                if child not in point['children']: raise ValueError('Session fit receipt absent')
+                meta = read_fit(report.local(out,fit),plan['job']['fit'],design,plan['paths']['config'])
+                if key in cache: raise ValueError('Session duplicate fit cache identity')
+                from ..reporting.geometry_state import read_result as read_geometry
+                checked = read_geometry(report.local(out,fit),config=plan['paths']['config'],design=design,recipe=plan['job']['fit'])
+                if not checked.get('ok'): raise ValueError('Session native fit unconfirmed')
+                if report.read_json(report.local(out,fit)/'reader.json') != unit['fit_reader']:
+                    raise ValueError('Session fit reader association differs')
+                cache[key] = dict(output=fit,ok=True,key=key,model_sha256=meta['model_sha256'],reader=unit['fit_reader'])
+                acquired.append(dict(kind='fit',file=fit+'/child.json',sha256=report.file_sha256(child_path),status='accepted'))
+            if cache.get(key, {}).get('output') != fit: raise ValueError('Session fit cache association differs')
+            acquired.append(dict(kind='trajectory',file=unit['output']+'/execution.completed.json',
+                sha256=report.file_sha256(report.local(out,unit['output'])/'execution.completed.json'),status=unit['status']))
+    if digest(cache) != digest(point['cache']) or digest(acquired) != digest(point['acquired']):
+        raise ValueError('Session cache/acquisition association differs')
+    if len(fits) != result['counters']['fits']: raise ValueError('Session fit inventory differs')
+    verify_session_counters(plan, rows, result['counters'], point['children'])
+
+
+def run_session(job_path, output_dir, *, dry_run=False, session=False, resume=None, pause_after=None):
+    """Opt-in continuation at a confirmed candidate boundary; one native poll."""
+    from datetime import datetime, timezone
+    started=time.monotonic()
+    for name in report.NEW_SOURCES:
+        if report.file_sha256(ROOT/name, maximum=2*MIB) != LOADED_SOURCES[name]:
+            raise ValueError('Source changed after import: '+name)
+    if type(dry_run) is not bool or type(session) is not bool: raise ValueError('Session flags must be booleans')
+    if pause_after is not None and (type(pause_after) is not int or not 1<=pause_after<=16):
+        raise ValueError('pause_after must be an integer in 1..16')
+    if (resume is not None and session) or (resume is None and not session):
+        raise ValueError('Choose new session=True or an explicit resume point')
+    if resume is not None and (not isinstance(resume,(str,Path)) or not str(resume)):
+        raise ValueError('Explicit resume point path required')
+    # Minimal bounded bootstrap: no inventories, provenance subprocesses or
+    # scientific admission before the durable invocation and its deadline.
+    raw, job_source = _source(job_path)
+    if (raw.get('input', {}).get('kind') != 'fixed' or type(raw.get('fit')) is not dict or
+            raw['fit'].get('backend') != 'certified_scalar_v1' or
+            type(raw.get('search', {}).get('starts')) is not dict):
+        raise ValueError('Session requires fixed / explicit starts / certified_scalar_v1')
+    limits = raw['budgets']
+    if type(limits) is not dict or set(limits) != set(core.LIMITS):
+        raise ValueError('Session bootstrap budget fields differ')
+    for key, maximum in core.LIMITS.items():
+        if type(limits[key]) is not int or not 1 <= limits[key] <= maximum:
+            raise ValueError('Session bootstrap budget scalar differs: '+key)
+    if limits['memory_mib'] != 768: raise ValueError('Session memory budget differs')
+    out=report.safe_path(output_dir,exists=resume is not None)
+    if resume is None:
+        if out.exists(): raise FileExistsError('Existing output refused')
+        if dry_run:
+            plan=preflight(job_path,out);session_scope(plan)
+            return dict(ok=True,status='planned',output_created=False,plan=plan,session=True)
+        out.mkdir(parents=True,exist_ok=False)
+    with report.session_lock(out,shared=dry_run):
+        prior=None; previous=None; generation=1; prior_seconds=0.; plan=None
+        if resume is not None:
+            names=[]
+            with os.scandir(out) as entries:
+                for entry in entries:
+                    names.append(entry.name)
+                    if len(names)>16000: raise ValueError('Session bootstrap directory limit')
+            paths=sorted(out/name for name in names if name.startswith('session-') and name.endswith('.json'))
+            starts=sorted(out/name for name in names if name.startswith('invocation-') and name.endswith('.json'))
+            if len(paths)>17 or len(starts)>17: raise ValueError('Session bootstrap generation limit')
+            if not paths or len(paths)!=len(starts):raise ValueError('Unclosed invocation; no older boundary fallback')
+            if report.safe_path(resume)!=paths[-1]:raise ValueError('Stale session generation')
+            for path in (paths[-1],out/'plan.json'):
+                if path.stat().st_size>4*MIB: raise ValueError('Session bootstrap record limit')
+            previous=report.read_json(paths[-1])['payload'];generation=len(paths)+1
+            if type(previous['generation']) is not int or previous['generation'] != len(paths):
+                raise ValueError('Session bootstrap generation differs')
+            if report.file_sha256(out/f'boundary-{len(paths):05d}.json',maximum=4*MIB)!=report.file_sha256(paths[-1],maximum=4*MIB):
+                raise ValueError('Unconfirmed boundary; no older fallback')
+            if previous['result']['status']!='paused':raise ValueError('Terminal session cannot be reopened')
+            plan=report.read_json(out/'plan.json')
+            if plan['job_source'] != job_source or digest(plan['job']) != digest(raw):
+                raise ValueError('Session bootstrap differs from original JOB')
+            prior=dict(file=paths[-1].name,sha256=report.file_sha256(paths[-1],maximum=4*MIB))
+            prior_seconds=previous['result']['counters']['elapsed_seconds']
+            if type(prior_seconds) not in (int,float) or not math.isfinite(prior_seconds) or not 0<=prior_seconds<=limits['seconds']:
+                raise ValueError('Invalid prior active time')
+            if dry_run:
+                report.inspect_session(out,resume=resume)
+                return dict(ok=True,status='planned',output_created=False,plan=plan,resume=prior,
+                    remaining_seconds=limits['seconds']-prior_seconds,inspection_seconds=time.monotonic()-started)
+        if threading.current_thread() is not threading.main_thread():raise ValueError('Main-thread supervision required')
+        kw=dict(root=out,limit=limits['output_mib']*MIB)
+        flags=[];children=[];state=dict(pause_after=pause_after);result=None
+        budget=Budget(limits,out,lambda:bool(flags));budget.start=started-prior_seconds
+        if previous is not None:
+            counts=previous['result']['counters']
+            for key in (*budget.counts, 'fit_attempts'):
+                value=counts.get(key,0)
+                if type(value) is not int or not 0<=value<=2_000_000:
+                    raise ValueError('Invalid prior counter: '+key)
+            budget.counts={k:counts[k] for k in budget.counts}
+            if 'fit_attempts' in counts:budget.counts['fit_attempts']=counts['fit_attempts']
+            budget.reserved=copy.deepcopy(counts['reserved']);children=copy.deepcopy(previous['children'])
+            if set(budget.reserved) != {'fits','trajectories','steps_charged','children'} or any(
+                    type(v) is not int or not 0<=v<=2_000_000 for v in budget.reserved.values()):
+                raise ValueError('Invalid prior reservations')
+        invocation=dict(schema=report.SESSION_SCHEMA,generation=generation,previous=prior,
+            job_source=job_source,pause_after=pause_after,started_monotonic=started,
+            started_utc=datetime.now(timezone.utc).isoformat(),
+            producer=dict(loaded_sources_sha256=LOADED_SOURCES,versions=report.versions()))
+        start_path=out/f'invocation-{generation:05d}.json'
+        alarm_handler=signal.getsignal(signal.SIGALRM);alarm_timer=signal.getitimer(signal.ITIMER_REAL)
+        timer_captured=time.monotonic();old={}
+        phases={};failure=None;point_path=None;accounted=None
+        try:
+            for sig in (signal.SIGINT,signal.SIGTERM):old[sig]=signal.signal(sig,lambda s,f:flags.append(s))
+            def deadline(sig,frame):
+                flags.append(sig);raise BudgetStop('total_seconds')
+            signal.signal(signal.SIGALRM,deadline)
+            remaining=max(.001,limits['seconds']-(time.monotonic()-budget.start))
+            signal.setitimer(signal.ITIMER_REAL,min(remaining,alarm_timer[0]) if alarm_timer[0]>0 else remaining)
+            # The journal itself is deadline-bound. A failed write stays visible.
+            report.session_write(start_path,invocation,**kw)
+            budget.check()
+            if remaining<=15:raise BudgetStop('Session admission does not fit remaining budget and closure reserve')
+            execution_ready();report.verify_sources(LOADED_SOURCES)
+            if previous is None:
+                plan=load_inputs(job_path)[1];session_scope(plan)
+                if plan['job_source'] != job_source: raise ValueError('JOB changed during admission')
+                report.write_json(out/'plan.json',plan,**kw);report.export_starts(out,plan,**kw)
+                report.session_write(out/'session.json',dict(schema=report.SESSION_SCHEMA,output=str(out),context_sha256=plan['context_sha256']),**kw)
+            phase=time.monotonic()
+            if previous is not None:
+                value=report.inspect_session(out,resume=resume,_active_start=start_path.name)
+                # Fresh bounded native reader; no fit, TMM or trajectory step.
+                checked,reader=launch('read',dict(kind='read_session_prefix',output=str(out),reference=prior),
+                    out,budget,children,seconds=min(175,plan['job']['budgets']['child_seconds']),output_bytes=MIB)
+                reader['session_generation']=generation
+                if not checked.get('ok') or checked.get('prefix_sha256')!=prior['sha256']:
+                    raise ValueError('Session native prefix reader refused: '+str(checked.get('reason')))
+                rows=[report.read_json(report.local(out,r['file'])) for r in previous['result']['search']['history']]
+                expected=dict(previous['files'], **{prior['file']:prior['sha256'],f'boundary-{generation-1:05d}.json':prior['sha256'],
+                    start_path.name:report.file_sha256(start_path),reader['log']:report.file_sha256(out/reader['log'])})
+                if report.session_inventory(out)!=expected:raise ValueError('Session changed during admission')
+                state.update(rows=rows,cache=previous['cache'],acquired=previous['acquired'])
+            phases['native_read_and_inspection_seconds']=time.monotonic()-phase
+            phases['admission_seconds']=time.monotonic()-started
+            budget.check();phase=time.monotonic()
+            result=execute(plan,out,budget,children,session=state)
+            phases['execute_and_reconstruct_seconds']=time.monotonic()-phase
+            phases['reconstruction_seconds']=state['reconstruction_seconds'];phases['replayed_candidates']=len(state.get('rows',[]))
+            check_plan(plan);budget.check()
+            if result['status'] not in ('paused','complete') or flags:
+                raise ValueError('Session stopped without a healthy boundary: '+result['search']['termination'])
+            verify_session_counters(plan,result['search']['history'],result['counters'],children)
+            if not all(session_candidate_complete(row) for row in result['search']['history']):
+                raise ValueError('Session incomplete candidate cannot be resumed')
+            accounted=time.monotonic();active=accounted-started;charged=active+15
+            if prior_seconds+charged>=plan['job']['budgets']['seconds']:raise BudgetStop('Session finalization reserve exhausted')
+            # Freeze a conservative upper bound, never refund closure reservations.
+            result['counters']=dict(budget.snapshot(),elapsed_seconds=prior_seconds+charged)
+            signal.setitimer(signal.ITIMER_REAL,min(15,max(.001,signal.getitimer(signal.ITIMER_REAL)[0])))
+            if result['status']=='complete':
+                saved=report.export(out,result,**kw)
+                report.prepare_completion(out,dict(ok=True,children=children,status='complete',cancelled=False),**kw)
+                report.publish_completion(out)
+            else:
+                saved=dict(result,search=dict(result['search'],history=[report.summary(r) for r in result['search']['history']],
+                    best=report.summary(result['search']['best']),witness=report.summary(result['search']['witness'])))
+            point=dict(generation=generation,previous=prior,invocation_sha256=report.file_sha256(start_path),
+                active_seconds=active,charged_seconds=charged,closure_reserved_seconds=15,accounted_monotonic=accounted,
+                phases=phases,result=saved,children=children,cache=state['cache'],acquired=state['acquired'],
+                files=report.session_inventory(out),publication='final' if result['status']=='complete' else 'paused')
+            check_plan(plan,reconstruct=False);budget.check()
+            point_path=out/f'session-{generation:05d}.json'
+            report.session_write(point_path,dict(payload=point,sha256=digest(point)),**kw)
+            budget.check()
+            if any(c['reaped'] is not True for c in children): raise ValueError('Unreaped session child')
+        except (BudgetStop,ValueError,OSError,KeyError,ArithmeticError) as exc:
+            failure=type(exc).__name__+': '+str(exc)
+        finally:
+            signal.setitimer(signal.ITIMER_REAL,0);signal.signal(signal.SIGALRM,alarm_handler)
+            signal.setitimer(signal.ITIMER_REAL,max(.001,alarm_timer[0]-(time.monotonic()-timer_captured)) if alarm_timer[0]>0 else 0,alarm_timer[1])
+            for sig,handler in old.items():signal.signal(sig,handler)
+        if failure or flags or accounted is None or time.monotonic()-accounted>=15:
+            response=dict(ok=False,status='partial',resumable=False,reason=failure or 'interrupted_or_closure_timeout',
+                counters=budget.snapshot(),children=children)
+            report.session_write(out/f'failure-{generation:05d}.json',response,**kw)
+            return response
+        # Like the native completion marker: last fallible publication, after
+        # every owned child, stream and signal handler is closed/restored.
+        os.link(point_path,out/f'boundary-{generation:05d}.json',follow_symlinks=False)
+        return dict(ok=True,status=result['status'],resumable=result['status']=='paused',conforming=result['conforming'],
+            output=str(out),resume_point=str(point_path),generation=generation,counters=saved['counters'])
 
 
 LOADED_SOURCES=report.sources()
