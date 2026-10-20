@@ -198,14 +198,27 @@ def export_tables(result):
     history = result['search']['history']
     extra = ['start_id','start_source_sha256','start_variables_si','start_generated_sha256','start_mode'] if 'starts' in result['plan'] else []
     variables = result['plan']['variables']
-    return [
+    coupled = 'coupled_directions' in result['plan']
+    direction_fields = ['coupled_direction'] if coupled else []
+    tables = [
         ('criteria.csv', [dict(r, candidate=c['candidate'], **start_columns(c)) for c in history for r in c['criteria']], FIELDS+extra),
         ('variables.csv', [dict(candidate=c['candidate'], alternative=c['alternative'],
           variable=v['id'], value_si=x, low_si=v['low'], high_si=v['high'], **start_columns(c))
           for c in history for v,x in zip(variables,c['variables_si'])],
           ['candidate','alternative','variable','value_si','low_si','high_si']+extra),
-        ('candidates.csv', [dict(summary(c), **start_columns(c)) for c in history],
-          ['candidate','alternative','stage','status','conforming','units_complete','max_violation_normalized','file']+extra)]
+        ('candidates.csv', [dict(summary(c), **start_columns(c), **(dict(
+          coupled_direction=json.dumps(c['coupled_direction'], sort_keys=True) if 'coupled_direction' in c else '')
+          if coupled else {})) for c in history],
+          ['candidate','alternative','stage','status','conforming','units_complete','max_violation_normalized','file']+extra+direction_fields)]
+    if coupled:
+        registry = result['plan']['coupled_directions']
+        tables.append(('directions.csv', [dict(method=registry['method'], direction_id=d['id'],
+            source_start_i=d['source_pair'][0], source_start_j=d['source_pair'][1],
+            variable_index=i, variable=variable, component_normalized=value)
+            for d in registry['directions'] for i, (variable, value) in
+            enumerate(zip(registry['variable_order'], d['components_normalized']))],
+            ['method','direction_id','source_start_i','source_start_j','variable_index','variable','component_normalized']))
+    return tables
 
 
 def export(out, result, **kw):
@@ -230,6 +243,8 @@ def export(out, result, **kw):
               'Checkpoint = témoin et compteurs ; reprise globale unsupported. Les reprises natives gardent leur portée.'),
              'Voir criteria.csv pour valeurs SI, résidus signés, cents et marges, et les bundles natifs liés.']
     lines.extend('Non couvert : '+s for s in saved['plan']['unsupported'])
+    if 'coupled_directions' in saved['plan']:
+        lines.append('Stratégie start_secants_v1 : directions couplées issues des départs sélectionnés, puis coordonnées ; voir directions.csv.')
     write_bytes(out/'summary.txt', ('\n'.join(lines)+'\n').encode(), **kw)
     return saved
 

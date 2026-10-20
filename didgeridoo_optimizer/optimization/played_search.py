@@ -32,7 +32,7 @@ def validate_job(raw):
         integer(b[k], 1, hi, k)
     if b['memory_mib'] != 768:
         raise ValueError('v1 child memory is explicitly 768 MiB')
-    s = obj(raw['search'], {'normalized_steps', 'directions', 'stop_on_witness', 'starts'}, 'search',
+    s = obj(raw['search'], {'normalized_steps', 'directions', 'stop_on_witness', 'starts', 'coupled_directions'}, 'search',
             {'normalized_steps', 'directions', 'stop_on_witness'})
     steps = s['normalized_steps']
     if type(steps) is not list or not 1 <= len(steps) <= 24:
@@ -66,6 +66,11 @@ def validate_job(raw):
             ids.add(ident)
             if type(profile['design']) is not str or not profile['design'].strip():
                 raise ValueError('start.design requires a relative DESIGN path')
+    if 'coupled_directions' in s:
+        if type(s['coupled_directions']) is not str or s['coupled_directions'] != 'start_secants_v1':
+            raise ValueError('coupled_directions must be start_secants_v1')
+        if raw['input']['kind'] != 'fixed' or 'starts' not in s or s['starts']['mode'] != 'poll':
+            raise ValueError('coupled_directions requires fixed / explicit starts / poll')
     scope = obj(raw['scope'], {'coverage', 'player_controls', 'objective', 'physiological_guarantee'},
                 'scope', {'coverage', 'player_controls', 'objective', 'physiological_guarantee'})
     for k, choices in [('coverage', ('finite', 'continuous')), ('player_controls', ('prescribed', 'optimized')),
@@ -238,8 +243,66 @@ def better(a, b):
             ax is not None and bx is not None and ax < bx)
 
 
+def build_coupled_directions(variables, starts):
+    """Exact ordered secants of admitted SELECTED starts in normalized space.
+
+    Numeric equality deduplicates profiles/directions, as in the native poll;
+    source encodings and the original start sequence are never rewritten.
+    """
+    lows, widths = [], []
+    for variable in variables:
+        low, high = variable['low'], variable['high']
+        number(low, 'coupled low'); number(high, 'coupled high')
+        width = high-low
+        number(width, 'coupled variable scale', True)
+        lows.append(low); widths.append(width)
+    selected = starts['selected']
+    if not 1 <= len(selected) <= 9:
+        raise ValueError('coupled directions require 1..9 selected starts')
+    points, seen = [], set()
+    for start in selected:
+        values = start['variables_si']
+        if len(values) != len(variables):
+            raise ValueError('coupled start dimension differs')
+        for x in values: number(x, 'coupled start value')
+        values = tuple(values)
+        if any(not low <= x <= v['high'] for x, low, v in zip(values, lows, variables)):
+            raise ValueError('coupled start outside variable bounds')
+        if values in seen:
+            continue
+        seen.add(values)
+        normalized = [(x-low)/width for x, low, width in zip(values, lows, widths)]
+        if not all(math.isfinite(x) for x in normalized):
+            raise ValueError('coupled normalized start must be finite')
+        points.append((start['origin']['id'], normalized))
+    directions, seen = [], set()
+    for i, (first, a) in enumerate(points):
+        for second, b in points[i+1:]:
+            delta = [y-x for x, y in zip(a, b)]
+            if sum(x != 0 for x in delta) < 2:
+                continue
+            scale = max(map(abs, delta))
+            direction = [x/scale for x in delta]
+            orientation = 1 if next(x for x in direction if x != 0) > 0 else -1
+            direction = tuple(0. if x == 0 else orientation*x for x in direction)
+            if direction in seen:
+                continue
+            seen.add(direction)
+            directions.append(dict(id=f'secant-{len(directions)+1:03d}', source_pair=[first, second],
+                                   components_normalized=list(direction)))
+    if not directions:
+        raise ValueError('Selected starts provide no coupled direction')
+    return dict(method='start_secants_v1', variable_order=[v['id'] for v in variables], directions=directions)
+
+
 def poll(variables, initial, alternatives, search, maximum, evaluate, *, descriptive=False, checkpoint=None, starts=None):
-    """Unique coordinate poll. Unknown evidence has no invented numeric penalty."""
+    """Native poll with optional start secants; unknown evidence has no invented penalty."""
+    coupled = []
+    if 'coupled_directions' in search:
+        if (search['coupled_directions'] != 'start_secants_v1' or starts is None or
+                search.get('starts', {}).get('mode') != 'poll'):
+            raise ValueError('coupled_directions requires start_secants_v1 / explicit starts / poll')
+        coupled = build_coupled_directions(variables, starts)['directions']
     history, decisions, seen = [], [], {}
     seeded = starts is not None
     origin = None
@@ -252,19 +315,23 @@ def poll(variables, initial, alternatives, search, maximum, evaluate, *, descrip
             entry.update(start_origin=copy.deepcopy(origin))
         decisions.append(entry)
 
-    def call(point, alternative, stage):
+    def call(point, alternative, stage, coupled_direction=None):
         nonlocal best, witness
+        extra = {} if coupled_direction is None else dict(coupled_direction=copy.deepcopy(coupled_direction))
         key = (alternative, tuple(point))
         if key in seen:
             trace(action='skip_duplicate', alternative=alternative, variables_si=list(point),
+                  **extra,
                   **(dict(stage=stage, duplicate_of=seen[key]['candidate'], reason='already_evaluated') if seeded else {}))
             return seen[key] if seeded else None
         if len(history) >= maximum:
             raise StopIteration('candidate_budget')
         if seeded and checkpoint: checkpoint(history, best, witness, decisions)
         row = evaluate(list(point), alternative, len(history)+1, stage,
+                       **extra,
                        **(dict(start_origin=copy.deepcopy(origin)) if seeded else {}))
         if seeded: row['start_origin'] = copy.deepcopy(origin)
+        row.update(extra)
         seen[key] = row
         row.update(candidate=len(history)+1, variables_si=list(point), alternative=alternative, stage=stage)
         history.append(row)
@@ -273,6 +340,7 @@ def poll(variables, initial, alternatives, search, maximum, evaluate, *, descrip
         if row['conforming'] and witness is None: witness = row
         trace(candidate=row['candidate'], action='select' if selected else 'retain_incumbent',
               score=row['max_violation_normalized'], status=row['status'],
+              **extra,
               **(dict(alternative=alternative, variables_si=list(point), stage=stage) if seeded else {}))
         if checkpoint: checkpoint(history, best, witness, decisions)
         if row.get('stop_reason'): raise StopIteration(row['stop_reason'])
@@ -283,6 +351,19 @@ def poll(variables, initial, alternatives, search, maximum, evaluate, *, descrip
         for step in search['normalized_steps']:
             # Fixed anchor and native variable/direction order, shared across starts.
             anchor = list(center); winner = current
+            for vector in coupled:
+                for direction in search['directions']:
+                    identity = dict(id=vector['id'], source_pair=list(vector['source_pair']),
+                                    sign=direction, step=step)
+                    point = [x+direction*step*(v['high']-v['low'])*d for x, v, d in
+                             zip(anchor, variables, vector['components_normalized'])]
+                    if any(not v['low'] <= x <= v['high'] for x, v in zip(point, variables)):
+                        trace(action='skip_bounds', alternative=alternative, variables_si=point,
+                              step=step, reason='outside_variable_bounds', stage='coupled_poll',
+                              coupled_direction=identity)
+                        continue
+                    row = call(point, alternative, 'coupled_poll', identity)
+                    if row is not None and better(row, winner): winner = row
             for j, variable in enumerate(variables):
                 for direction in search['directions']:
                     point = list(anchor)
