@@ -1,0 +1,60 @@
+schema: dcalc.played_search.job.v1
+config: ../geometry_state/config.yaml
+input:
+  kind: fixed
+  design: ../seeded_search/reference.json
+  request: ../seeded_search/request.yaml
+fit:
+  backend: certified_scalar_v1
+  sample_rate_hz: 12000
+  h_cm: 0.5
+  loss_model: zk
+  air_reference: ck_dry20
+  radiation_model: legacy
+  top_hz: 3500
+  iterations: 12
+  max_order: 128
+  max_nodes: 12000
+  max_depth: 48
+  fit_seconds: 60
+  certificate_seconds: 60
+  seconds: 175
+  mesh_maxrel: 0.01
+scenarios:
+- id: nominal3500
+  configuration: nominal
+  template: ../geometry_state/experiment.json
+search:
+  normalized_steps:
+  - 0.125
+  directions:
+  - 1
+  - -1
+  stop_on_witness: false
+  starts:
+    include_initial: false
+    mode: poll
+    profiles:
+    - id: short_wide
+      design: ../seeded_search/short_wide.json
+    - id: long_wide
+      design: ../seeded_search/long_wide.json
+  coupled_directions: start_secants_v1
+budgets:
+  candidates: 3
+  scenarios: 8
+  fits: 2
+  trajectories: 4
+  steps: 192
+  seconds: 900
+  memory_mib: 768
+  output_mib: 100
+  child_seconds: 175
+scope:
+  coverage: finite
+  player_controls: prescribed
+  objective: feasibility
+  physiological_guarantee: false
+metadata:
+  purpose: Native static screening of start secants; no fit or played step; not a
+    musical witness.

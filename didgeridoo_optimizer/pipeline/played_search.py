@@ -216,6 +216,10 @@ def load_inputs(job_path):
         plan['starts'] = admit_starts(raw, base, contract, inputs)
         plan['limits'][4] = 'coordinate poll: declared variable/step/direction order; no implicit starts or directions, no clamp'
         plan['limits'].append('explicit fixed starts first; shared coordinate polls in declared start/step/variable/direction order')
+    if 'coupled_directions' in raw['search']:
+        plan['coupled_directions'] = core.build_coupled_directions(contract.variables, plan['starts'])
+        plan['limits'][4] = 'start_secants_v1: coupled directions first, then coordinates from the same fixed anchor; no clamp'
+        plan['limits'][-1] = 'explicit fixed starts first; shared polls in declared start/step/secant/sign then variable/sign order'
     plan['context_sha256'] = digest(plan)
     if 'starts' in plan and sum(map(len, _input_chunks(plan))) > 3*MIB:
         raise ValueError('Seeded plan exceeds 3 MiB before destination/science')
@@ -275,14 +279,17 @@ def verify_search(plan, search, *, prefix=False, current=None, session=False):
     history = search['history']
     next_call = None
 
-    def replay(values, alternative, index, stage, *, start_origin):
+    def replay(values, alternative, index, stage, *, start_origin, coupled_direction=None):
         nonlocal next_call
         identity = dict(candidate=index, variables_si=values, alternative=alternative,
                         stage=stage, start_origin=start_origin)
+        if coupled_direction is not None: identity['coupled_direction'] = coupled_direction
         if index > len(history):
             next_call = identity
             raise StopIteration('recorded_prefix')
         row = history[index-1]
+        if ('coupled_direction' in row) != (coupled_direction is not None):
+            raise ValueError('Candidate coupled direction presence differs')
         if digest({k:row.get(k) for k in identity}) != digest(identity):
             raise ValueError('Candidate start origin/order/vector differs from native sequence')
         return copy.deepcopy(row)
@@ -300,6 +307,8 @@ def verify_search(plan, search, *, prefix=False, current=None, session=False):
             raise ValueError('Checkpoint decisions differ from native sequence')
         if current is not None and (next_call is None or digest({k:current.get(k) for k in next_call}) != digest(next_call)):
             raise ValueError('Checkpoint current start differs from native sequence')
+        if current is not None and ('coupled_direction' in current) != ('coupled_direction' in next_call):
+            raise ValueError('Checkpoint current coupled direction presence differs')
     elif digest(rebuilt) != digest(search):
         # A native budget check may stop before the next evaluation is created.
         # Its reason is recorded by the scheduler, never replaced by a row.
@@ -1008,7 +1017,7 @@ def execute(plan, out, budget, children, *, session=None):
             counters=budget.snapshot(), units=acquired, decisions=list(decisions),
             **(dict(children=copy.deepcopy(children)) if batched(plan) else {})), **kw)
 
-    def evaluate(values, alternative, index, stage, *, start_origin=None):
+    def evaluate(values, alternative, index, stage, *, start_origin=None, coupled_direction=None):
         nonlocal current
         if session is not None:
             budget.check()
@@ -1016,7 +1025,10 @@ def execute(plan, out, budget, children, *, session=None):
             if index <= len(prefix):
                 identity = dict(candidate=index, variables_si=values, alternative=alternative,
                                 stage=stage, start_origin=start_origin)
+                if coupled_direction is not None: identity['coupled_direction'] = coupled_direction
                 row = prefix[index-1]
+                if ('coupled_direction' in row) != (coupled_direction is not None):
+                    raise ValueError('Session prefix coupled direction presence differs')
                 if digest({k:row.get(k) for k in identity}) != digest(identity):
                     raise ValueError('Session prefix identity/order/vector/origin differs')
                 return copy.deepcopy(row)
@@ -1030,6 +1042,7 @@ def execute(plan, out, budget, children, *, session=None):
         row = dict(candidate=index, stage=stage, variables_si=values, alternative=alternative, criteria=[], units=[],
                    configurations={}, geometry_valid=False, units_complete=False, errors=[], file=f'candidate-{index:03d}/candidate.json')
         if start_origin is not None: row['start_origin'] = copy.deepcopy(start_origin)
+        if coupled_direction is not None: row['coupled_direction'] = copy.deepcopy(coupled_direction)
         current = row; save()
         try:
             check_plan(plan)

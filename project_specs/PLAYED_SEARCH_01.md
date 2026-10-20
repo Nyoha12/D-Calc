@@ -305,3 +305,18 @@ Le code CLI 3 distingue une pause confirmée du résultat final complet (0).
 « témoin » conservent leur portée et ne deviennent pas reprenables. Voir
 [SEARCH_RESUME_01.md](SEARCH_RESUME_01.md) pour la frontière confirmée, les refus,
 les coûts cumulatifs et la réserve de clôture facturée par invocation.
+
+## Extension opt-in COUPLED-POLL-01
+
+`search.coupled_directions: start_secants_v1` ajoute, pour `fixed` avec des
+`search.starts` explicites en mode `poll`, des directions multivariables calculées
+à partir des départs sélectionnés. À chaque pas, ces directions précèdent les
+axes depuis la même ancre figée. Les évaluations natives, verdicts, budgets et
+reprises R72 restent communs. Sans le champ, le comportement décrit dans les
+sections historiques reste inchangé, notamment l'absence de directions couplées.
+
+Le précontrôle expose le registre reconstruit ; le JSON et `directions.csv`
+conservent méthode, directions, paires sources et ordre des variables. Le lecteur
+vérifie ce tableau comme les autres CSV seeded. Voir
+[COUPLED_POLL_01.md](COUPLED_POLL_01.md) et son exemple public statiquement filtré,
+qui ne lance aucun fit ni pas joué et ne revendique aucune conformité musicale.
